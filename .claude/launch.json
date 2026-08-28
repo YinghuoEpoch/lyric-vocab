@@ -1,0 +1,19 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "lyric-vocab-5174",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "run",
+        "dev",
+        "--",
+        "--port",
+        "5174",
+        "--strictPort"
+      ],
+      "port": 5174,
+      "autoPort": false
+    }
+  ]
+}
