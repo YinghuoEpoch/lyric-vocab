@@ -56,16 +56,61 @@ export interface WordRef {
    * "I don't know" 会被拼成 "I do know"。
    */
   suffix?: string
+  /** 该词在第几行 */
+  line: number
+  /** 词在本行内的起止字符位置（不含前后撇号） */
+  start: number
+  end: number
 }
 
-/** 词 + 紧贴它的撇号，用于还原成人能读的原文 */
+/** 词 + 紧贴它的撇号。用于按词比对，不用于还原原文。 */
 export function wordWithSuffix(w: WordRef): string {
   return `${w.prefix ?? ''}${w.word}${w.suffix ?? ''}`
 }
 
-/** 把一段连续的词还原成原文 */
-export function joinWords(words: WordRef[]): string {
-  return words.map(wordWithSuffix).join(' ')
+/**
+ * 还原一段范围的原文。
+ *
+ * 直接从原文里按字符位置截取，而不是把词用空格拼回去 —— 拼的方式是有损的，
+ * 数字、标点、原始空格全都会丢（"I have 3 cats" 会变成 "I have cats"）。
+ * 截取则是原样保留。
+ *
+ * 跨行时会跳过不含英文的行（通常是中文对照行），与从前的行为保持一致。
+ */
+export function getRangeText(
+  content: string,
+  words: WordRef[],
+  startAnchorId: string,
+  endAnchorId: string
+): string {
+  const i = words.findIndex((w) => w.anchorId === startAnchorId)
+  const j = words.findIndex((w) => w.anchorId === endAnchorId)
+  if (i === -1 || j === -1) return ''
+
+  const [a, b] = i <= j ? [words[i], words[j]] : [words[j], words[i]]
+  const from = a.start - (a.prefix?.length ?? 0)
+  let to = b.end + (b.suffix?.length ?? 0)
+  const lines = content ? content.split(/\r?\n/) : ['']
+
+  // 结尾若只剩数字和标点（"...hit in 2020"），一并带上。
+  // 纯数字不是单词、选不中，范围只能停在 in，不补的话尾巴就没了。
+  // 限定「剩余部分不含字母」，避免把后面另一句话吞进来。
+  const tail = (lines[b.line] ?? '').slice(to)
+  if (tail && !/[a-zA-ZÀ-ÿ]/.test(tail) && /\d/.test(tail)) {
+    to = (lines[b.line] ?? '').length
+  }
+
+  if (a.line === b.line) return (lines[a.line] ?? '').slice(from, to).trim()
+
+  const parts: string[] = [(lines[a.line] ?? '').slice(from)]
+  for (let k = a.line + 1; k < b.line; k++) parts.push(lines[k] ?? '')
+  parts.push((lines[b.line] ?? '').slice(0, to))
+
+  return parts
+    .filter((p) => /[a-zA-ZÀ-ÿ]/.test(p)) // 跳过纯中文的对照行
+    .map((p) => p.trim())
+    .filter(Boolean)
+    .join(' ')
 }
 
 /**
@@ -81,10 +126,20 @@ export function buildWordList(content: string): WordRef[] {
     let wordIndex = 0
     // 上一段「其它」文本若以撇号结尾，说明这个撇号贴着下一个词（rock 'n' roll 的 'n）
     let pendingPrefix = ''
+    let offset = 0
 
     for (const seg of tokenizeLine(line)) {
+      const segStart = offset
+      offset += seg.text.length
+
       if (seg.type === 'en') {
-        const ref: WordRef = { anchorId: `L${lineIndex}W${wordIndex}`, word: seg.text }
+        const ref: WordRef = {
+          anchorId: `L${lineIndex}W${wordIndex}`,
+          word: seg.text,
+          line: lineIndex,
+          start: segStart,
+          end: segStart + seg.text.length
+        }
         if (pendingPrefix) ref.prefix = pendingPrefix
         out.push(ref)
         wordIndex++
@@ -386,7 +441,7 @@ export function reconcilePage(
     }
 
     // 范围缩了或挪了：连原文一起按新位置重新取一遍，保证列表里显示的文字是准的
-    const text = joinWords(newList.slice(lo, hi + 1))
+    const text = getRangeText(newContent, newList, nextStart, nextEnd)
 
     nextSentences.push(unmark({ ...sentence, startAnchorId: nextStart, endAnchorId: nextEnd, text }))
     changed = true
@@ -400,7 +455,9 @@ function locateSequence(
   list: WordRef[],
   text: string
 ): { startAnchorId: string; endAnchorId: string } | null {
-  const target = text.trim().toLowerCase().split(/\s+/).filter(Boolean)
+  // 把存下来的原文也过一遍同一个分词器，两边口径才一致 ——
+  // 否则原文里的数字、标点会让逐词比对错位
+  const target = buildWordList(text).map((w) => wordWithSuffix(w).toLowerCase())
   if (target.length === 0) return null
 
   for (let i = 0; i + target.length <= list.length; i++) {

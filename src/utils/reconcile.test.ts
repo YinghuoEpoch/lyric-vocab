@@ -41,12 +41,14 @@ const sentence = (over: Partial<Sentence> = {}): Sentence => ({
 
 describe('buildWordList', () => {
   it('只收英文词，编号按「第几行第几个词」且逐行重新计数', () => {
-    expect(buildWordList('I never stood\n中文\nBut there')).toEqual([
-      { anchorId: 'L0W0', word: 'I' },
-      { anchorId: 'L0W1', word: 'never' },
-      { anchorId: 'L0W2', word: 'stood' },
-      { anchorId: 'L2W0', word: 'But' },
-      { anchorId: 'L2W1', word: 'there' }
+    expect(
+      buildWordList('I never stood\n中文\nBut there').map((w) => [w.anchorId, w.word])
+    ).toEqual([
+      ['L0W0', 'I'],
+      ['L0W1', 'never'],
+      ['L0W2', 'stood'],
+      ['L2W0', 'But'],
+      ['L2W1', 'there']
     ])
   })
 })

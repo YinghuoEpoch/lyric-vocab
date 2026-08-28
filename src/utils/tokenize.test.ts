@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { tokenizeLine } from './tokenize'
-import { buildWordList, joinWords } from './reconcile'
+import { buildWordList, getRangeText } from './reconcile'
 
 /**
  * 分词规则的回归测试。
@@ -112,7 +112,10 @@ describe('中英混排与词编号', () => {
 
 describe('划句子时要还原出可读的原文', () => {
   /** 模拟「从第一个词划到最后一个词」得到的句摘原文 */
-  const rangeText = (line: string) => joinWords(buildWordList(line))
+  const rangeText = (line: string) => {
+    const w = buildWordList(line)
+    return getRangeText(line, w, w[0].anchorId, w[w.length - 1].anchorId)
+  }
 
   it("缩写不能在拼回句子时丢掉（曾经拼成 I do know she here）", () => {
     expect(rangeText("I don't know she's here")).toBe("I don't know she's here")
@@ -143,5 +146,39 @@ describe('划句子时要还原出可读的原文', () => {
   it('还原原文不影响单词本身（笔记记的仍是 she 不是 she’s）', () => {
     const words = buildWordList("she's here")
     expect(words.map((w) => w.word)).toEqual(['she', 'here'])
+  })
+
+  it('句子中间的数字不再被吞掉', () => {
+    expect(rangeText('I have 3 cats')).toBe('I have 3 cats')
+    expect(rangeText('It was 1990 back then')).toBe('It was 1990 back then')
+    expect(rangeText('COVID-19 hit in 2020 hard')).toBe('COVID-19 hit in 2020 hard')
+  })
+
+  it('结尾的数字也带上（纯数字不是词，选不中，范围只能停在前一个词）', () => {
+    expect(rangeText('COVID-19 hit in 2020')).toBe('COVID-19 hit in 2020')
+    expect(rangeText('page 42')).toBe('page 42')
+  })
+
+  it('但不会把后面另一句话吞进来', () => {
+    const line = 'I saw him. 3 dogs came'
+    const w = buildWordList(line)
+    // 划到 him 为止，不该把后面的 3 dogs came 带上
+    expect(getRangeText(line, w, 'L0W0', 'L0W2')).toBe('I saw him')
+  })
+
+  it('标点与原始空格照样保留', () => {
+    expect(rangeText('Hello, world!')).toBe('Hello, world')
+    expect(rangeText('Wait — really?')).toBe('Wait — really')
+  })
+
+  it('只截取选中的那一段，两头多余的内容不带进来', () => {
+    const w = buildWordList('one two three four')
+    expect(getRangeText('one two three four', w, 'L0W1', 'L0W2')).toBe('two three')
+  })
+
+  it('跨行时跳过中文对照行', () => {
+    const content = ['I have 3 cats', '我有三只猫', 'and 2 dogs'].join('\n')
+    const w = buildWordList(content)
+    expect(getRangeText(content, w, 'L0W0', 'L2W1')).toBe('I have 3 cats and 2 dogs')
   })
 })
