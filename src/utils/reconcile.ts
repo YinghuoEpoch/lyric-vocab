@@ -1,5 +1,5 @@
 import { tokenizeLine } from './tokenize'
-import type { NotesMap, Sentence } from '../types'
+import type { Annotation, NotesMap, Sentence } from '../types'
 
 /**
  * 笔记「对账」：正文被编辑之后，把笔记重新挂到正确的位置上。
@@ -473,4 +473,212 @@ function locateSequence(
     }
   }
   return null
+}
+
+
+// ============================================================
+// 标注模型下的对账（新）
+//
+// 和上面那套做的是同一件事，区别在于「怎么记住谁是谁」：
+// 旧的是把笔记从一个格子搬到另一个格子（键就是坐标，搬家 = 换键）；
+// 新的是每条标注有自己的 id，对账只是**更新它身上的位置属性**。
+//
+// 于是三件事一起消失了：
+// - 孤儿不必再编造假坐标 orphan:xxx，位置记成 null 就行
+// - 不会有「两条笔记抢同一个坐标」这种事故，因为坐标不再是身份
+// - 单词和句子不必分两套写，只差「点」和「范围」
+// ============================================================
+
+export interface AnnotationReconcileResult {
+  /**
+   * 处理完毕的标注：跟随移动的、被救回的、以及仍然找不到原文但此前已选择保留的。
+   * 不含本次新产生的孤儿 —— 那些要先问过用户才决定去留。
+   */
+  annotations: Annotation[]
+  /** 本次新变成孤儿的，需要询问用户。用户选「保留」就把位置置空后写回 */
+  newOrphans: Annotation[]
+  /** 是否真的有变化，没变化就不必惊动上层 */
+  changed: boolean
+}
+
+/**
+ * 对账一篇文档的标注。
+ *
+ * @param oldContent 编辑前的正文快照
+ * @param newContent 编辑后的正文
+ * @param annotations 该文档的全部标注
+ */
+export function reconcileAnnotations(
+  oldContent: string,
+  newContent: string,
+  annotations: Annotation[]
+): AnnotationReconcileResult {
+  const oldList = buildWordList(oldContent)
+  const newList = buildWordList(newContent)
+  const mapping = alignWords(
+    oldList.map((w) => w.word),
+    newList.map((w) => w.word)
+  )
+
+  const oldIndexOf = new Map<string, number>()
+  oldList.forEach((w, i) => oldIndexOf.set(w.anchorId, i))
+
+  /** 旧坐标 -> 新坐标；null 表示这个词在新正文里没了 */
+  const remap = (anchorId: string): string | null => {
+    const i = oldIndexOf.get(anchorId)
+    if (i === undefined) return null
+    const j = mapping[i]
+    return j === null || j === undefined ? null : newList[j].anchorId
+  }
+
+  /**
+   * 一段范围在新正文里还剩下哪一截，返回 [起, 止] 在 newList 中的下标。
+   *
+   * 逐个检查旧范围内的每个词，把还活着的挑出来，用最靠前和最靠后的两个当新的起止 ——
+   * 也就是「范围往里收缩」。只看头尾的话，删掉第一个词就会让整条报废，
+   * 可其余部分明明还好好的。剩下不足两个词则判定为没了：一个词不成句。
+   */
+  const survivingRange = (startId: string, endId: string): [number, number] | null => {
+    const from = oldIndexOf.get(startId)
+    const to = oldIndexOf.get(endId)
+    // 起止坐标在旧正文里就已经失效（历史遗留的坏数据）：无从判断，按没了处理
+    if (from === undefined || to === undefined) return null
+
+    const [lo, hi] = from <= to ? [from, to] : [to, from]
+    let first: number | null = null
+    let last: number | null = null
+
+    for (let i = lo; i <= hi; i++) {
+      const j = mapping[i]
+      if (j === null || j === undefined) continue
+      if (first === null) first = j
+      last = j
+    }
+
+    if (first === null || last === null || last - first < 1) return null
+    return [first, last]
+  }
+
+  const kept: Annotation[] = []
+  const newOrphans: Annotation[] = []
+  /** 已标记「原文已删除」的，留到第二遍按原文去找 */
+  const pendingRescue: Annotation[] = []
+  /**
+   * 已被单词标注占用的坐标。
+   *
+   * 只收单词，不收范围 —— 一条句摘的范围里本来就会盖着若干个单词标注，
+   * 把范围也算作「占用」的话，那些单词就再也救不回来了。
+   */
+  const claimedWords = new Set<string>()
+  let changed = false
+
+  // 第一遍：正常跟随。先把位置占掉，第二遍救人时才知道哪些位置还空着。
+  for (const a of annotations) {
+    if (a.start === null || a.end === null) {
+      pendingRescue.push(a)
+      continue
+    }
+
+    if (a.type === 'word') {
+      const target = remap(a.start)
+      if (target === null) {
+        newOrphans.push(a)
+        changed = true
+        continue
+      }
+      claimedWords.add(target)
+      if (target === a.start && target === a.end) {
+        kept.push(a)
+      } else {
+        kept.push({ ...a, start: target, end: target })
+        changed = true
+      }
+      continue
+    }
+
+    const survivors = survivingRange(a.start, a.end)
+    if (survivors === null) {
+      newOrphans.push(a)
+      changed = true
+      continue
+    }
+
+    const [lo, hi] = survivors
+    const nextStart = newList[lo].anchorId
+    const nextEnd = newList[hi].anchorId
+    if (nextStart === a.start && nextEnd === a.end) {
+      kept.push(a)
+      continue
+    }
+
+    // 范围缩了或挪了：连原文一起按新位置重新取一遍，保证卡片上显示的文字是准的
+    const text = getRangeText(newContent, newList, nextStart, nextEnd)
+    kept.push({ ...a, start: nextStart, end: nextEnd, text })
+    changed = true
+  }
+
+  // 第二遍：已经是孤儿的，如果原文里又出现了（比如把删掉的词打回去了），
+  // 就重新挂上；否则原样留着，继续当孤儿。
+  for (const a of pendingRescue) {
+    const found = locateAnnotation(newList, a, claimedWords)
+    if (!found) {
+      kept.push(a)
+      continue
+    }
+
+    if (found.start === found.end) {
+      claimedWords.add(found.start)
+      kept.push({ ...a, start: found.start, end: found.end })
+    } else {
+      const text = getRangeText(newContent, newList, found.start, found.end)
+      kept.push({ ...a, start: found.start, end: found.end, text })
+    }
+    changed = true
+  }
+
+  return { annotations: kept, newOrphans, changed }
+}
+
+/**
+ * 拿标注存着的原文，在词表里找回它的位置。
+ *
+ * 单个词和一整段的找法不同，这是刻意保留旧行为：
+ * - 单个词只比对词本身，所以正文里的 `she's` 能救回一条 `she` 的笔记
+ * - 一整段连撇号一起比对，避免把 "I don't know" 错配到 "I do know"
+ */
+function locateAnnotation(
+  list: WordRef[],
+  annotation: Annotation,
+  claimedWords: Set<string>
+): { start: string; end: string } | null {
+  // 存下来的原文也过一遍同一个分词器，两边口径才一致 ——
+  // 否则原文里的数字、标点会让逐词比对错位
+  const target = buildWordList(annotation.text)
+  if (target.length === 0) return null
+
+  if (target.length === 1) {
+    const spelling = target[0].word.toLowerCase()
+    const hit = list.find(
+      (w) => !claimedWords.has(w.anchorId) && w.word.toLowerCase() === spelling
+    )
+    return hit ? { start: hit.anchorId, end: hit.anchorId } : null
+  }
+
+  const seq = target.map((w) => wordWithSuffix(w).toLowerCase())
+  for (let i = 0; i + seq.length <= list.length; i++) {
+    let hit = true
+    for (let k = 0; k < seq.length; k++) {
+      if (wordWithSuffix(list[i + k]).toLowerCase() !== seq[k]) {
+        hit = false
+        break
+      }
+    }
+    if (hit) return { start: list[i].anchorId, end: list[i + seq.length - 1].anchorId }
+  }
+  return null
+}
+
+/** 用户对孤儿选择「保留」：位置置空，内容原样留着 */
+export function markAnnotationOrphaned(a: Annotation): Annotation {
+  return { ...a, start: null, end: null }
 }
