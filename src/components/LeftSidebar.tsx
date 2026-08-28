@@ -37,6 +37,7 @@ import { restrictToVerticalAxis, restrictToWindowEdges } from '@dnd-kit/modifier
 import { CSS } from '@dnd-kit/utilities'
 import { createPortal } from 'react-dom'
 import { useBackHandler, BackPriority } from '../hooks/useBackHandler'
+import { IMPORT_ACCEPT } from '../importers'
 import type { LyricBook, LyricPage, ReaderSettings } from '../types'
 
 export type AppMode = 'read' | 'review'
@@ -68,7 +69,8 @@ interface LeftSidebarProps {
   onRestoreBackup: (file: File) => void
   onReorderBooks: (orderedIds: string[]) => void
   onReorderPages: (entries: Array<{ id: string; bookId: string | null }>) => void
-  onImportTxt: (file: File) => void
+  /** 导入一个文件；能接受哪些格式由导入层决定，界面不必知道 */
+  onImportFile: (file: File) => void
   readerSettings: ReaderSettings
   onReaderSettingsChange: (s: ReaderSettings) => void
   className?: string
@@ -145,7 +147,7 @@ function LeftSidebarInner({
   onRestoreBackup,
   onReorderBooks,
   onReorderPages,
-  onImportTxt,
+  onImportFile,
   readerSettings,
   onReaderSettingsChange,
   className = ''
@@ -334,10 +336,10 @@ function LeftSidebarInner({
   const handleTxtFileChange = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
       const file = e.target.files?.[0]
-      if (file) onImportTxt(file)
+      if (file) onImportFile(file)
       e.target.value = ''
     },
-    [onImportTxt]
+    [onImportFile]
   )
 
   // 根级文档：bookId 为 null，且未被软删除
@@ -1029,7 +1031,7 @@ function LeftSidebarInner({
           <input
             ref={txtFileInputRef}
             type="file"
-            accept=".txt,text/plain"
+            accept={IMPORT_ACCEPT}
             className="hidden"
             onChange={handleTxtFileChange}
           />

@@ -12,6 +12,7 @@ import type { AppData, LyricBook, LyricPage, ReaderSettings, Sentence, WordNote 
 import { SAMPLE_PAGE_ID, SAMPLE_SENTENCES } from './sampleData'
 import { reconcilePage, makeOrphanKey } from './utils/reconcile'
 import { migratePage } from './utils/migrateTokenizer'
+import { importFile } from './importers'
 import { useBackHandler, handleBackPress, BackPriority } from './hooks/useBackHandler'
 import {
   getAppData,
@@ -894,118 +895,23 @@ export default function App() {
     }
   }, [])
 
-  const handleImportTxt = useCallback(
+  /**
+   * 导入文件。具体怎么解析交给 src/importers 下的导入器，
+   * 这里只负责「拿到结果 -> 写进库 -> 刷新界面」。
+   */
+  const handleImportFile = useCallback(
     (file: File) => {
-      const baseName = file.name.replace(/\.txt$/i, '') || '导入文本'
-
-      // 支持：中文第N章/回/节/卷/集/部；Chapter 后任意内容；宽间距 C H A P T E R 后任意内容；Session N
-      const CHAPTER_REGEX =
-        /^\s*(?:第\s*[0-9零一二三四五六七八九十百千]+\s*[章回节卷集部]|Chapter\s+.*|C\s*H\s*A\s*P\s*T\s*E\s*R\s+.*|Session\s+\d+|###\s*.*|Part\s+.*).*$/gim
-
-      const buildSections = (raw: string): { sections: Array<{ title: string; content: string }>; hasChapters: boolean } => {
-        const normalized = (raw ?? '').replace(/\r\n/g, '\n')
-        const chapters: Array<{ title: string; content: string }> = []
-        const regex = new RegExp(CHAPTER_REGEX.source, 'gim')
-
-        let currentTitle: string | null = null
-        let lastIndex = 0
-        let match: RegExpExecArray | null
-
-        while ((match = regex.exec(normalized)) !== null) {
-          const header = match[0].trim()
-          const start = match.index
-
-          if (currentTitle !== null) {
-            const body = normalized.slice(lastIndex, start).trim()
-            if (body) {
-              chapters.push({ title: currentTitle, content: body })
-            }
-          }
-
-          currentTitle = header
-          lastIndex = regex.lastIndex
+      void (async () => {
+        try {
+          const result = await importFile(file)
+          await addBookWithPages(result.bookName, result.chapters)
+          await refreshData()
+          if (!result.hasChapters) window.alert('未识别到章节，已导入为单文档')
+        } catch (e) {
+          window.alert('导入出错: ' + (e instanceof Error ? e.message : String(e)))
+          await refreshData()
         }
-
-        if (currentTitle !== null) {
-          const body = normalized.slice(lastIndex).trim()
-          if (body) {
-            chapters.push({ title: currentTitle, content: body })
-          }
-        }
-
-        if (chapters.length === 0) {
-          return {
-            sections: [{ title: baseName, content: normalized }],
-            hasChapters: false
-          }
-        }
-
-        return { sections: chapters, hasChapters: true }
-      }
-
-      const readAsText = (encoding: string): Promise<string> =>
-        new Promise((resolve, reject) => {
-          const reader = new FileReader()
-          reader.onload = () => resolve((reader.result ?? '') as string)
-          reader.onerror = () => reject(reader.error ?? new Error('FileReader failed'))
-          reader.readAsText(file, encoding)
-        })
-
-      const runImport = () => {
-        readAsText('utf-8')
-          .then((utf8Text) => {
-            try {
-              const utf8Result = buildSections(utf8Text)
-              if (utf8Result.hasChapters) {
-                void (async () => {
-                  await addBookWithPages(baseName, utf8Result.sections)
-                  await refreshData()
-                })()
-                return
-              }
-
-              readAsText('gbk').then((gbkText) => {
-                try {
-                  const gbkResult = buildSections(gbkText)
-                  if (gbkResult.hasChapters) {
-                    void (async () => {
-                      await addBookWithPages(baseName, gbkResult.sections)
-                      await refreshData()
-                    })()
-                    return
-                  }
-
-                  void (async () => {
-                    await addBookWithPages(baseName, utf8Result.sections)
-                    await refreshData()
-                    window.alert('未识别到章节，已导入为单文档')
-                  })()
-                } catch (e) {
-                  const msg = e instanceof Error ? e.message : String(e)
-                  window.alert('导入出错: ' + msg)
-                  refreshData()
-                }
-              }).catch(() => {
-                void (async () => {
-                  await addBookWithPages(baseName, utf8Result.sections)
-                  await refreshData()
-                  window.alert('未识别到章节，已导入为单文档')
-                })()
-              })
-            } catch (e) {
-              const msg = e instanceof Error ? e.message : String(e)
-              window.alert('导入出错: ' + msg)
-              refreshData()
-            }
-          })
-          .catch((e) => {
-            const msg = e instanceof Error ? e.message : String(e)
-            window.alert('导入出错: ' + msg)
-            void refreshData()
-          })
-      }
-
-      runImport()
+      })()
     },
     [refreshData]
   )
@@ -1059,7 +965,7 @@ export default function App() {
           onRestoreBackup={handleRestoreBackup}
           onReorderBooks={handleReorderBooks}
           onReorderPages={handleReorderPages}
-          onImportTxt={handleImportTxt}
+          onImportFile={handleImportFile}
           readerSettings={readerSettings}
           onReaderSettingsChange={setReaderSettings}
         />
