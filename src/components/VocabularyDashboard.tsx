@@ -1,6 +1,7 @@
 import { memo, useEffect, useState } from 'react'
 import { BookOpen, FileText, Eye, EyeOff, Sparkles } from 'lucide-react'
 import type { LyricPage, NotesMap, Sentence, WordNote } from '../types'
+import { AutoMark } from './AutoMark'
 import { getFolderReviewData } from '../hooks/getFolderReviewData'
 
 export type ReviewTarget =
@@ -38,6 +39,8 @@ export interface VocabularyDashboardProps {
   onVocabCountChange?: (count: number) => void
   /** 打开「一键填充」对话框；范围就是当前复习的文档或文库 */
   onOpenAutoFill?: () => void
+  /** 当前范围内还有多少条空白笔记；为 0 时不显示填充按钮（没什么可填的） */
+  autoFillCount?: number
   [key: string]: any
 }
 
@@ -50,7 +53,8 @@ function VocabularyDashboardInner({
   onUpdateWord,
   onUpdateSentence,
   onVocabCountChange,
-  onOpenAutoFill
+  onOpenAutoFill,
+  autoFillCount = 0
 }: VocabularyDashboardProps) {
   const [hideEnglish, setHideEnglish] = useState(false)
   const [hideChinese, setHideChinese] = useState(false)
@@ -185,37 +189,41 @@ function VocabularyDashboardInner({
       {/* 背诵遮罩开关 + 词/句切换 */}
       <div className="shrink-0 flex flex-wrap items-center justify-between gap-2 pl-4 pr-3 py-3 border-b border-paper-border bg-white/80">
         <div className="flex flex-wrap items-center gap-2">
+          {/* 图标 + 单字，比「隐藏英文」四个字省一半宽度，四种遮罩状态都还在 */}
           <button
             type="button"
             onClick={() => setHideEnglish((v) => !v)}
-            className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+            title={hideEnglish ? '显示英文' : '隐藏英文'}
+            className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-sm font-medium transition-colors ${
               hideEnglish ? 'bg-amber-100 text-amber-800' : 'bg-stone-100 text-ink-muted hover:bg-stone-200'
             }`}
           >
             {hideEnglish ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-            隐藏英文
+            英
           </button>
           <button
             type="button"
             onClick={() => setHideChinese((v) => !v)}
-            className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+            title={hideChinese ? '显示中文' : '隐藏中文'}
+            className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-sm font-medium transition-colors ${
               hideChinese ? 'bg-amber-100 text-amber-800' : 'bg-stone-100 text-ink-muted hover:bg-stone-200'
             }`}
           >
             {hideChinese ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-            隐藏中文
+            中
           </button>
         </div>
         <div className="flex items-center gap-2">
-          {onOpenAutoFill && (
+          {/* 全填完之后这个按钮就没用了，直接不显示；显示时顺便报个数 */}
+          {onOpenAutoFill && autoFillCount > 0 && (
             <button
               type="button"
               onClick={onOpenAutoFill}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium bg-amber-600 hover:bg-amber-700 text-white transition-colors"
-              title="用 AI 补全空白笔记"
+              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-sm font-medium bg-amber-600 hover:bg-amber-700 text-white transition-colors"
+              title={`还有 ${autoFillCount} 条空白笔记，用 AI 补全`}
             >
               <Sparkles className="w-4 h-4" />
-              一键填充
+              填充 {autoFillCount}
             </button>
           )}
           <button
@@ -345,6 +353,7 @@ function VocabCard({
           {showEnglish ? (
             <span className="font-lyric-en font-serif text-amber-800 font-bold text-lg block">
               {item.word}
+              {item.auto && <AutoMark />}
             </span>
           ) : (
             <span className="text-ink-muted/70 text-sm">
@@ -357,14 +366,6 @@ function VocabCard({
               title="正文里已经没有这个词了，笔记被保留下来"
             >
               原文已删除
-            </span>
-          )}
-          {item.auto && (
-            <span
-              className="inline-block mt-1 ml-1 px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 text-xs font-medium border border-amber-200"
-              title="由 AI 自动填充，建议复核"
-            >
-              AI
             </span>
           )}
         </div>
@@ -478,6 +479,7 @@ function SentenceCard({
         {showEnglish ? (
           <p className="font-lyric-en font-serif text-amber-800 text-base leading-snug">
             {item.text}
+            {item.auto && <AutoMark />}
           </p>
         ) : (
           <span className="text-ink-muted/70 text-sm">

@@ -1,6 +1,7 @@
 import { memo, useState, useEffect } from 'react'
 import { PanelRightClose, BookOpen, ChevronRight, Trash2 } from 'lucide-react'
 import type { Sentence } from '../types'
+import { AutoMark } from './AutoMark'
 
 interface VocabItem {
   word: string
@@ -57,16 +58,8 @@ function SentenceCard({
           }`}
         >
           {sentence.text}
+          {sentence.auto && <AutoMark />}
         </p>
-
-        {sentence.auto && !sentence.orphaned && (
-          <span
-            className="self-start px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 text-xs font-medium border border-amber-200"
-            title="由 AI 自动填充，建议复核"
-          >
-            AI
-          </span>
-        )}
 
         {sentence.orphaned && (
           <div className="flex items-center gap-1.5">
@@ -253,6 +246,7 @@ function RightSidebarInner({
                     <div className="flex items-baseline gap-2 min-w-0 flex-1">
                       <span className="font-lyric-en font-serif text-amber-800 font-bold text-base shrink-0 group-hover:underline">
                         {item.word}
+                        {item.auto && <AutoMark />}
                       </span>
                       {item.phonetic && (
                         <span className="text-xs text-ink-muted italic font-mono truncate">
@@ -266,14 +260,6 @@ function RightSidebarInner({
                         title="正文里已经没有这个词了，笔记被保留下来"
                       >
                         原文已删除
-                      </span>
-                    )}
-                    {item.auto && (
-                      <span
-                        className="shrink-0 px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 text-xs font-medium border border-amber-200"
-                        title="由 AI 自动填充，建议复核"
-                      >
-                        AI
                       </span>
                     )}
                     {item.pos && (

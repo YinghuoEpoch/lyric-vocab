@@ -878,7 +878,12 @@ export default function App() {
 
   const handleUpdateSentence = useCallback((id: string, updates: Partial<Pick<Sentence, 'grammar' | 'meaning'>>) => {
     setSentences((prev) =>
-      prev.map((s) => (s.id === id ? { ...s, ...updates, date: Date.now() } : s))
+      prev.map((s) => {
+        if (s.id !== id) return s
+        // 用户亲自改过，就不再算 AI 填的了 —— 标记本质是「待复核清单」
+        const { auto: _wasAuto, ...rest } = s
+        return { ...rest, ...updates, date: Date.now() }
+      })
     )
   }, [])
 
@@ -1091,6 +1096,7 @@ export default function App() {
             onUpdateSentence={handleUpdateSentence}
             onVocabCountChange={setReviewVocabCount}
             onOpenAutoFill={autoFill.openDialog}
+            autoFillCount={autoFill.emptyWords + autoFill.emptySentences}
           />
         )}
       </main>

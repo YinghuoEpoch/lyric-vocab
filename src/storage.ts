@@ -296,6 +296,7 @@ export async function deleteNoteForPage(pageId: string, anchorId: string): Promi
 /**
  * 按单词拼写（不区分大小写）更新所有文档中的对应生词。
  * 不修改 word 本身，只更新传入的字段（如 pos / definition 等）。
+ * 这是用户的手动编辑，因此会清掉「AI 填充」标记。
  */
 export async function updateWordEverywhere(
   spelling: string,
@@ -319,7 +320,9 @@ export async function updateWordEverywhere(
     for (const anchorId of Object.keys(map)) {
       const note = map[anchorId]
       if (note?.word && note.word.trim().toLowerCase() === target) {
-        nextMap[anchorId] = { ...note, ...rest }
+        // 这个函数只在用户手动编辑生词卡时调用，所以顺带清掉「AI 填充」标记
+        const { auto: _wasAuto, ...kept } = note
+        nextMap[anchorId] = { ...kept, ...rest }
         pageChanged = true
       } else {
         nextMap[anchorId] = note
