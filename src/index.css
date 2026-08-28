@@ -1,0 +1,76 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* 锁死全局滚动：外壳固定，仅内部 main 区域可滚动，避免橡皮筋与顶部留白被拖动 */
+html,
+body,
+#root {
+  height: 100%;
+  overflow: hidden;
+  overscroll-behavior: none;
+  box-sizing: border-box;
+}
+
+/* 高级纸质笔记本：米白背景、暖色文字 */
+body {
+  @apply antialiased;
+  margin: 0;
+  background-color: #fbfcf8;
+  color: #2c2c2c;
+  font-family: 'Inter', system-ui, sans-serif;
+}
+
+/* #root 子元素填满高度，便于内部 flex 布局 */
+#root > * {
+  height: 100%;
+  min-height: 0;
+}
+
+/* 仅移动端：固定顶部留白（状态栏/刘海安全区），白条不随滚动移动 */
+@media (max-width: 767px) {
+  #root {
+    padding-top: max(env(safe-area-inset-top, 0px), 30px);
+    background-color: #ffffff;
+  }
+
+  /* 可复用的 Safe Area 顶部内边距工具类，用于侧边栏等固定层 */
+  .safe-area-padding {
+    padding-top: max(env(safe-area-inset-top, 0px), 30px);
+  }
+}
+
+/* 英文衬线 - 优雅 Serif */
+.font-lyric-en {
+  font-family: 'Playfair Display', Georgia, serif;
+}
+
+/* 中文无衬线 - 干净易读 */
+.font-lyric-zh {
+  font-family: 'Inter', system-ui, sans-serif;
+}
+
+/* 三栏独立滚动：细长灰色滚动条 */
+.scroll-area {
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+.scroll-area::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+.scroll-area::-webkit-scrollbar-track {
+  background: transparent;
+}
+.scroll-area::-webkit-scrollbar-thumb {
+  background: #d4d2ce;
+  border-radius: 4px;
+}
+.scroll-area::-webkit-scrollbar-thumb:hover {
+  background: #b8b5ae;
+}
+/* Firefox */
+.scroll-area {
+  scrollbar-width: thin;
+  scrollbar-color: #d4d2ce transparent;
+}

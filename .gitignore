@@ -1,0 +1,25 @@
+# 依赖（用 npm install 可以随时装回来，不需要存档）
+node_modules/
+
+# 构建产物（每次 npm run build 都会重新生成）
+dist/
+dev-dist/
+*.tsbuildinfo
+
+# Vercel
+.vercel
+
+# Android 构建产物与本机配置
+android/build/
+android/app/build/
+android/.gradle/
+android/capacitor-cordova-android-plugins/build/
+android/local.properties
+android/app/src/main/assets/public/
+android/app/src/main/assets/capacitor.config.json
+android/app/src/main/assets/capacitor.plugins.json
+
+# 编辑器 / 系统
+.DS_Store
+.idea/
+*.log
