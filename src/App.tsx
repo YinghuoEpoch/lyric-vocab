@@ -1,7 +1,6 @@
 import { useState, useCallback, useEffect, useMemo } from 'react'
 import { Capacitor } from '@capacitor/core'
 import { App as CapacitorApp } from '@capacitor/app'
-import localforage from 'localforage'
 import { Menu, PanelRightOpen, BookOpen, PenLine } from 'lucide-react'
 import { LeftSidebar } from './components/LeftSidebar'
 import { RightSidebar } from './components/RightSidebar'
@@ -12,7 +11,7 @@ import type { AppData, LyricBook, LyricPage, ReaderSettings, Sentence, WordNote 
 import { SAMPLE_PAGE_ID, SAMPLE_SENTENCES } from './sampleData'
 import {
   getAppData,
-  STORAGE_KEY,
+  replaceAllData,
   saveBook,
   savePage,
   moveBookToTrash,
@@ -538,50 +537,17 @@ export default function App() {
     [currentPageId]
   )
 
-  const handleReorderBooks = useCallback(
-    (orderedIds: string[]) => {
-      const map = new Map(appData.books.map((b) => [b.id, b]))
-      const ordered: LyricBook[] = []
-      for (const id of orderedIds) {
-        const book = map.get(id)
-        if (book) {
-          ordered.push(book)
-          map.delete(id)
-        }
-      }
-      for (const book of appData.books) {
-        if (map.has(book.id)) {
-          ordered.push(book)
-          map.delete(book.id)
-        }
-      }
-      setAppData((prev) => ({ ...prev, books: ordered }))
-      reorderBooks(orderedIds)
-    },
-    [appData.books]
-  )
+  // 排序逻辑只在存储层实现一份；这里拿它算好的结果直接更新界面。
+  // （原来 App 里还各自重算了一遍顺序做乐观更新，两份逻辑要手工保持一致。）
+  const handleReorderBooks = useCallback((orderedIds: string[]) => {
+    void (async () => setAppData(await reorderBooks(orderedIds)))()
+  }, [])
 
   const handleReorderPages = useCallback(
     (entries: Array<{ id: string; bookId: string | null }>) => {
-      const map = new Map(appData.pages.map((p) => [p.id, p]))
-      const ordered: LyricPage[] = []
-      for (const { id, bookId } of entries) {
-        const page = map.get(id)
-        if (page) {
-          ordered.push({ ...page, bookId })
-          map.delete(id)
-        }
-      }
-      for (const page of appData.pages) {
-        if (map.has(page.id)) {
-          ordered.push(page)
-          map.delete(page.id)
-        }
-      }
-      setAppData((prev) => ({ ...prev, pages: ordered }))
-      reorderPages(entries)
+      void (async () => setAppData(await reorderPages(entries)))()
     },
-    [appData.pages]
+    []
   )
 
   const handleUpdateWord = useCallback(
@@ -798,9 +764,10 @@ export default function App() {
                     return
                   }
 
-                  // 先恢复主数据（文库 / 文档 / 生词）
-                  await localforage.setItem(STORAGE_KEY, data)
-                  await refreshData()
+                  // 先恢复主数据（文库 / 文档 / 生词）。
+                  // 必须走 replaceAllData：直接写 IndexedDB 的话，存储层内存中的那份
+                  // 还是旧数据，界面不会更新，而且下一次保存会把恢复的内容又覆盖回去。
+                  setAppData(await replaceAllData(data))
 
                   // 再尝试恢复句摘（Sentence）到 localStorage + 内存状态
                   if (Array.isArray(data.sentences)) {

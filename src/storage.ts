@@ -5,58 +5,136 @@ import { SAMPLE_BOOK_ID, SAMPLE_PAGE_ID, YESTERDAY_ONCE_MORE, SAMPLE_NOTES } fro
 export const STORAGE_KEY = 'lyric-vocab-data'
 const KEY = STORAGE_KEY
 
-const defaultData: AppData = {
-  books: [],
-  pages: [],
-  notes: {}
+/**
+ * 存储层。
+ *
+ * 这里只有「一份」权威数据：内存里的 cache。
+ * 所有修改都直接改 cache（同步、立刻生效），落盘则攒一下再批量写。
+ *
+ * 之前的做法是每个操作各自「读整个库 → 改 → 写整个库」，因为读写都是异步的，
+ * 两个操作在时间上重叠时，后写的会把先写的整个覆盖掉 —— 比如滚动进度的延迟保存
+ * 正好赶上你存一条笔记，笔记就没了。这种丢失是偶发的、复现不了的。
+ * 现在所有操作共享同一个 cache 对象，不存在互相覆盖；落盘也排成一条队，不会并发。
+ *
+ * 另外每个修改都会沿着被改动的路径生成新对象（而不是原地改），
+ * 这样 React 才能正确察觉变化并重新渲染。
+ */
+
+/** 攒多久再落盘。够短，短到用户几乎不可能在这段时间内杀掉 App */
+const SAVE_DEBOUNCE_MS = 400
+
+/** 内存中的权威数据；null 表示尚未从 IndexedDB 载入 */
+let cache: AppData | null = null
+/** 载入过程只做一次 */
+let loadPromise: Promise<AppData> | null = null
+/** 待落盘的定时器 */
+let saveTimer: ReturnType<typeof setTimeout> | null = null
+/** 落盘队列：保证任何时刻只有一个写操作在跑，且按顺序 */
+let writeChain: Promise<void> = Promise.resolve()
+
+/** 从 localStorage 迁移历史数据（只在 IndexedDB 尚无数据时执行一次） */
+async function migrateLegacyData(): Promise<AppData | null> {
+  try {
+    const legacyRaw = localStorage.getItem(KEY)
+    if (!legacyRaw) return null
+    const legacyData = JSON.parse(legacyRaw) as AppData
+    await localforage.setItem(KEY, legacyData)
+    localStorage.removeItem(KEY)
+    return legacyData
+  } catch {
+    return null
+  }
 }
 
-let initPromise: Promise<void> | null = null
-
-async function ensureInitialized(): Promise<void> {
-  if (!initPromise) {
-    initPromise = (async () => {
+/** 确保 cache 已载入，并返回它。并发调用只会真正载入一次。 */
+function ensureLoaded(): Promise<AppData> {
+  if (cache) return Promise.resolve(cache)
+  if (!loadPromise) {
+    loadPromise = (async () => {
+      let data: AppData | null = null
       try {
-        // 如果 IndexedDB 中已经有数据，则不再从 localStorage 迁移
-        const existing = await localforage.getItem<AppData>(KEY)
-        if (existing) return
-
-        const legacyRaw = localStorage.getItem(KEY)
-        if (!legacyRaw) return
-
-        const legacyData = JSON.parse(legacyRaw) as AppData
-        await localforage.setItem(KEY, legacyData)
-        localStorage.removeItem(KEY)
+        data = await localforage.getItem<AppData>(KEY)
+        if (!data) data = await migrateLegacyData()
       } catch {
-        // 忽略迁移错误，后续操作会按默认空数据继续
+        data = null
       }
+
+      if (!data) {
+        // 真·首次启动（存储里什么都没有）：放一份示例内容
+        cache = makeSampleData()
+        await flush()
+        return cache
+      }
+
+      cache = {
+        books: data.books ?? [],
+        pages: data.pages ?? [],
+        notes: data.notes ?? {}
+      }
+      return cache
     })()
   }
-  return initPromise
+  return loadPromise
 }
 
-async function load(): Promise<AppData> {
-  try {
-    await ensureInitialized()
-    const data = (await localforage.getItem<AppData>(KEY)) ?? defaultData
-    return {
-      books: data.books ?? [],
-      pages: data.pages ?? [],
-      notes: data.notes ?? {}
-    }
-  } catch {
-    return defaultData
+/** 立刻把内存数据写入 IndexedDB（排队执行，不会并发） */
+export function flush(): Promise<void> {
+  if (saveTimer) {
+    clearTimeout(saveTimer)
+    saveTimer = null
   }
+  const snapshot = cache
+  if (!snapshot) return writeChain
+  writeChain = writeChain
+    .then(() => localforage.setItem(KEY, snapshot))
+    .then(() => undefined)
+    .catch(() => undefined) // 单次写失败不应该卡死后续所有写入
+  return writeChain
 }
 
-async function save(data: AppData): Promise<void> {
-  await ensureInitialized()
-  await localforage.setItem(KEY, data)
+/** 安排一次延迟落盘（重复调用只会重置计时器） */
+function scheduleSave(): void {
+  if (saveTimer) clearTimeout(saveTimer)
+  saveTimer = setTimeout(() => {
+    saveTimer = null
+    void flush()
+  }, SAVE_DEBOUNCE_MS)
 }
 
-async function seedSample(): Promise<AppData> {
+// App 退到后台 / 页面关闭时，立刻把还没落盘的改动写下去。
+// 这是「攒一下再写」唯一的风险窗口，这两个事件把它堵上。
+if (typeof document !== 'undefined') {
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') void flush()
+  })
+}
+if (typeof window !== 'undefined') {
+  window.addEventListener('pagehide', () => void flush())
+}
+
+/**
+ * 返回一个新的顶层对象，让 React 认出「数据变了」。
+ * 内层的 books / pages / notes 由各个修改函数按需替换。
+ */
+function snapshot(data: AppData): AppData {
+  return { books: data.books, pages: data.pages, notes: data.notes }
+}
+
+/** 改完之后统一走这里：安排落盘 + 返回可直接塞进 React state 的快照 */
+function commit(data: AppData): AppData {
+  scheduleSave()
+  return snapshot(data)
+}
+
+/**
+ * 首次启动时的示例内容。
+ *
+ * 注意：只在存储里「一条记录都没有」时才用。原来的判断是「books 为空就补示例」，
+ * 结果是用户把文库全删光之后，示例又会自己冒出来 —— 现在删掉就是删掉了。
+ */
+function makeSampleData(): AppData {
   const now = Date.now()
-  const data: AppData = {
+  return {
     books: [{ id: SAMPLE_BOOK_ID, name: '示例文库', createdAt: now }],
     pages: [
       {
@@ -69,180 +147,184 @@ async function seedSample(): Promise<AppData> {
     ],
     notes: { [SAMPLE_PAGE_ID]: { ...SAMPLE_NOTES } }
   }
-  await save(data)
-  return data
 }
 
+/**
+ * 读取当前数据。
+ * 首次调用会从 IndexedDB 载入，之后都直接返回内存里的那一份 —— 不再碰磁盘。
+ */
 export async function getAppData(): Promise<AppData> {
-  const data = await load()
-  if (data.books.length === 0) return seedSample()
-  return data
+  const data = await ensureLoaded()
+  return snapshot(data)
 }
 
-export async function saveBook(book: LyricBook): Promise<void> {
-  const data = await load()
+/** 用外部数据（如恢复备份）整体替换当前数据 */
+export async function replaceAllData(next: AppData): Promise<AppData> {
+  const data = await ensureLoaded()
+  data.books = next.books ?? []
+  data.pages = next.pages ?? []
+  data.notes = next.notes ?? {}
+  await flush()
+  return snapshot(data)
+}
+
+export async function saveBook(book: LyricBook): Promise<AppData> {
+  const data = await ensureLoaded()
   const idx = data.books.findIndex((b) => b.id === book.id)
-  if (idx >= 0) data.books[idx] = book
-  else data.books.push(book)
-  await save(data)
+  data.books = idx >= 0
+    ? data.books.map((b, i) => (i === idx ? book : b))
+    : [...data.books, book]
+  return commit(data)
 }
 
 /** 软删除：设置 deletedAt，不从数组移除 */
-export async function moveBookToTrash(bookId: string): Promise<void> {
-  const data = await load()
-  const book = data.books.find((b) => b.id === bookId)
-  if (book) {
-    book.deletedAt = Date.now()
-    data.pages.filter((p) => p.bookId === bookId).forEach((p) => { p.deletedAt = book.deletedAt })
-  }
-  await save(data)
+export async function moveBookToTrash(bookId: string): Promise<AppData> {
+  const data = await ensureLoaded()
+  const deletedAt = Date.now()
+  data.books = data.books.map((b) => (b.id === bookId ? { ...b, deletedAt } : b))
+  data.pages = data.pages.map((p) => (p.bookId === bookId ? { ...p, deletedAt } : p))
+  return commit(data)
 }
 
 /** 软删除：设置 deletedAt */
-export async function movePageToTrash(pageId: string): Promise<void> {
-  const data = await load()
-  const page = data.pages.find((p) => p.id === pageId)
-  if (page) page.deletedAt = Date.now()
-  await save(data)
+export async function movePageToTrash(pageId: string): Promise<AppData> {
+  const data = await ensureLoaded()
+  const deletedAt = Date.now()
+  data.pages = data.pages.map((p) => (p.id === pageId ? { ...p, deletedAt } : p))
+  return commit(data)
 }
 
 /** 恢复文库及其下属文档 */
-export async function restoreBook(bookId: string): Promise<void> {
-  const data = await load()
-  const book = data.books.find((b) => b.id === bookId)
-  if (book) {
-    delete book.deletedAt
-    data.pages.filter((p) => p.bookId === bookId).forEach((p) => delete p.deletedAt)
-  }
-  await save(data)
+export async function restoreBook(bookId: string): Promise<AppData> {
+  const data = await ensureLoaded()
+  data.books = data.books.map((b) => {
+    if (b.id !== bookId) return b
+    const { deletedAt: _removed, ...rest } = b
+    return rest
+  })
+  data.pages = data.pages.map((p) => {
+    if (p.bookId !== bookId) return p
+    const { deletedAt: _removed, ...rest } = p
+    return rest
+  })
+  return commit(data)
 }
 
 /** 恢复文档 */
-export async function restorePage(pageId: string): Promise<void> {
-  const data = await load()
-  const page = data.pages.find((p) => p.id === pageId)
-  if (page) {
-    delete page.deletedAt
-    // 如果原父文库已不存在或仍在回收站，则将文档提升到根级（bookId = null）
-    const parent = data.books.find((b) => b.id === page.bookId && !b.deletedAt)
-    if (!parent) {
-      page.bookId = null
-    }
-  }
-  await save(data)
+export async function restorePage(pageId: string): Promise<AppData> {
+  const data = await ensureLoaded()
+  data.pages = data.pages.map((p) => {
+    if (p.id !== pageId) return p
+    const { deletedAt: _removed, ...rest } = p
+    // 如果原父文库已不存在或仍在回收站，则把文档提升到根级
+    const parent = data.books.find((b) => b.id === rest.bookId && !b.deletedAt)
+    return parent ? rest : { ...rest, bookId: null }
+  })
+  return commit(data)
 }
 
-/** 物理删除文库（从数组移除） */
-export async function deleteBookPermanently(bookId: string): Promise<void> {
-  const data = await load()
-  // 先将该文库下的所有文档「溶解」到根级，而不是删除它们
-  for (const page of data.pages) {
-    if (page.bookId === bookId) {
-      page.bookId = null
-    }
-  }
-  // 再彻底删除文库本身
+/** 物理删除文库：其下文档「溶解」到根级，而不是一起删掉 */
+export async function deleteBookPermanently(bookId: string): Promise<AppData> {
+  const data = await ensureLoaded()
+  data.pages = data.pages.map((p) => (p.bookId === bookId ? { ...p, bookId: null } : p))
   data.books = data.books.filter((b) => b.id !== bookId)
-  await save(data)
+  return commit(data)
 }
 
 /** 物理删除文档 */
-export async function deletePagePermanently(pageId: string): Promise<void> {
-  const data = await load()
+export async function deletePagePermanently(pageId: string): Promise<AppData> {
+  const data = await ensureLoaded()
   data.pages = data.pages.filter((p) => p.id !== pageId)
-  delete data.notes[pageId]
-  await save(data)
-}
-
-/** @deprecated 使用 moveBookToTrash */
-export async function deleteBook(bookId: string): Promise<void> {
-  await moveBookToTrash(bookId)
-}
-
-export async function savePage(page: LyricPage): Promise<void> {
-  const data = await load()
-  page.updatedAt = Date.now()
-  const idx = data.pages.findIndex((p) => p.id === page.id)
-  if (idx >= 0) data.pages[idx] = page
-  else data.pages.push(page)
-  await save(data)
-}
-
-/** @deprecated 使用 movePageToTrash */
-export async function deletePage(pageId: string): Promise<void> {
-  await movePageToTrash(pageId)
-}
-
-export async function getNotesForPage(pageId: string): Promise<NotesMap> {
-  const data = await load()
-  return data.notes[pageId] ?? {}
-}
-
-export async function saveNoteForPage(pageId: string, anchorId: string, note: NotesMap[string]): Promise<void> {
-  const data = await load()
-  if (!data.notes[pageId]) data.notes[pageId] = {}
-  data.notes[pageId][anchorId] = note
-  await save(data)
-}
-
-export async function deleteNoteForPage(pageId: string, anchorId: string): Promise<void> {
-  const data = await load()
   if (data.notes[pageId]) {
-    delete data.notes[pageId][anchorId]
-    if (Object.keys(data.notes[pageId]).length === 0) delete data.notes[pageId]
+    const { [pageId]: _removed, ...rest } = data.notes
+    data.notes = rest
   }
-  await save(data)
+  return commit(data)
 }
 
-export async function getAllNotes(): Promise<
-  Array<{ pageId: string; anchorId: string; word: string; note: NotesMap[string] }>
-> {
-  const data = await load()
-  const out: Array<{ pageId: string; anchorId: string; word: string; note: NotesMap[string] }> = []
-  for (const pageId of Object.keys(data.notes)) {
-    const map = data.notes[pageId]
-    for (const anchorId of Object.keys(map)) {
-      const note = map[anchorId]
-      if (note?.word) out.push({ pageId, anchorId, word: note.word, note })
-    }
+export async function savePage(page: LyricPage): Promise<AppData> {
+  const data = await ensureLoaded()
+  const next = { ...page, updatedAt: Date.now() }
+  const idx = data.pages.findIndex((p) => p.id === page.id)
+  data.pages = idx >= 0
+    ? data.pages.map((p, i) => (i === idx ? next : p))
+    : [...data.pages, next]
+  return commit(data)
+}
+
+export async function saveNoteForPage(
+  pageId: string,
+  anchorId: string,
+  note: WordNote
+): Promise<AppData> {
+  const data = await ensureLoaded()
+  data.notes = { ...data.notes, [pageId]: { ...(data.notes[pageId] ?? {}), [anchorId]: note } }
+  return commit(data)
+}
+
+export async function deleteNoteForPage(pageId: string, anchorId: string): Promise<AppData> {
+  const data = await ensureLoaded()
+  const pageNotes = data.notes[pageId]
+  if (!pageNotes || !(anchorId in pageNotes)) return snapshot(data)
+
+  const { [anchorId]: _removed, ...restNotes } = pageNotes
+  if (Object.keys(restNotes).length === 0) {
+    const { [pageId]: _emptied, ...restPages } = data.notes
+    data.notes = restPages
+  } else {
+    data.notes = { ...data.notes, [pageId]: restNotes }
   }
-  return out
+  return commit(data)
 }
 
 /**
  * 按单词拼写（不区分大小写）更新所有文档中的对应生词。
- * - 不修改 word 本身，只更新传入的字段（如 pos / definition 等）。
+ * 不修改 word 本身，只更新传入的字段（如 pos / definition 等）。
  */
-export async function updateWordEverywhere(spelling: string, updates: Partial<WordNote>): Promise<void> {
-  const data = await load()
+export async function updateWordEverywhere(
+  spelling: string,
+  updates: Partial<WordNote>
+): Promise<AppData> {
+  const data = await ensureLoaded()
   const target = spelling.trim().toLowerCase()
-  if (!target) return
+  if (!target) return snapshot(data)
 
   const { word: _ignored, ...rest } = updates
-  const hasUpdates = Object.keys(rest).length > 0
-  if (!hasUpdates) return
+  if (Object.keys(rest).length === 0) return snapshot(data)
+
+  const nextNotes: AppData['notes'] = {}
+  let changed = false
 
   for (const pageId of Object.keys(data.notes)) {
     const map = data.notes[pageId]
+    let pageChanged = false
+    const nextMap: NotesMap = {}
+
     for (const anchorId of Object.keys(map)) {
       const note = map[anchorId]
-      if (!note?.word) continue
-      if (note.word.trim().toLowerCase() !== target) continue
-      data.notes[pageId][anchorId] = { ...note, ...rest }
+      if (note?.word && note.word.trim().toLowerCase() === target) {
+        nextMap[anchorId] = { ...note, ...rest }
+        pageChanged = true
+      } else {
+        nextMap[anchorId] = note
+      }
     }
+
+    nextNotes[pageId] = pageChanged ? nextMap : map
+    if (pageChanged) changed = true
   }
 
-  await save(data)
+  if (!changed) return snapshot(data)
+  data.notes = nextNotes
+  return commit(data)
 }
 
 /**
- * 重新排序文库（books）的顺序。
- * - bookOrder 只需要包含“活动文库”的顺序，其余未提及的文库（例如已删除或未来扩展）会按原顺序追加在后面。
+ * 重新排序文库。
+ * bookOrder 只需包含活动文库的顺序，未提及的（例如回收站里的）按原顺序追加在后面。
  */
-export function reorderBooks(bookOrder: string[]): void {
-  // 由于排序通常是批量操作，保持同步签名，内部使用异步保存以兼容调用方
-  void (async () => {
-    const data = await load()
+export async function reorderBooks(bookOrder: string[]): Promise<AppData> {
+  const data = await ensureLoaded()
   const map = new Map(data.books.map((b) => [b.id, b]))
   const ordered: LyricBook[] = []
 
@@ -253,8 +335,6 @@ export function reorderBooks(bookOrder: string[]): void {
       map.delete(id)
     }
   }
-
-  // 其余未出现在 bookOrder 中的文库保持原相对顺序
   for (const book of data.books) {
     if (map.has(book.id)) {
       ordered.push(book)
@@ -262,86 +342,64 @@ export function reorderBooks(bookOrder: string[]): void {
     }
   }
 
-    data.books = ordered
-    await save(data)
-  })()
+  data.books = ordered
+  return commit(data)
 }
 
 /**
- * 重新排序文档（pages），同时支持跨文库移动。
- * - entries 中每一项指定一个 page 的 id 及其新的 bookId 与顺序。
- * - 未出现在 entries 中的文档保持原相对顺序并追加在后面。
+ * 重新排序文档，同时支持跨文库移动。
+ * 未出现在 entries 中的文档保持原相对顺序并追加在后面。
  */
-export function reorderPages(
-  entries: Array<{
-    id: string
-    bookId: string | null
-  }>
-): void {
-  void (async () => {
-    const data = await load()
-    const map = new Map(data.pages.map((p) => [p.id, p]))
-    const ordered: LyricPage[] = []
+export async function reorderPages(
+  entries: Array<{ id: string; bookId: string | null }>
+): Promise<AppData> {
+  const data = await ensureLoaded()
+  const map = new Map(data.pages.map((p) => [p.id, p]))
+  const ordered: LyricPage[] = []
 
-    for (const { id, bookId } of entries) {
-      const page = map.get(id)
-      if (page) {
-        page.bookId = bookId
-        ordered.push(page)
-        map.delete(id)
-      }
+  for (const { id, bookId } of entries) {
+    const page = map.get(id)
+    if (page) {
+      ordered.push(page.bookId === bookId ? page : { ...page, bookId })
+      map.delete(id)
     }
-
-    // 其余未出现在 entries 中的文档保持原相对顺序
-    for (const page of data.pages) {
-      if (map.has(page.id)) {
-        ordered.push(page)
-        map.delete(page.id)
-      }
+  }
+  for (const page of data.pages) {
+    if (map.has(page.id)) {
+      ordered.push(page)
+      map.delete(page.id)
     }
-
-    data.pages = ordered
-    await save(data)
-  })()
-}
-
-/**
- * 批量创建一个文库及其下属文档。
- * - bookName: 文库名称（通常来自文件名）
- * - chapters: 每一项为一个文档（章节），包含标题与正文内容
- * 返回新建文库的 ID。
- */
-export function addBookWithPages(
-  bookName: string,
-  chapters: Array<{ title: string; content: string }>
-): Promise<string> {
-  return (async () => {
-    const data = await load()
-  const now = Date.now()
-
-  const bookId = generateId()
-  const book: LyricBook = {
-    id: bookId,
-    name: bookName || '导入文库',
-    createdAt: now
   }
 
-    data.books.push(book)
+  data.pages = ordered
+  return commit(data)
+}
 
-    for (const chapter of chapters) {
-      const page: LyricPage = {
-        id: generateId(),
-        bookId,
-        title: chapter.title?.trim() || '未命名章节',
-        content: chapter.content ?? '',
-        updatedAt: now
-      }
-      data.pages.push(page)
-    }
+/**
+ * 批量创建一个文库及其下属文档（用于导入 txt）。
+ * 返回新建文库的 ID 与更新后的数据。
+ */
+export async function addBookWithPages(
+  bookName: string,
+  chapters: Array<{ title: string; content: string }>
+): Promise<{ bookId: string; data: AppData }> {
+  const data = await ensureLoaded()
+  const now = Date.now()
+  const bookId = generateId()
 
-    await save(data)
-    return bookId
-  })()
+  data.books = [...data.books, { id: bookId, name: bookName || '导入文库', createdAt: now }]
+  data.pages = [
+    ...data.pages,
+    ...chapters.map((chapter) => ({
+      id: generateId(),
+      bookId,
+      title: chapter.title?.trim() || '未命名章节',
+      content: chapter.content ?? '',
+      updatedAt: now
+    }))
+  ]
+
+  return { bookId, data: commit(data) }
 }
 
 export function generateId(): string {
