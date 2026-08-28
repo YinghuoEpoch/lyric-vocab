@@ -3,6 +3,7 @@ import { tokenizeLine } from '../utils/tokenize'
 import type { NotesMap, ReaderSettings, Sentence, WordNote } from '../types'
 import { X, Trash2 } from 'lucide-react'
 import { useWordInteraction } from '../hooks/useWordInteraction'
+import { useBackHandler, BackPriority } from '../hooks/useBackHandler'
 import { buildWordList } from '../utils/reconcile'
 
 const PROGRESS_DEBOUNCE_MS = 700
@@ -208,6 +209,13 @@ export function LyricEditor({
     setSelection(null)
     setFullMode(null)
   }, [])
+
+  // 安卓返回键：先收起抽屉，保留选区；再按一次才清掉选区。
+  // 和「点空白处」的行为保持一致。
+  useBackHandler(!!fullMode || !!selection, BackPriority.wordDrawer, () => {
+    if (fullMode) setFullMode(null)
+    else clearAll()
+  })
 
   // 切换文档时，重置选择与弹窗状态
   useEffect(() => {

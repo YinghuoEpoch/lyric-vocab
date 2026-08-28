@@ -36,6 +36,7 @@ import {
 import { restrictToVerticalAxis, restrictToWindowEdges } from '@dnd-kit/modifiers'
 import { CSS } from '@dnd-kit/utilities'
 import { createPortal } from 'react-dom'
+import { useBackHandler, BackPriority } from '../hooks/useBackHandler'
 import type { LyricBook, LyricPage, ReaderSettings } from '../types'
 
 export type AppMode = 'read' | 'review'
@@ -156,6 +157,10 @@ export function LeftSidebar({
   const [recycleOpen, setRecycleOpen] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState<{ type: 'book' | 'page'; id: string } | null>(null)
   const [collapsedBooks, setCollapsedBooks] = useState<Record<string, boolean>>({})
+  // 安卓返回键：先关二次确认，再关回收站
+  useBackHandler(!!confirmDelete, BackPriority.confirmDelete, () => setConfirmDelete(null))
+  useBackHandler(recycleOpen, BackPriority.recycleBin, () => setRecycleOpen(false))
+
   const [organizeMode, setOrganizeMode] = useState(false)
   const [activeItem, setActiveItem] = useState<ItemKind | null>(null)
   const [dragOverBookId, setDragOverBookId] = useState<string | null>(null)

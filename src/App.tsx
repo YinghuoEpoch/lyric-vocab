@@ -11,6 +11,7 @@ import { useExportBackup } from './hooks/useExportBackup'
 import type { AppData, LyricBook, LyricPage, ReaderSettings, Sentence, WordNote } from './types'
 import { SAMPLE_PAGE_ID, SAMPLE_SENTENCES } from './sampleData'
 import { reconcilePage, makeOrphanKey } from './utils/reconcile'
+import { useBackHandler, handleBackPress, BackPriority } from './hooks/useBackHandler'
 import {
   getAppData,
   replaceAllData,
@@ -519,14 +520,21 @@ export default function App() {
     })
   }, [])
 
-  // 弹窗开着时接管安卓返回键：返回 = 保留。
-  // 不接管的话，返回键会按默认行为直接退出 App，弹窗里的选择也就丢了。
+  /**
+   * 全 app 唯一的安卓返回键监听。
+   *
+   * 各组件把「自己这一层怎么关」登记到 useBackHandler，这里按优先级只关最上面的一层。
+   * 注意：一旦接管了返回键，系统默认的「退出 App」就不会再发生，
+   * 所以没东西可关时必须自己调 exitApp，否则在主界面按返回会毫无反应。
+   */
   useEffect(() => {
-    if (!orphanPrompt || !Capacitor.isNativePlatform()) return
+    if (!Capacitor.isNativePlatform()) return
     let handle: PluginListenerHandle | undefined
     let cancelled = false
 
-    void CapacitorApp.addListener('backButton', () => closeOrphanPrompt(false)).then((h) => {
+    void CapacitorApp.addListener('backButton', () => {
+      if (!handleBackPress()) CapacitorApp.exitApp()
+    }).then((h) => {
       if (cancelled) void h.remove()
       else handle = h
     })
@@ -535,7 +543,12 @@ export default function App() {
       cancelled = true
       void handle?.remove()
     }
-  }, [orphanPrompt, closeOrphanPrompt])
+  }, [])
+
+  // 返回键可关闭的层（从上到下）
+  useBackHandler(!!orphanPrompt, BackPriority.orphanPrompt, () => closeOrphanPrompt(false))
+  useBackHandler(activePanel !== null, BackPriority.panel, () => setActivePanel(null))
+  useBackHandler(editMode, BackPriority.editMode, () => handleEditModeChange(false))
 
   /**
    * 正文编辑后的「笔记对账」。
