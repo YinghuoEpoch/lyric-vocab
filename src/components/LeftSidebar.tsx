@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef, useEffect } from 'react'
+import { memo, useState, useCallback, useRef, useEffect } from 'react'
 import {
   FolderPlus,
   FileText,
@@ -119,7 +119,7 @@ function SortableRow({ id, data, children, disabled }: SortableRowProps) {
   )
 }
 
-export function LeftSidebar({
+function LeftSidebarInner({
   mode,
   onModeChange,
   reviewTarget,
@@ -1294,3 +1294,10 @@ export function LeftSidebar({
     </aside>
   )
 }
+
+/**
+ * 用 memo 包一层：阅读时每一帧滚动都会更新最外层的阅读进度状态，
+ * 不隔离的话整棵树（含上千个单词节点）每帧重渲染一次，这正是滚动卡顿的来源。
+ * props 没变就跳过渲染。
+ */
+export const LeftSidebar = memo(LeftSidebarInner)

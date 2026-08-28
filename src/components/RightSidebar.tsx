@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { memo, useState, useEffect } from 'react'
 import { PanelRightClose, BookOpen, ChevronRight, Trash2 } from 'lucide-react'
 import type { Sentence } from '../types'
 
@@ -134,7 +134,7 @@ interface RightSidebarProps {
   className?: string
 }
 
-export function RightSidebar({
+function RightSidebarInner({
   vocab,
   sentences,
   setSentences: _setSentences,
@@ -343,3 +343,10 @@ export function RightSidebar({
     </aside>
   )
 }
+
+/**
+ * 用 memo 包一层：阅读时每一帧滚动都会更新最外层的阅读进度状态，
+ * 不隔离的话整棵树（含上千个单词节点）每帧重渲染一次，这正是滚动卡顿的来源。
+ * props 没变就跳过渲染。
+ */
+export const RightSidebar = memo(RightSidebarInner)

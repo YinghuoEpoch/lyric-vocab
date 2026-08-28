@@ -737,6 +737,66 @@ export default function App() {
     setSentences((prev) => prev.filter((s) => s.id !== id))
   }, [])
 
+  /** 恢复备份。提成稳定引用，否则 LeftSidebar 的 memo 会被这个内联函数破坏。 */
+  const handleRestoreBackup = useCallback((file: File) => {
+            if (!window.confirm('恢复备份将覆盖现有数据，是否继续？')) return
+            const reader = new FileReader()
+            reader.onload = () => {
+              void (async () => {
+                try {
+                  const raw = reader.result as string
+                  const data = JSON.parse(raw) as AppData & { sentences?: Sentence[] }
+                  const valid =
+                    data &&
+                    Array.isArray(data.books) &&
+                    Array.isArray(data.pages) &&
+                    data.notes != null &&
+                    typeof data.notes === 'object'
+                  if (!valid) {
+                    window.alert('备份文件格式无效，缺少 books / pages / notes 字段')
+                    return
+                  }
+
+                  // 先恢复主数据（文库 / 文档 / 生词）。
+                  // 必须走 replaceAllData：直接写 IndexedDB 的话，存储层内存中的那份
+                  // 还是旧数据，界面不会更新，而且下一次保存会把恢复的内容又覆盖回去。
+                  setAppData(await replaceAllData(data))
+
+                  // 再尝试恢复句摘（Sentence）到 localStorage + 内存状态
+                  if (Array.isArray(data.sentences)) {
+                    const restoredSentences = data.sentences.filter(
+                      (x: unknown): x is Sentence =>
+                        typeof x === 'object' &&
+                        x !== null &&
+                        typeof (x as Sentence).id === 'string' &&
+                        typeof (x as Sentence).text === 'string' &&
+                        typeof (x as Sentence).docId === 'string' &&
+                        typeof (x as Sentence).date === 'number'
+                    )
+                    try {
+                      localStorage.setItem(SENTENCES_KEY, JSON.stringify(restoredSentences))
+                    } catch {
+                      // 如果写入失败，不阻塞主数据恢复
+                    }
+                    setSentences(restoredSentences)
+                  }
+
+                  setCurrentPageId(null)
+                } catch (e) {
+                  const msg = e instanceof Error ? e.message : String(e)
+                  window.alert('恢复备份失败: ' + msg)
+                }
+              })()
+            }
+            reader.readAsText(file)
+  }, [refreshData])
+
+  /** 上一章 / 下一章跳转。提成稳定引用，否则 LyricEditor 的 memo 会被这个内联函数破坏。 */
+  const handleSelectPageById = useCallback((pageId: string) => {
+    setCurrentPageId(pageId)
+    setActivePanel(null)
+  }, [])
+
   const handleAddSentence = useCallback(
     (s: {
       text: string
@@ -996,58 +1056,7 @@ export default function App() {
           onSelectPage={handleSelectPage}
           onAddPage={handleAddPage}
           onExportBackup={exportBackup}
-          onRestoreBackup={(file) => {
-            if (!window.confirm('恢复备份将覆盖现有数据，是否继续？')) return
-            const reader = new FileReader()
-            reader.onload = () => {
-              void (async () => {
-                try {
-                  const raw = reader.result as string
-                  const data = JSON.parse(raw) as AppData & { sentences?: Sentence[] }
-                  const valid =
-                    data &&
-                    Array.isArray(data.books) &&
-                    Array.isArray(data.pages) &&
-                    data.notes != null &&
-                    typeof data.notes === 'object'
-                  if (!valid) {
-                    window.alert('备份文件格式无效，缺少 books / pages / notes 字段')
-                    return
-                  }
-
-                  // 先恢复主数据（文库 / 文档 / 生词）。
-                  // 必须走 replaceAllData：直接写 IndexedDB 的话，存储层内存中的那份
-                  // 还是旧数据，界面不会更新，而且下一次保存会把恢复的内容又覆盖回去。
-                  setAppData(await replaceAllData(data))
-
-                  // 再尝试恢复句摘（Sentence）到 localStorage + 内存状态
-                  if (Array.isArray(data.sentences)) {
-                    const restoredSentences = data.sentences.filter(
-                      (x: unknown): x is Sentence =>
-                        typeof x === 'object' &&
-                        x !== null &&
-                        typeof (x as Sentence).id === 'string' &&
-                        typeof (x as Sentence).text === 'string' &&
-                        typeof (x as Sentence).docId === 'string' &&
-                        typeof (x as Sentence).date === 'number'
-                    )
-                    try {
-                      localStorage.setItem(SENTENCES_KEY, JSON.stringify(restoredSentences))
-                    } catch {
-                      // 如果写入失败，不阻塞主数据恢复
-                    }
-                    setSentences(restoredSentences)
-                  }
-
-                  setCurrentPageId(null)
-                } catch (e) {
-                  const msg = e instanceof Error ? e.message : String(e)
-                  window.alert('恢复备份失败: ' + msg)
-                }
-              })()
-            }
-            reader.readAsText(file)
-          }}
+          onRestoreBackup={handleRestoreBackup}
           onReorderBooks={handleReorderBooks}
           onReorderPages={handleReorderPages}
           onImportTxt={handleImportTxt}
@@ -1124,10 +1133,7 @@ export default function App() {
                 onSaveProgress={handleSaveProgress}
                 prevPage={prevPage}
                 nextPage={nextPage}
-                onSelectPage={(pageId) => {
-                  setCurrentPageId(pageId)
-                  setActivePanel(null)
-                }}
+                onSelectPage={handleSelectPageById}
                 onReadingProgressChange={setDocumentReadingProgress}
                 readerSettings={readerSettings}
               />

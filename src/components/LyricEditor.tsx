@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef, useLayoutEffect, useEffect, useMemo } from 'react'
+import { memo, useState, useCallback, useRef, useLayoutEffect, useEffect, useMemo } from 'react'
 import { tokenizeLine } from '../utils/tokenize'
 import type { NotesMap, ReaderSettings, Sentence, WordNote } from '../types'
 import { X, Trash2 } from 'lucide-react'
@@ -59,7 +59,7 @@ function getAnchorId(lineIndex: number, wordIndex: number): string {
   return `L${lineIndex}W${wordIndex}`
 }
 
-export function LyricEditor({
+function LyricEditorInner({
   content,
   pageId,
   notes,
@@ -126,7 +126,9 @@ export function LyricEditor({
     if (!el || !onReadingProgressChange) return
     const { scrollTop, scrollHeight, clientHeight } = el
     const maxScroll = Math.max(1, scrollHeight - clientHeight)
-    const percent = Math.min(100, Math.max(0, (scrollTop / maxScroll) * 100))
+    // 取整到百分点：进度条本来也只显示到这个精度，
+    // 而滚动每帧都触发，不取整的话每一帧都是一个新数值，白白引发整树重渲染
+    const percent = Math.round(Math.min(100, Math.max(0, (scrollTop / maxScroll) * 100)))
     onReadingProgressChange(percent)
   }, [onReadingProgressChange])
 
@@ -770,3 +772,10 @@ export function LyricEditor({
     </div>
   )
 }
+
+/**
+ * 用 memo 包一层：阅读时每一帧滚动都会更新最外层的阅读进度状态，
+ * 不隔离的话整棵树（含上千个单词节点）每帧重渲染一次，这正是滚动卡顿的来源。
+ * props 没变就跳过渲染。
+ */
+export const LyricEditor = memo(LyricEditorInner)
