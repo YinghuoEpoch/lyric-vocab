@@ -557,6 +557,20 @@ export function LyricEditor({
               const hasNote = !!notes[anchorId] && !notes[anchorId].orphaned
               const inSentenceRange = sentenceRangeAnchorSet.has(anchorId)
               const isPressing = pressingAnchorId === anchorId
+              // 单个词被选中时也要持续高亮。原来只有句摘范围有底色，
+              // 选中一个词时按压高亮又已经消失，抽屉弹出来后完全看不出选的是哪个词。
+              const isSelectedWord = selection?.type === 'word' && selection.anchorId === anchorId
+
+              // 三种底色互斥，收成一个类名，免得多个 bg-* 叠在一起靠优先级打架：
+              // 按住中 > 当前选中的词 > 处于句摘范围内
+              const highlightClass = isPressing
+                ? 'bg-amber-300/70'
+                : isSelectedWord
+                  ? 'bg-amber-200/80'
+                  : inSentenceRange
+                    ? 'bg-amber-100/70'
+                    : ''
+
               const handlers = getWordHandlers(anchorId, word)
               return (
                 <span
@@ -567,10 +581,8 @@ export function LyricEditor({
                   tabIndex={0}
                   // 手指按住时立刻变色，让用户知道「按住是有反应的、再等一下就成」；
                   // 触摸屏没有 hover，所以按压反馈是这里唯一的可点提示。
-                  className={`cursor-pointer rounded px-0.5 -mx-0.5 transition-colors select-none touch-manipulation ${
-                    isPressing ? 'bg-amber-300/70' : ''
-                  } ${hasNote ? 'underline decoration-amber-600 decoration-2 underline-offset-2' : ''} ${
-                    inSentenceRange ? 'bg-amber-100/70' : ''
+                  className={`cursor-pointer rounded px-0.5 -mx-0.5 transition-colors select-none touch-manipulation ${highlightClass} ${
+                    hasNote ? 'underline decoration-amber-600 decoration-2 underline-offset-2' : ''
                   }`}
                   {...handlers}
                 >
