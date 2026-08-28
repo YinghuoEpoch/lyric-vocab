@@ -54,6 +54,14 @@ export interface AppData {
    * 迁移之后仍原样保留不删，作为可回退的保险。等新模型在真机上跑稳了再清理。
    */
   annotations?: Annotation[]
+  /**
+   * 标注迁移完成的时间。存在即表示迁移已经跑过，不要再跑第二遍。
+   *
+   * 这个标记必须跟数据存在一起，不能像分词迁移那样放 localStorage ——
+   * 那两处会脱节：清掉 localStorage 之后迁移会重跑，
+   * 而重跑是拿「旧的 notes」重建标注表，等于把你迁移之后新加的标注全冲掉。
+   */
+  annotationsMigratedAt?: number
 }
 
 export type ReaderSettings = {

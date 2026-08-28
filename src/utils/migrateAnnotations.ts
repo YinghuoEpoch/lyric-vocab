@@ -223,7 +223,7 @@ function prune(a: Annotation): Annotation {
   for (const [k, v] of Object.entries(a)) {
     if (v !== undefined) out[k] = v
   }
-  return out as Annotation
+  return out as unknown as Annotation
 }
 
 /** 把报告写成一句人话，用于迁移前的预演 */

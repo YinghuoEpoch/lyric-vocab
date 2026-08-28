@@ -1,5 +1,15 @@
 import localforage from 'localforage'
-import type { AppData, LyricBook, LyricPage, NotesMap, WordNote } from './types'
+import type {
+  Annotation,
+  AnnotationType,
+  AppData,
+  LyricBook,
+  LyricPage,
+  NotesMap,
+  Sentence,
+  WordNote
+} from './types'
+import { migrateToAnnotations, type MigrationReport } from './utils/migrateAnnotations'
 import { SAMPLE_BOOK_ID, SAMPLE_PAGE_ID, YESTERDAY_ONCE_MORE, SAMPLE_NOTES } from './sampleData'
 
 export const STORAGE_KEY = 'lyric-vocab-data'
@@ -69,7 +79,9 @@ function ensureLoaded(): Promise<AppData> {
       cache = {
         books: data.books ?? [],
         pages: data.pages ?? [],
-        notes: data.notes ?? {}
+        notes: data.notes ?? {},
+        annotations: data.annotations ?? [],
+        annotationsMigratedAt: data.annotationsMigratedAt
       }
       return cache
     })()
@@ -117,7 +129,13 @@ if (typeof window !== 'undefined') {
  * 内层的 books / pages / notes 由各个修改函数按需替换。
  */
 function snapshot(data: AppData): AppData {
-  return { books: data.books, pages: data.pages, notes: data.notes }
+  return {
+    books: data.books,
+    pages: data.pages,
+    notes: data.notes,
+    annotations: data.annotations,
+    annotationsMigratedAt: data.annotationsMigratedAt
+  }
 }
 
 /** 改完之后统一走这里：安排落盘 + 返回可直接塞进 React state 的快照 */
@@ -145,7 +163,8 @@ function makeSampleData(): AppData {
         updatedAt: now
       }
     ],
-    notes: { [SAMPLE_PAGE_ID]: { ...SAMPLE_NOTES } }
+    notes: { [SAMPLE_PAGE_ID]: { ...SAMPLE_NOTES } },
+    annotations: []
   }
 }
 
@@ -164,6 +183,11 @@ export async function replaceAllData(next: AppData): Promise<AppData> {
   data.books = next.books ?? []
   data.pages = next.pages ?? []
   data.notes = next.notes ?? {}
+  // 恢复的备份可能是迁移之前导出的（里面只有旧的 notes / sentences）。
+  // 那种情况下把「迁移过」的标记一并清掉，让迁移重新跑一遍，
+  // 否则恢复回来的笔记会一条都不出现在新模型里。
+  data.annotations = next.annotations ?? []
+  data.annotationsMigratedAt = next.annotations?.length ? next.annotationsMigratedAt : undefined
   await flush()
   return snapshot(data)
 }
@@ -238,6 +262,10 @@ export async function deletePagePermanently(pageId: string): Promise<AppData> {
   if (data.notes[pageId]) {
     const { [pageId]: _removed, ...rest } = data.notes
     data.notes = rest
+  }
+  const annotations = data.annotations ?? []
+  if (annotations.some((a) => a.docId === pageId)) {
+    data.annotations = annotations.filter((a) => a.docId !== pageId)
   }
   return commit(data)
 }
@@ -419,6 +447,166 @@ export async function addBookWithPages(
   ]
 
   return { bookId, data: commit(data) }
+}
+
+// ============================================================
+// 标注（新模型）
+//
+// 与上面的 notes / 句摘并存。这一段目前还没有被界面调用 ——
+// 先把地基砌好、测好，等对账和界面都切过来了，旧的那两套才退休。
+// ============================================================
+
+/**
+ * 取出某篇文档的标注，按 order 排好。
+ *
+ * 纯读取，不碰存储，所以可以在渲染里直接用。
+ * 排序只在「同一文档、同一类型」内比较，这也是 order 的定义。
+ */
+export function selectAnnotations(
+  data: AppData,
+  docId: string,
+  type?: AnnotationType
+): Annotation[] {
+  const all = data.annotations ?? []
+  return all
+    .filter((a) => a.docId === docId && (type === undefined || a.type === type))
+    .sort((a, b) => a.order - b.order)
+}
+
+/** 新建标注时该给的 order：排在同文档同类型的最后 */
+export function nextAnnotationOrder(data: AppData, docId: string, type: AnnotationType): number {
+  let max = -1
+  for (const a of data.annotations ?? []) {
+    if (a.docId === docId && a.type === type && a.order > max) max = a.order
+  }
+  return max + 1
+}
+
+/** 新增或更新一条标注（按 id 认人） */
+export async function saveAnnotation(annotation: Annotation): Promise<AppData> {
+  const data = await ensureLoaded()
+  const all = data.annotations ?? []
+  const idx = all.findIndex((a) => a.id === annotation.id)
+  data.annotations = idx >= 0
+    ? all.map((a, i) => (i === idx ? annotation : a))
+    : [...all, annotation]
+  return commit(data)
+}
+
+/** 按 id 删除一条标注 */
+export async function deleteAnnotation(id: string): Promise<AppData> {
+  const data = await ensureLoaded()
+  const all = data.annotations ?? []
+  if (!all.some((a) => a.id === id)) return snapshot(data)
+  data.annotations = all.filter((a) => a.id !== id)
+  return commit(data)
+}
+
+/**
+ * 整体替换某篇文档的全部标注。
+ *
+ * 给对账用：正文编辑之后，一批标注的位置要同时更新。
+ * 逐条改会出现「中间状态」，一半新一半旧，界面上会闪出错位的一帧。
+ */
+export async function replaceDocAnnotations(
+  docId: string,
+  next: Annotation[]
+): Promise<AppData> {
+  const data = await ensureLoaded()
+  const others = (data.annotations ?? []).filter((a) => a.docId !== docId)
+  data.annotations = [...others, ...next]
+  return commit(data)
+}
+
+/**
+ * 按拼写（不区分大小写）更新所有文档里的同一个词。
+ *
+ * 对应旧的 updateWordEverywhere：你在生词卡上改了「stood」的释义，
+ * 全库其它文档里的 stood 一起跟着改。
+ * 这是用户的手动编辑，所以顺手清掉「AI 填充」标记。
+ */
+export async function updateAnnotationsByWord(
+  spelling: string,
+  updates: Partial<Omit<Annotation, 'id' | 'docId' | 'type' | 'start' | 'end' | 'text' | 'order'>>
+): Promise<AppData> {
+  const data = await ensureLoaded()
+  const target = spelling.trim().toLowerCase()
+  if (!target) return snapshot(data)
+  if (Object.keys(updates).length === 0) return snapshot(data)
+
+  let changed = false
+  const next = (data.annotations ?? []).map((a) => {
+    if (a.type !== 'word' || a.text.trim().toLowerCase() !== target) return a
+    changed = true
+    const { auto: _wasAuto, ...kept } = a
+    return { ...kept, ...updates }
+  })
+
+  if (!changed) return snapshot(data)
+  data.annotations = next
+  return commit(data)
+}
+
+/**
+ * 重排某篇文档某一类型的标注。
+ * ids 里没提到的保持原有相对顺序，排在后面。
+ */
+export async function reorderAnnotations(
+  docId: string,
+  type: AnnotationType,
+  ids: string[]
+): Promise<AppData> {
+  const data = await ensureLoaded()
+  const rank = new Map(ids.map((id, i) => [id, i]))
+  const inScope = (a: Annotation) => a.docId === docId && a.type === type
+
+  // 没被提到的接在后面：先按原 order 排，再依次编号
+  const rest = (data.annotations ?? [])
+    .filter((a) => inScope(a) && !rank.has(a.id))
+    .sort((a, b) => a.order - b.order)
+  rest.forEach((a, i) => rank.set(a.id, ids.length + i))
+
+  let changed = false
+  const next = (data.annotations ?? []).map((a) => {
+    if (!inScope(a)) return a
+    const order = rank.get(a.id)
+    if (order === undefined || order === a.order) return a
+    changed = true
+    return { ...a, order }
+  })
+
+  if (!changed) return snapshot(data)
+  data.annotations = next
+  return commit(data)
+}
+
+/**
+ * 一次性迁移：把旧的 notes + 句摘转成标注表。
+ *
+ * 只跑一次，靠数据里的 annotationsMigratedAt 守住 —— 不是 localStorage。
+ * 两者的区别很要命：localStorage 被清掉之后迁移会重跑，而重跑是拿「旧的 notes」
+ * 重建整张表，等于把迁移之后新加的标注全部冲掉。标记跟数据存在一起就不会脱节。
+ *
+ * 旧的 notes 与句摘**不删**，原样留着当保险，等新模型在真机上跑稳了再清理。
+ *
+ * @param sentences 句摘。它住在 localStorage 里，不归存储层管，由调用方读好传进来。
+ * @returns report 为 null 表示这次没跑（已经迁移过了）
+ */
+export async function runAnnotationMigration(
+  sentences: Sentence[]
+): Promise<{ data: AppData; report: MigrationReport | null }> {
+  const data = await ensureLoaded()
+  if (data.annotationsMigratedAt) return { data: snapshot(data), report: null }
+
+  const { annotations, report } = migrateToAnnotations(
+    { pages: data.pages, notes: data.notes, sentences },
+    { makeId: generateId }
+  )
+
+  data.annotations = annotations
+  data.annotationsMigratedAt = Date.now()
+  await flush() // 迁移这种一次性的大动作立刻落盘，不进攒批队列
+  return { data: snapshot(data), report }
 }
 
 export function generateId(): string {
