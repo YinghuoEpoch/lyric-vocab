@@ -24,6 +24,12 @@ export interface WordNote {
   phonetic?: string
   pos?: string
   definition?: string
+  /**
+   * 原文已删除：正文编辑后找不到这个词了，但用户选择了保留笔记。
+   * 界面上会标出来，方便一眼认出「这条笔记在文中已经没有对应内容了」。
+   * 若之后原文里又出现这个词，对账时会自动重新挂上并清掉此标记。
+   */
+  orphaned?: boolean
 }
 
 export type NotesMap = Record<string, WordNote> // anchorId -> WordNote
@@ -60,4 +66,6 @@ export interface Sentence {
   endAnchorId: string
   /** 创建/更新时间戳 */
   date: number
+  /** 原文已删除；含义同 WordNote.orphaned */
+  orphaned?: boolean
 }

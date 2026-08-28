@@ -16,6 +16,8 @@ interface VocabCardItem {
   phonetic?: string
   pos?: string
   definition?: string
+  /** 原文已删除：正文里已经没有这个词了，但笔记被保留下来 */
+  orphaned?: boolean
    // 仅用于文件夹复习模式下的词频统计
   frequency?: number
 }
@@ -65,7 +67,8 @@ export function VocabularyDashboard({
         word: n!.word,
         phonetic: n!.phonetic,
         pos: n!.pos,
-        definition: n!.definition
+        definition: n!.definition,
+        orphaned: n!.orphaned
       }))
   }
 
@@ -323,6 +326,14 @@ function VocabCard({
           ) : (
             <span className="text-ink-muted/70 text-sm">
               点击显示英文
+            </span>
+          )}
+          {item.orphaned && (
+            <span
+              className="inline-block mt-1 px-2 py-0.5 rounded-full bg-stone-100 text-ink-muted text-xs font-medium border border-stone-300/70"
+              title="正文里已经没有这个词了，笔记被保留下来"
+            >
+              原文已删除
             </span>
           )}
         </div>

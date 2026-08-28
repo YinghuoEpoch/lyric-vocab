@@ -148,17 +148,27 @@ function greedyPairs(a: string[], b: string[]): Array<[number, number]> {
   return pairs
 }
 
+
 export interface ReconcileResult {
-  /** 重新挂好坐标的笔记 */
+  /**
+   * 处理完毕的笔记：含跟随移动的、被救回的、以及仍然找不到原文但用户此前已选择保留的。
+   * 不含本次新产生的孤儿 —— 那些要先问过用户才决定去留。
+   */
   notes: NotesMap
-  /** 重新框好范围的句摘（仅当前文档的） */
   sentences: Sentence[]
-  /** 原文已不存在、等待用户确认的单词笔记（anchorId -> 单词） */
-  orphanNotes: Array<{ anchorId: string; word: string }>
-  /** 原文已不存在、等待用户确认的句摘 */
-  orphanSentences: Sentence[]
-  /** 是否真的有变化，没变化就不用惊动上层 */
+  /** 本次新变成孤儿的单词笔记，需要询问用户 */
+  newOrphanNotes: Array<{ anchorId: string; word: string }>
+  /** 本次新变成孤儿的句摘，需要询问用户 */
+  newOrphanSentences: Sentence[]
+  /** 是否真的有变化，没变化就不必惊动上层 */
   changed: boolean
+}
+
+/** 去掉「原文已删除」标记 */
+function unmark<T extends { orphaned?: boolean }>(item: T): T {
+  if (!item.orphaned) return item
+  const { orphaned: _removed, ...rest } = item
+  return rest as T
 }
 
 /**
@@ -188,38 +198,80 @@ export function reconcilePage(
   /** 旧坐标 -> 新坐标；null 表示这个词在新正文里没了 */
   const remap = (anchorId: string): string | null => {
     const i = oldIndexOf.get(anchorId)
-    // 坐标在旧正文里就已经不存在（历史遗留的失效笔记）：同样按「没了」处理
     if (i === undefined) return null
     const j = mapping[i]
     return j === null || j === undefined ? null : newList[j].anchorId
   }
 
   const nextNotes: NotesMap = {}
-  const orphanNotes: Array<{ anchorId: string; word: string }> = []
+  const newOrphanNotes: Array<{ anchorId: string; word: string }> = []
+  const claimed = new Set<string>()
   let changed = false
 
+  // 第一遍：正常跟随。先把位置占掉，第二遍救人时才知道哪些位置还空着。
+  const pendingRescue: Array<[string, NotesMap[string]]> = []
   for (const anchorId of Object.keys(notes)) {
     const note = notes[anchorId]
-    const target = remap(anchorId)
-    if (target === null) {
-      orphanNotes.push({ anchorId, word: note?.word ?? '' })
-      changed = true
+
+    // 已标记「原文已删除」的：它的坐标早就失效了，哪怕这个坐标碰巧还存在，
+    // 上面站着的也是别的词。所以完全不看坐标，留到第二遍按拼写重新找。
+    if (note?.orphaned) {
+      pendingRescue.push([anchorId, note])
       continue
     }
-    nextNotes[target] = note
-    if (target !== anchorId) changed = true
+
+    const target = remap(anchorId)
+    if (target !== null) {
+      nextNotes[target] = note
+      claimed.add(target)
+      if (target !== anchorId) changed = true
+      continue
+    }
+
+    newOrphanNotes.push({ anchorId, word: note?.word ?? '' })
+    changed = true
+  }
+
+  // 第二遍：已标记的孤儿，如果原文里又出现了这个词（比如用户把拼错的词改回来了），
+  // 就重新挂上去并清掉标记；否则原样留在老坐标上，继续带着标记。
+  for (const [anchorId, note] of pendingRescue) {
+    const target = note.word
+      ? newList.find(
+          (w) => !claimed.has(w.anchorId) && w.word.toLowerCase() === note.word.trim().toLowerCase()
+        )
+      : undefined
+
+    if (target) {
+      nextNotes[target.anchorId] = unmark(note)
+      claimed.add(target.anchorId)
+      changed = true
+    } else {
+      nextNotes[anchorId] = note
+    }
   }
 
   const nextSentences: Sentence[] = []
-  const orphanSentences: Sentence[] = []
+  const newOrphanSentences: Sentence[] = []
 
   for (const sentence of sentences) {
+    // 同上：已标记的孤儿不看坐标，直接拿存下来的原文去全文找。
+    if (sentence.orphaned) {
+      const revived = locateSequence(newList, sentence.text)
+      if (revived) {
+        nextSentences.push(unmark({ ...sentence, ...revived }))
+        changed = true
+      } else {
+        nextSentences.push(sentence)
+      }
+      continue
+    }
+
     const nextStart = remap(sentence.startAnchorId)
     const nextEnd = remap(sentence.endAnchorId)
 
     // 两头都在才算这句话还完整；只剩一头的半句留着没有意义
     if (nextStart === null || nextEnd === null) {
-      orphanSentences.push(sentence)
+      newOrphanSentences.push(sentence)
       changed = true
       continue
     }
@@ -238,9 +290,32 @@ export function reconcilePage(
       .map((w) => w.word)
       .join(' ')
 
-    nextSentences.push({ ...sentence, startAnchorId: nextStart, endAnchorId: nextEnd, text })
+    nextSentences.push(unmark({ ...sentence, startAnchorId: nextStart, endAnchorId: nextEnd, text }))
     changed = true
   }
 
-  return { notes: nextNotes, sentences: nextSentences, orphanNotes, orphanSentences, changed }
+  return { notes: nextNotes, sentences: nextSentences, newOrphanNotes, newOrphanSentences, changed }
+}
+
+/** 在词表里找出与给定原文完全一致的一段连续词，返回它的起止坐标 */
+function locateSequence(
+  list: WordRef[],
+  text: string
+): { startAnchorId: string; endAnchorId: string } | null {
+  const target = text.trim().toLowerCase().split(/\s+/).filter(Boolean)
+  if (target.length === 0) return null
+
+  for (let i = 0; i + target.length <= list.length; i++) {
+    let hit = true
+    for (let k = 0; k < target.length; k++) {
+      if (list[i + k].word.toLowerCase() !== target[k]) {
+        hit = false
+        break
+      }
+    }
+    if (hit) {
+      return { startAnchorId: list[i].anchorId, endAnchorId: list[i + target.length - 1].anchorId }
+    }
+  }
+  return null
 }

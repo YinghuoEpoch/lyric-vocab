@@ -256,6 +256,7 @@ export default function App() {
       phonetic?: string
       pos?: string
       definition?: string
+      orphaned?: boolean
     }> = []
     for (const pageId of Object.keys(appData.notes)) {
       if (!activePageIds.has(pageId)) continue
@@ -269,7 +270,8 @@ export default function App() {
             pageId,
             phonetic: n.phonetic,
             pos: n.pos,
-            definition: n.definition
+            definition: n.definition,
+            orphaned: n.orphaned
           })
       }
     }
@@ -512,25 +514,33 @@ export default function App() {
       let notesToWrite = result.notes
       let sentencesToKeep = result.sentences
 
-      const orphanWords = result.orphanNotes.map((n) => n.word).filter(Boolean)
-      const hasOrphans = result.orphanNotes.length > 0 || result.orphanSentences.length > 0
+      const orphanWords = result.newOrphanNotes.map((n) => n.word).filter(Boolean)
+      const hasOrphans = result.newOrphanNotes.length > 0 || result.newOrphanSentences.length > 0
 
       if (hasOrphans) {
         const parts: string[] = ['以下笔记对应的原文已经不在文中了：\n']
         if (orphanWords.length > 0) parts.push(`单词：${orphanWords.join('、')}`)
-        for (const s of result.orphanSentences) {
+        for (const s of result.newOrphanSentences) {
           const preview = s.text.length > 30 ? `${s.text.slice(0, 30)}…` : s.text
           parts.push(`句子：「${preview}」`)
         }
-        parts.push('\n是否一并删除这些笔记？\n点「取消」则先保留。')
+        parts.push('\n是否一并删除这些笔记？\n点「取消」则保留，并在生词表里标记为「原文已删除」。')
 
         if (!window.confirm(parts.join('\n'))) {
-          // 用户选择保留：孤儿笔记原样留在旧坐标上，不动它们
+          // 用户选择保留：留在原坐标上并打标记。
+          // 打了标记之后，以后每次对账都不会再拿它来打扰用户；
+          // 若哪天原文里又出现这个词，会自动重新挂上并清掉标记。
           notesToWrite = { ...result.notes }
-          for (const orphan of result.orphanNotes) {
-            if (!notesToWrite[orphan.anchorId]) notesToWrite[orphan.anchorId] = pageNotes[orphan.anchorId]
+          for (const orphan of result.newOrphanNotes) {
+            const original = pageNotes[orphan.anchorId]
+            if (original && !notesToWrite[orphan.anchorId]) {
+              notesToWrite[orphan.anchorId] = { ...original, orphaned: true }
+            }
           }
-          sentencesToKeep = [...result.sentences, ...result.orphanSentences]
+          sentencesToKeep = [
+            ...result.sentences,
+            ...result.newOrphanSentences.map((s) => ({ ...s, orphaned: true }))
+          ]
         }
       }
 

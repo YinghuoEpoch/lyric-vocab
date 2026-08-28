@@ -9,6 +9,8 @@ interface VocabItem {
   phonetic?: string
   pos?: string
   definition?: string
+  /** 原文已删除：正文里已经没有这个词了，但笔记被保留下来 */
+  orphaned?: boolean
 }
 
 type NotesTab = 'vocab' | 'sentences'
@@ -52,6 +54,15 @@ function SentenceCard({
         >
           {sentence.text}
         </p>
+
+        {sentence.orphaned && (
+          <span
+            className="self-start px-2 py-0.5 rounded-full bg-stone-100 text-ink-muted text-xs font-medium border border-stone-300/70"
+            title="正文里已经没有这句话了，笔记被保留下来"
+          >
+            原文已删除
+          </span>
+        )}
 
         {/* 中文释义：辅助说明 */}
         {sentence.meaning && (
@@ -211,6 +222,14 @@ export function RightSidebar({
                         </span>
                       )}
                     </div>
+                    {item.orphaned && (
+                      <span
+                        className="shrink-0 px-2 py-0.5 rounded-full bg-stone-100 text-ink-muted text-xs font-medium border border-stone-300/70"
+                        title="正文里已经没有这个词了，笔记被保留下来"
+                      >
+                        原文已删除
+                      </span>
+                    )}
                     {item.pos && (
                       <span className="shrink-0 px-2 py-0.5 rounded-full bg-stone-200/80 text-ink text-xs font-medium">
                         {item.pos}
