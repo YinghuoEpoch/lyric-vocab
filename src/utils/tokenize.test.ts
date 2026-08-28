@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { tokenizeLine } from './tokenize'
-import { buildWordList } from './reconcile'
+import { buildWordList, joinWords } from './reconcile'
 
 /**
  * 分词规则的回归测试。
@@ -107,5 +107,41 @@ describe('中英混排与词编号', () => {
 
   it('重音字母仍算词内字符', () => {
     expect(words('mère café')).toEqual(['mère', 'café'])
+  })
+})
+
+describe('划句子时要还原出可读的原文', () => {
+  /** 模拟「从第一个词划到最后一个词」得到的句摘原文 */
+  const rangeText = (line: string) => joinWords(buildWordList(line))
+
+  it("缩写不能在拼回句子时丢掉（曾经拼成 I do know she here）", () => {
+    expect(rangeText("I don't know she's here")).toBe("I don't know she's here")
+  })
+
+  it('弯撇号同样还原得回来', () => {
+    expect(rangeText('she’s gone')).toBe('she’s gone')
+  })
+
+  it('所有格与不规则缩写也不丢', () => {
+    expect(rangeText("the students' books")).toBe("the students' books")
+    expect(rangeText("we can't stay")).toBe("we can't stay")
+  })
+
+  it("rock 'n' roll 里贴着词的撇号也能还原", () => {
+    expect(rangeText("rock 'n' roll")).toBe("rock 'n' roll")
+  })
+
+  it('后缀只跟着自己的词，不会串到别的词上', () => {
+    const words = buildWordList("it's a test")
+    expect(words.map((w) => `${w.word}|${w.suffix ?? ''}`)).toEqual([
+      "it|'s",
+      'a|',
+      'test|'
+    ])
+  })
+
+  it('还原原文不影响单词本身（笔记记的仍是 she 不是 she’s）', () => {
+    const words = buildWordList("she's here")
+    expect(words.map((w) => w.word)).toEqual(['she', 'here'])
   })
 })

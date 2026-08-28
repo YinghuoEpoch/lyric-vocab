@@ -44,6 +44,28 @@ export function makeOrphanKey(): string {
 export interface WordRef {
   anchorId: string
   word: string
+  /**
+   * 紧贴在词前面的撇号，如 rock 'n' roll 里的 'n。
+   */
+  prefix?: string
+  /**
+   * 紧贴在词后面的撇号部分：拆出去的缩写后缀（she 的 's、do 的 n't），
+   * 或所有格的尾撇号（students'）。
+   *
+   * 选词、记笔记只认 word；重建句摘原文时要带上它，否则
+   * "I don't know" 会被拼成 "I do know"。
+   */
+  suffix?: string
+}
+
+/** 词 + 紧贴它的撇号，用于还原成人能读的原文 */
+export function wordWithSuffix(w: WordRef): string {
+  return `${w.prefix ?? ''}${w.word}${w.suffix ?? ''}`
+}
+
+/** 把一段连续的词还原成原文 */
+export function joinWords(words: WordRef[]): string {
+  return words.map(wordWithSuffix).join(' ')
 }
 
 /**
@@ -57,11 +79,36 @@ export function buildWordList(content: string): WordRef[] {
   const out: WordRef[] = []
   lines.forEach((line, lineIndex) => {
     let wordIndex = 0
+    // 上一段「其它」文本若以撇号结尾，说明这个撇号贴着下一个词（rock 'n' roll 的 'n）
+    let pendingPrefix = ''
+
     for (const seg of tokenizeLine(line)) {
       if (seg.type === 'en') {
-        out.push({ anchorId: `L${lineIndex}W${wordIndex}`, word: seg.text })
+        const ref: WordRef = { anchorId: `L${lineIndex}W${wordIndex}`, word: seg.text }
+        if (pendingPrefix) ref.prefix = pendingPrefix
+        out.push(ref)
         wordIndex++
+        pendingPrefix = ''
+        continue
       }
+
+      pendingPrefix = ''
+      if (seg.type !== 'other') continue
+
+      const last = out[out.length - 1]
+      if (seg.contraction) {
+        // 从词里拆出来的缩写后缀，直接挂回那个词
+        if (last) last.suffix = (last.suffix ?? '') + seg.text
+        continue
+      }
+
+      // 紧跟在词后面的撇号：所有格 students'
+      const leading = seg.text.match(/^['’]+/)
+      if (leading && last && !last.suffix) last.suffix = leading[0]
+
+      // 紧贴下一个词的撇号
+      const trailing = seg.text.match(/['’]+$/)
+      if (trailing) pendingPrefix = trailing[0]
     }
   })
   return out
@@ -339,10 +386,7 @@ export function reconcilePage(
     }
 
     // 范围缩了或挪了：连原文一起按新位置重新取一遍，保证列表里显示的文字是准的
-    const text = newList
-      .slice(lo, hi + 1)
-      .map((w) => w.word)
-      .join(' ')
+    const text = joinWords(newList.slice(lo, hi + 1))
 
     nextSentences.push(unmark({ ...sentence, startAnchorId: nextStart, endAnchorId: nextEnd, text }))
     changed = true
@@ -362,7 +406,7 @@ function locateSequence(
   for (let i = 0; i + target.length <= list.length; i++) {
     let hit = true
     for (let k = 0; k < target.length; k++) {
-      if (list[i + k].word.toLowerCase() !== target[k]) {
+      if (wordWithSuffix(list[i + k]).toLowerCase() !== target[k]) {
         hit = false
         break
       }

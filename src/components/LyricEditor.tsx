@@ -4,7 +4,7 @@ import type { NotesMap, ReaderSettings, Sentence, WordNote } from '../types'
 import { X, Trash2 } from 'lucide-react'
 import { useWordInteraction } from '../hooks/useWordInteraction'
 import { useBackHandler, BackPriority } from '../hooks/useBackHandler'
-import { buildWordList } from '../utils/reconcile'
+import { buildWordList, joinWords } from '../utils/reconcile'
 
 const PROGRESS_DEBOUNCE_MS = 700
 
@@ -93,10 +93,8 @@ export function LyricEditor({
       const j = orderedWords.findIndex((w) => w.anchorId === endAnchorId)
       if (i === -1 || j === -1) return ''
       const [lo, hi] = i <= j ? [i, j] : [j, i]
-      return orderedWords
-        .slice(lo, hi + 1)
-        .map((w) => w.word)
-        .join(' ')
+      // 带上缩写后缀，否则句摘原文会变成 "I do know"
+      return joinWords(orderedWords.slice(lo, hi + 1))
     },
     [orderedWords]
   )

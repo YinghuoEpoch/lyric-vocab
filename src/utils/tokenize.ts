@@ -58,6 +58,12 @@ export type SegmentType = 'en' | 'zh' | 'other'
 export interface Segment {
   type: SegmentType
   text: string
+  /**
+   * 该片段是前一个英文词拆出来的缩写后缀（she's 的 's、don't 的 n't）。
+   * 它不算单词、不参与编号，但重建句摘原文时要跟着前面的词一起带上，
+   * 否则 "I don't know" 会被拼成 "I do know"。
+   */
+  contraction?: true
 }
 
 /**
@@ -103,11 +109,11 @@ export function tokenizeLine(line: string): Segment[] {
   if (!line) return []
   const segments: Segment[] = []
 
-  /** 把相邻的 other 合并，避免产生一堆碎片 */
+  /** 把相邻的 other 合并，避免产生一堆碎片（但不并入缩写后缀，那个要保持可辨认） */
   const pushOther = (text: string) => {
     if (!text) return
     const last = segments[segments.length - 1]
-    if (last && last.type === 'other') last.text += text
+    if (last && last.type === 'other' && !last.contraction) last.text += text
     else segments.push({ type: 'other', text })
   }
 
@@ -139,7 +145,7 @@ export function tokenizeLine(line: string): Segment[] {
 
       const [word, suffix] = splitContraction(run)
       segments.push({ type: 'en', text: word })
-      if (suffix) pushOther(suffix)
+      if (suffix) segments.push({ type: 'other', text: suffix, contraction: true })
       continue
     }
 
