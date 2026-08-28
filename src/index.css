@@ -31,12 +31,24 @@ body {
 @media (max-width: 767px) {
   #root {
     padding-top: max(env(safe-area-inset-top, 0px), 30px);
+    /*
+     * 底部避让系统导航栏。
+     * 手机若用「后台/主页/返回」三键导航，底部会被系统占掉一条，
+     * 不留白的话 app 的内容（比如左侧栏底部那排图标）会被压在下面点不到。
+     * 这里不设最小值：手势导航的手机这个值接近 0，不会白白浪费空间。
+     */
+    padding-bottom: env(safe-area-inset-bottom, 0px);
     background-color: #ffffff;
   }
 
-  /* 可复用的 Safe Area 顶部内边距工具类，用于侧边栏等固定层 */
+  /*
+   * 可复用的 Safe Area 内边距工具类，用于侧边栏等固定层。
+   * 侧边栏是 fixed 定位、按视口高度铺满的，不受 #root 内边距影响，
+   * 所以必须自己再避让一次底部。
+   */
   .safe-area-padding {
     padding-top: max(env(safe-area-inset-top, 0px), 30px);
+    padding-bottom: env(safe-area-inset-bottom, 0px);
   }
 }
 

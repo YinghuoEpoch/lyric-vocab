@@ -114,7 +114,7 @@ export function useWordInteraction({
   )
 
   const interactionHint = hasSelection
-    ? '轻点其它单词可连成句子 · 再点一次取消'
+    ? '轻点其它单词可连成句子'
     : '阅读模式 · 长按单词添加笔记'
 
   return { getWordHandlers, pressingAnchorId, interactionHint }
