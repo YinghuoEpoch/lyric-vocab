@@ -171,6 +171,26 @@ export function LyricEditor({
     }
   }, [])
 
+  /**
+   * 编辑模式下的正文草稿。
+   *
+   * textarea 显示什么由 React 控制。原来它直接绑 content，而 content 要等异步保存
+   * 走完一圈才更新 —— 在这一圈走完之前，React 认为「数据没变、你的输入不算数」，
+   * 于是把 textarea 的内容改回旧文本；而重新写入内容会让浏览器把光标顶到末尾。
+   *
+   * 这里用一份「敲一下就立刻更新」的本地草稿：React 当场就看到新内容，
+   * 不会去纠正它，光标自然留在原地。保存仍然照常异步进行。
+   */
+  const [draft, setDraft] = useState(content)
+
+  // 进入编辑模式、或切换到另一篇文档时，用最新正文重置草稿。
+  // 故意不跟着 content 变化重置：编辑过程中 content 会被自己的输入不断更新，
+  // 跟着它走又会把光标顶到末尾，等于没修。
+  useEffect(() => {
+    if (editMode) setDraft(content)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editMode, pageId])
+
   const [selection, setSelection] = useState<Selection | null>(null)
   const [bubbleForm, setBubbleForm] = useState<WordNote>({ word: '' })
   const [sentenceForm, setSentenceForm] = useState({ grammar: '', meaning: '' })
@@ -442,8 +462,12 @@ export function LyricEditor({
               textRendering: 'optimizeSpeed',
               lineHeight: 1.8
             }}
-            value={content}
-            onChange={(e) => onContentChange?.(e.target.value)}
+            value={draft}
+            onChange={(e) => {
+              // 先同步更新草稿（光标不被顶走），再照常触发异步保存
+              setDraft(e.target.value)
+              onContentChange?.(e.target.value)
+            }}
             placeholder="粘贴或输入中英混合文档内容..."
             spellCheck={false}
           />
