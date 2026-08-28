@@ -187,10 +187,36 @@ describe('reconcilePage：句摘', () => {
     expect(r.newOrphanSentences).toHaveLength(1)
   })
 
-  it('只剩一头（起点或终点没了）也算不完整，进入待确认列表', () => {
+  it('删掉句摘的最后一个词时，范围往里收缩，不再整条报废', () => {
     const NEW = OLD.replace('there were times', 'there were')
     const r = reconcilePage(OLD, NEW, {}, [sentence()])
 
+    expect(r.newOrphanSentences).toEqual([])
+    expect(r.sentences[0].text).toBe('there were')
+    expect(r.sentences[0].endAnchorId).toBe('L2W2')
+  })
+
+  it('删掉句摘的第一个词时同样往里收缩', () => {
+    const NEW = OLD.replace('But there were times', 'But were times')
+    const r = reconcilePage(OLD, NEW, {}, [sentence()])
+
+    expect(r.newOrphanSentences).toEqual([])
+    expect(r.sentences[0].text).toBe('were times')
+  })
+
+  it('删掉句摘中间的词时范围照样收缩，文字重新取准', () => {
+    const NEW = OLD.replace('there were times', 'there times')
+    const r = reconcilePage(OLD, NEW, {}, [sentence()])
+
+    expect(r.newOrphanSentences).toEqual([])
+    expect(r.sentences[0].text).toBe('there times')
+  })
+
+  it('范围内只剩一个词时判定为没了（一个词不成句）', () => {
+    const NEW = OLD.replace('there were times', 'times')
+    const r = reconcilePage(OLD, NEW, {}, [sentence()])
+
+    expect(r.sentences).toHaveLength(0)
     expect(r.newOrphanSentences).toHaveLength(1)
   })
 

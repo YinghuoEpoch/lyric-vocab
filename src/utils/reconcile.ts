@@ -278,6 +278,34 @@ export function reconcilePage(
   const nextSentences: Sentence[] = []
   const newOrphanSentences: Sentence[] = []
 
+  /**
+   * 一条句摘在新正文里还剩下哪一段，返回 [起, 止] 在 newList 中的下标。
+   *
+   * 逐个检查旧范围内的每个词，把还活着的挑出来，用其中最靠前和最靠后的两个
+   * 当作新的起止 —— 也就是「范围往里收缩」。
+   * 剩下不足两个词就判定为没了：一个词的「句摘」已经不是句子。
+   */
+  const survivingRange = (sentence: Sentence): [number, number] | null => {
+    const from = oldIndexOf.get(sentence.startAnchorId)
+    const to = oldIndexOf.get(sentence.endAnchorId)
+    // 起止坐标在旧正文里就已经失效（历史遗留的坏数据）：无从判断，按没了处理
+    if (from === undefined || to === undefined) return null
+
+    const [lo, hi] = from <= to ? [from, to] : [to, from]
+    let first: number | null = null
+    let last: number | null = null
+
+    for (let i = lo; i <= hi; i++) {
+      const j = mapping[i]
+      if (j === null || j === undefined) continue
+      if (first === null) first = j
+      last = j
+    }
+
+    if (first === null || last === null || last - first < 1) return null
+    return [first, last]
+  }
+
   for (const sentence of sentences) {
     // 同上：已标记的孤儿不看坐标，直接拿存下来的原文去全文找。
     if (sentence.orphaned) {
@@ -291,25 +319,26 @@ export function reconcilePage(
       continue
     }
 
-    const nextStart = remap(sentence.startAnchorId)
-    const nextEnd = remap(sentence.endAnchorId)
+    // 看整个范围里还剩下哪些词，而不是只看头尾两个。
+    // 只看头尾的话，删掉句子的第一个词就会让整条句摘报废 —— 可其余部分明明还好好的。
+    const survivors = survivingRange(sentence)
 
-    // 两头都在才算这句话还完整；只剩一头的半句留着没有意义
-    if (nextStart === null || nextEnd === null) {
+    if (survivors === null) {
       newOrphanSentences.push(sentence)
       changed = true
       continue
     }
+
+    const [lo, hi] = survivors
+    const nextStart = newList[lo].anchorId
+    const nextEnd = newList[hi].anchorId
 
     if (nextStart === sentence.startAnchorId && nextEnd === sentence.endAnchorId) {
       nextSentences.push(sentence)
       continue
     }
 
-    // 范围变了：连原文一起按新位置重新取一遍，保证列表里显示的文字是准的
-    const i = newList.findIndex((w) => w.anchorId === nextStart)
-    const j = newList.findIndex((w) => w.anchorId === nextEnd)
-    const [lo, hi] = i <= j ? [i, j] : [j, i]
+    // 范围缩了或挪了：连原文一起按新位置重新取一遍，保证列表里显示的文字是准的
     const text = newList
       .slice(lo, hi + 1)
       .map((w) => w.word)

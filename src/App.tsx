@@ -656,6 +656,22 @@ export default function App() {
     void reconcileAfterEdit(snapshot.pageId, snapshot.content, page.content)
   }, [initializing, appData.pages, reconcileAfterEdit])
 
+  /** 从生词板删除一条单词笔记（目前只有「原文已删除」的条目会露出这个入口） */
+  const handleDeleteVocabNote = useCallback(
+    (pageId: string, anchorId: string) => {
+      void (async () => {
+        await deleteNoteForPage(pageId, anchorId)
+        await refreshData()
+      })()
+    },
+    [refreshData]
+  )
+
+  /** 从生词板删除一条句摘 */
+  const handleDeleteSentenceById = useCallback((id: string) => {
+    setSentences((prev) => prev.filter((s) => s.id !== id))
+  }, [])
+
   const handleAddSentence = useCallback(
     (s: {
       text: string
@@ -1100,6 +1116,8 @@ export default function App() {
             setSentences={setSentences}
             onScrollToWord={handleScrollToWord}
             onEditSentence={handleEditSentence}
+            onDeleteVocab={handleDeleteVocabNote}
+            onDeleteSentence={handleDeleteSentenceById}
             currentPageId={currentPageId}
             onClose={() => setActivePanel(null)}
             documentProgress={documentReadingProgress}

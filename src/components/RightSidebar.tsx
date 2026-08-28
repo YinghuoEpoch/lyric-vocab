@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { PanelRightClose, BookOpen, ChevronRight } from 'lucide-react'
+import { PanelRightClose, BookOpen, ChevronRight, Trash2 } from 'lucide-react'
 import type { Sentence } from '../types'
 
 interface VocabItem {
@@ -23,6 +23,7 @@ interface SentenceCardProps {
   isActive: boolean
   onToggle: () => void
   onEdit: (sentence: Sentence) => void
+  onDelete: (id: string) => void
 }
 
 function SentenceCard({
@@ -30,7 +31,8 @@ function SentenceCard({
   alt,
   isActive,
   onToggle,
-  onEdit
+  onEdit,
+  onDelete
 }: SentenceCardProps) {
   return (
     <div className="flex w-full rounded-lg overflow-hidden">
@@ -56,12 +58,27 @@ function SentenceCard({
         </p>
 
         {sentence.orphaned && (
-          <span
-            className="self-start px-2 py-0.5 rounded-full bg-stone-100 text-ink-muted text-xs font-medium border border-stone-300/70"
-            title="正文里已经没有这句话了，笔记被保留下来"
-          >
-            原文已删除
-          </span>
+          <div className="flex items-center gap-1.5">
+            <span
+              className="px-2 py-0.5 rounded-full bg-stone-100 text-ink-muted text-xs font-medium border border-stone-300/70"
+              title="正文里已经没有这句话了，笔记被保留下来"
+            >
+              原文已删除
+            </span>
+            {/* 同生词卡：孤儿在正文里已无对应内容，只能从这里删 */}
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation()
+                onDelete(sentence.id)
+              }}
+              className="p-1 rounded-md text-ink-muted hover:bg-red-50 hover:text-red-600"
+              title="删除这条句摘"
+              aria-label="删除这条句摘"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+            </button>
+          </div>
         )}
 
         {/* 中文释义：辅助说明 */}
@@ -101,6 +118,11 @@ interface RightSidebarProps {
   setSentences: React.Dispatch<React.SetStateAction<Sentence[]>>
   onScrollToWord: (pageId: string, anchorId: string) => void
   onEditSentence: (sentence: Sentence) => void
+  /** 删除一条单词笔记。目前只给「原文已删除」的条目用 —— 正常单词在正文里长按即可删，
+   *  而孤儿在正文里已经没有对应的词，不给入口就永远删不掉。 */
+  onDeleteVocab: (pageId: string, anchorId: string) => void
+  /** 删除一条句摘，同上 */
+  onDeleteSentence: (id: string) => void
   currentPageId: string | null
   onClose: () => void
   /** 当前文档阅读进度 0–100 */
@@ -118,6 +140,8 @@ export function RightSidebar({
   setSentences: _setSentences,
   onScrollToWord,
   onEditSentence,
+  onDeleteVocab,
+  onDeleteSentence,
   currentPageId,
   onClose,
   documentProgress = 0,
@@ -203,10 +227,13 @@ export function RightSidebar({
             <ul className="space-y-2">
               {filtered.map((item, index) => (
               <li key={`${item.pageId}-${item.anchorId}`}>
-                <button
-                  type="button"
+                {/* 外层用 div 而非 button：孤儿条目里还要再放一个删除按钮，
+                    button 套 button 是非法结构 */}
+                <div
+                  role="button"
+                  tabIndex={0}
                   onClick={() => onScrollToWord(item.pageId, item.anchorId)}
-                  className={`w-full text-left rounded-lg border border-stone-200/70 p-2.5 hover:border-stone-300/80 hover:shadow-sm transition-all group ${
+                  className={`w-full text-left rounded-lg border border-stone-200/70 p-2.5 hover:border-stone-300/80 hover:shadow-sm transition-all group cursor-pointer ${
                     index % 2 === 0 ? 'bg-white' : 'bg-gray-50/70'
                   }`}
                 >
@@ -235,6 +262,22 @@ export function RightSidebar({
                         {item.pos}
                       </span>
                     )}
+                    {/* 只有孤儿才给删除按钮：正常单词回正文里长按就能删，
+                        而孤儿在正文里已经没有对应的词，不给这个入口就永远删不掉 */}
+                    {item.orphaned && (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          onDeleteVocab(item.pageId, item.anchorId)
+                        }}
+                        className="shrink-0 p-1 rounded-md text-ink-muted hover:bg-red-50 hover:text-red-600"
+                        title="删除这条笔记"
+                        aria-label={`删除 ${item.word} 的笔记`}
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    )}
                   </div>
                   {/* 底部栏：中文释义 */}
                   {item.definition && (
@@ -242,7 +285,7 @@ export function RightSidebar({
                       {item.definition}
                     </p>
                   )}
-                </button>
+                </div>
               </li>
             ))}
           </ul>
@@ -265,6 +308,7 @@ export function RightSidebar({
                   onEdit={() => {
                     onEditSentence(s)
                   }}
+                  onDelete={onDeleteSentence}
                 />
               </li>
             ))}
