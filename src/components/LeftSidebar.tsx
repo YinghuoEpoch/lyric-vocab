@@ -206,6 +206,10 @@ export function LeftSidebar({
   )
 
   const toggleOrganizeMode = useCallback(() => {
+    // 整理模式下不显示「更多」按钮，菜单开着时切进来会连带消失，
+    // 状态留着没意义，顺手清掉
+    setMenuOpen(null)
+
     if (!organizeMode) {
       // 进入整理模式：记录当前展开的文件夹，并折叠全部
       const openIds = books.filter((b) => !collapsedBooks[b.id]).map((b) => b.id)
@@ -647,7 +651,7 @@ export function LeftSidebar({
                                 </span>
                               )}
                             </button>
-                            {!isEditingPage && (
+                            {!isEditingPage && !organizeMode && (
                               <div className="relative shrink-0">
                                 <button
                                   type="button"
@@ -788,7 +792,7 @@ export function LeftSidebar({
                           )}
                         </button>
                         {/* 右侧更多菜单 */}
-                        {!isEditingBook && (
+                        {!isEditingBook && !organizeMode && (
                           <div className="relative shrink-0">
                           <button
                               type="button"
@@ -913,7 +917,7 @@ export function LeftSidebar({
                                           </span>
                                         )}
                                       </button>
-                                      {!isEditingPage && (
+                                      {!isEditingPage && !organizeMode && (
                                         <div className="relative shrink-0">
                                           <button
                                             type="button"
