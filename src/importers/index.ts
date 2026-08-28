@@ -1,5 +1,6 @@
 import type { ImportResult, Importer } from './types'
 import { txtImporter } from './txt'
+import { epubImporter } from './epub'
 
 /**
  * 导入器登记处。
@@ -8,7 +9,7 @@ import { txtImporter } from './txt'
  * 在这个数组里加一行就行 —— 界面代码一个字都不用动，
  * 连文件选择器能选什么类型都会自动跟着变。
  */
-const importers: Importer[] = [txtImporter]
+const importers: Importer[] = [txtImporter, epubImporter]
 
 /** 文件选择器的 accept 值，自动汇总所有已登记的格式 */
 export const IMPORT_ACCEPT = importers.map((i) => i.accept).join(',')
