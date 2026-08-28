@@ -219,10 +219,13 @@ function VocabularyDashboardInner({
             <button
               type="button"
               onClick={onOpenAutoFill}
-              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-sm font-medium bg-amber-600 hover:bg-amber-700 text-white transition-colors"
+              /* 视觉微调：它和旁边三个按钮尺寸本来完全一致（32px），
+                 但实心底色让它读起来像一个「物体」，另外三个只是「文字」，
+                 于是显得更大更重。把盒子和图标各收一点，找回平衡。 */
+              className="flex items-center gap-1 px-2 py-[5px] rounded-lg text-sm font-medium bg-amber-600 hover:bg-amber-700 text-white transition-colors"
               title={`还有 ${autoFillCount} 条空白笔记，用 AI 补全`}
             >
-              <Sparkles className="w-4 h-4" />
+              <Sparkles className="w-3.5 h-3.5" />
               填充 {autoFillCount}
             </button>
           )}
