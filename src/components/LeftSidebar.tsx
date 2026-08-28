@@ -1137,8 +1137,17 @@ export function LeftSidebar({
         )}
 
       {/* 回收站弹窗 */}
-      {recycleOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/30">
+      {/*
+       * 用传送门挂到 body 上，而不是留在 aside 里面。
+       * 侧栏外层带 transform，而 transform 会让内部 position:fixed 的定位基准
+       * 从「整个屏幕」变成「侧栏本身」—— 遮罩因此只盖住 250px 宽的侧栏，
+       * 点侧栏外面根本点不到它，弹窗还会跟着侧栏一起被收走。
+       */}
+      {recycleOpen && createPortal(
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/30"
+          onClick={() => setRecycleOpen(false)}
+        >
           <div
             className="bg-white rounded-xl shadow-xl border border-paper-border w-full max-w-md max-h-[80vh] flex flex-col"
             onClick={(e) => e.stopPropagation()}
@@ -1216,12 +1225,16 @@ export function LeftSidebar({
               )}
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
-      {/* 彻底删除二次确认 */}
-      {confirmDelete && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/40" onClick={() => setConfirmDelete(null)}>
+      {/* 彻底删除二次确认。同样挂到 body，否则遮罩只盖住侧栏 */}
+      {confirmDelete && createPortal(
+        <div
+          className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/40"
+          onClick={() => setConfirmDelete(null)}
+        >
           <div
             className="bg-white rounded-xl shadow-xl border border-paper-border p-4 max-w-sm w-full"
             onClick={(e) => e.stopPropagation()}
@@ -1248,7 +1261,8 @@ export function LeftSidebar({
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </aside>
   )
