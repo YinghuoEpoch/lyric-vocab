@@ -2,8 +2,7 @@ import { useState, useCallback, useRef, useLayoutEffect, useEffect, useMemo } fr
 import { tokenizeLine } from '../utils/tokenize'
 import type { NotesMap, ReaderSettings, Sentence, WordNote } from '../types'
 import { X, Trash2 } from 'lucide-react'
-import { useIsMobile } from '../hooks/useIsMobile'
-import { useResponsiveInteraction } from '../hooks/useResponsiveInteraction'
+import { useWordInteraction } from '../hooks/useWordInteraction'
 
 const PROGRESS_DEBOUNCE_MS = 700
 
@@ -77,7 +76,6 @@ export function LyricEditor({
   onReadingProgressChange,
   readerSettings = { fontSize: 18, fontFamily: 'sans', theme: 'pure' }
 }: LyricEditorProps) {
-  const isMobile = useIsMobile()
   const lines = content ? content.split(/\n/) : ['']
 
   /** 文档顺序下的所有英文词（用于句摘范围与高亮） */
@@ -174,12 +172,9 @@ export function LyricEditor({
   }, [])
 
   const [selection, setSelection] = useState<Selection | null>(null)
-  const [popupPosition, setPopupPosition] = useState<{ left: number; top: number } | null>(null)
   const [bubbleForm, setBubbleForm] = useState<WordNote>({ word: '' })
   const [sentenceForm, setSentenceForm] = useState({ grammar: '', meaning: '' })
-  // 小气泡（保存 / 更多）当前模式：单词 or 句摘；null 表示不显示
-  const [miniMode, setMiniMode] = useState<'word' | 'sentence' | null>(null)
-  // 大弹窗当前模式：单词 or 句摘；null 表示不显示
+  // 底部抽屉当前模式：单词 or 句摘；null 表示不显示
   const [fullMode, setFullMode] = useState<'word' | 'sentence' | null>(null)
 
   // 当前选中的句子是否对应「已保存的句摘」：
@@ -196,11 +191,9 @@ export function LyricEditor({
     )
   }, [selection, sentences, pageId])
 
-  // 完全清空所有选择与弹窗
+  // 完全清空选择与抽屉
   const clearAll = useCallback(() => {
     setSelection(null)
-    setPopupPosition(null)
-    setMiniMode(null)
     setFullMode(null)
   }, [])
 
@@ -228,22 +221,8 @@ export function LyricEditor({
       meaning: pendingSentenceEdit.meaning || ''
     })
 
-    // 计算弹窗位置（使用句子起始 anchor 的位置）
-    const startEl = document.getElementById(pendingSentenceEdit.startAnchorId)
-    if (startEl) {
-      const rect = startEl.getBoundingClientRect()
-      setPopupPosition({ left: rect.left, top: rect.bottom + 6 })
-    } else {
-      // 如果找不到元素，使用移动端的默认位置
-      setPopupPosition({
-        left: Math.max(16, window.innerWidth / 2 - 150),
-        top: window.innerHeight / 2 - 140
-      })
-    }
-
-    // 打开大弹窗（句子模式）
+    // 打开底部抽屉（句子模式）
     setFullMode('sentence')
-    setMiniMode(null)
 
     // 清空 pendingSentenceEdit，避免重复触发
     // 注意：这里不能直接调用 setPendingSentenceEdit，因为它是从 props 传入的
@@ -277,65 +256,10 @@ export function LyricEditor({
     return set
   }, [sentences, orderedWords])
 
-  const handleWordClick = useCallback(
-    (e: React.MouseEvent, anchorId: string, word: string) => {
-      e.preventDefault()
-      const rect = (e.target as HTMLElement).getBoundingClientRect()
-      const pos = { left: rect.left, top: rect.bottom + 6 }
-
-      if (!selection) {
-        setSelection({ type: 'word', anchorId, word })
-        setPopupPosition(pos)
-        const existing = notes[anchorId]
-        setBubbleForm(
-          existing
-            ? { word: existing.word, phonetic: existing.phonetic, pos: existing.pos, definition: existing.definition }
-            : { word }
-        )
-        setMiniMode('word')
-        setFullMode(null)
-        return
-      }
-
-      if (selection.type === 'word') {
-        if (selection.anchorId === anchorId) {
-          setSelection(null)
-          setPopupPosition(null)
-          setMiniMode(null)
-          setFullMode(null)
-          return
-        }
-        const { startAnchorId, endAnchorId } = normalizeRange(selection.anchorId, anchorId)
-        const text = getRangeText(startAnchorId, endAnchorId)
-        setSelection({ type: 'sentence', startAnchorId, endAnchorId, text })
-        setSentenceForm({ grammar: '', meaning: '' })
-        setPopupPosition(pos)
-        setMiniMode('sentence')
-        setFullMode(null)
-        return
-      }
-
-      if (selection.type === 'sentence') {
-        const { startAnchorId, endAnchorId } = normalizeRange(selection.startAnchorId, anchorId)
-        const text = getRangeText(startAnchorId, endAnchorId)
-        setSelection({ type: 'sentence', startAnchorId, endAnchorId, text })
-        setPopupPosition(pos)
-        setMiniMode('sentence')
-      }
-    },
-    [notes, selection, getRangeText, normalizeRange]
-  )
-
-  /** 移动端双击查词：同桌面一样支持「词 → 句摘 → 修正」，但始终使用底部抽屉（不显示小气泡） */
-  const openBubbleMobile = useCallback(
+  /** 长按取词：支持「词 → 句摘 → 修正范围」，始终使用底部抽屉 */
+  const openWordDrawer = useCallback(
     (anchorId: string, word: string) => {
-      // 底部抽屉并不依赖精确的 (left, top)，但为了与桌面逻辑一致，仍保留一个大致位置
-      setPopupPosition({
-        left: Math.max(16, window.innerWidth / 2 - 150),
-        top: window.innerHeight / 2 - 140
-      })
-
-      // 1. 当前没有选中：第一次双击，进入单词模式
+      // 1. 当前没有选中：第一次长按，进入单词模式
       if (!selection) {
         const existing = notes[anchorId]
         setBubbleForm(
@@ -344,24 +268,22 @@ export function LyricEditor({
             : { word }
         )
         setSelection({ type: 'word', anchorId, word })
-        setMiniMode(null)
         setFullMode('word') // 打开底部抽屉（音标 / 词性 / 释义）
         return
       }
 
       // 2. 已经选中一个单词
       if (selection.type === 'word') {
-        // 再次双击同一个词：视为取消选中，关闭抽屉与高亮
+        // 再次长按同一个词：视为取消选中，关闭抽屉与高亮
         if (selection.anchorId === anchorId) {
           clearAll()
           return
         }
-        // 双击另一个词：升级为句摘 A→B
+        // 长按另一个词：升级为句摘 A→B
         const { startAnchorId, endAnchorId } = normalizeRange(selection.anchorId, anchorId)
         const text = getRangeText(startAnchorId, endAnchorId)
         setSelection({ type: 'sentence', startAnchorId, endAnchorId, text })
         setSentenceForm({ grammar: '', meaning: '' })
-        setMiniMode(null)
         setFullMode('sentence') // 抽屉切换为句摘表单（句型 / 翻译）
         return
       }
@@ -371,7 +293,6 @@ export function LyricEditor({
         const { startAnchorId, endAnchorId } = normalizeRange(selection.startAnchorId, anchorId)
         const text = getRangeText(startAnchorId, endAnchorId)
         setSelection({ type: 'sentence', startAnchorId, endAnchorId, text })
-        setMiniMode(null)
         setFullMode('sentence')
       }
     },
@@ -379,11 +300,11 @@ export function LyricEditor({
   )
 
   /**
-   * 移动端：已有选区时，单击单词用于「连词成句 / 修正范围」：
-   * - 当前为单词模式：点击同一词 = 取消选中；点击另一词 = 升级为句摘 A→B
+   * 已有选区时，轻点单词用于「连词成句 / 修正范围」：
+   * - 当前为单词模式：点同一词 = 取消选中；点另一词 = 升级为句摘 A→B
    * - 当前为句摘模式：调整终点；若范围收缩为单个词，则退回单词模式
    */
-  const handleMobileTapAfterSelect = useCallback(
+  const adjustSelection = useCallback(
     (anchorId: string) => {
       if (!selection) return
 
@@ -400,7 +321,6 @@ export function LyricEditor({
         const text = getRangeText(startAnchorId, endAnchorId)
         setSelection({ type: 'sentence', startAnchorId, endAnchorId, text })
         setSentenceForm({ grammar: '', meaning: '' })
-        setMiniMode(null)
         setFullMode('sentence')
         return
       }
@@ -414,7 +334,6 @@ export function LyricEditor({
           const single = orderedWords.find((w) => w.anchorId === startAnchorId)
           const wordText = single?.word ?? ''
           setSelection({ type: 'word', anchorId: startAnchorId, word: wordText })
-          setMiniMode(null)
           setFullMode('word')
           return
         }
@@ -422,20 +341,16 @@ export function LyricEditor({
         // 2.2 否则维持句摘模式
         const text = getRangeText(startAnchorId, endAnchorId)
         setSelection({ type: 'sentence', startAnchorId, endAnchorId, text })
-        setMiniMode(null)
         setFullMode('sentence')
       }
     },
     [selection, normalizeRange, getRangeText, orderedWords, clearAll]
   )
 
-  const { getWordHandlers, interactionHint } = useResponsiveInteraction({
-    isMobile,
-    onDesktopClick: handleWordClick,
-    onMobileDoubleTap: openBubbleMobile,
-    onMobileTapAfterSelect: handleMobileTapAfterSelect,
-    hasSelection: !!selection,
-    doubleTapMs: 300
+  const { getWordHandlers, pressingAnchorId, interactionHint } = useWordInteraction({
+    onLongPress: openWordDrawer,
+    onTapWithSelection: adjustSelection,
+    hasSelection: !!selection
   })
 
   const saveBubble = useCallback(() => {
@@ -473,76 +388,21 @@ export function LyricEditor({
     clearAll()
   }, [selection, onDeleteSentence, clearAll])
 
-  // 小气泡：保存按钮（单词 / 句摘 轻量保存）
-  const handleMiniSave = useCallback(() => {
-    if (!selection || !miniMode) return
-    if (miniMode === 'word') {
-      if (selection.type !== 'word') return
-      // 如果该单词还没有笔记，则创建一个空内容的生词记录
-      if (!notes[selection.anchorId]) {
-        onNoteSave(selection.anchorId, { word: selection.word })
-      }
-    } else {
-      if (selection.type !== 'sentence') return
-      onAddSentence?.({
-        text: selection.text,
-        grammar: '',
-        meaning: '',
-        docId: pageId,
-        startAnchorId: selection.startAnchorId,
-        endAnchorId: selection.endAnchorId
-      })
-    }
-    // 轻量保存后：自动关闭小气泡，但保留当前选中与高亮
-    setMiniMode(null)
-    setPopupPosition(null)
-  }, [selection, miniMode, notes, onNoteSave, onAddSentence, pageId])
-
-  // 小气泡：更多按钮（打开大弹窗）
-  const handleMiniMore = useCallback(() => {
-    if (!selection || !miniMode) return
-    if (miniMode === 'word') {
-      if (selection.type !== 'word') return
-      const existing = notes[selection.anchorId]
-      if (existing) {
-        setBubbleForm({
-          word: existing.word,
-          phonetic: existing.phonetic,
-          pos: existing.pos,
-          definition: existing.definition
-        })
-      } else {
-        setBubbleForm({ word: selection.word })
-      }
-      setFullMode('word')
-    } else {
-      if (selection.type !== 'sentence') return
-      // 句摘模式：保持当前 sentenceForm，直接进入句摘编辑窗
-      setFullMode('sentence')
-    }
-  }, [selection, miniMode, notes])
-
-  // 全局点击：在单词 / 小气泡 / 大弹窗之外点击时，
-  // - 若当前有弹窗（fullMode / miniMode）：先关闭弹窗，保留选中与高亮
-  // - 若仅有选中：第二次点击则清除选中与高亮
+  // 点在单词和抽屉之外时：
+  // - 若抽屉开着：先收起抽屉，保留选中与高亮
+  // - 若只剩选中：再点一次清除选中与高亮
   useEffect(() => {
     const handleGlobalClick = (event: MouseEvent) => {
       const target = event.target as HTMLElement | null
       if (!target) return
 
-      // 点击在英文词 span 上：交给 handleWordClick 处理，不清空
+      // 点在英文词上：交给单词自己的长按 / 轻点逻辑，不清空
       if (target.closest('[data-word-span=\"true\"]')) return
-      // 点击在小气泡上：交给小气泡按钮处理，不清空
-      if (target.closest('[data-mini-bubble=\"true\"]')) return
-      // 点击在大弹窗或其遮罩上：交给弹窗自身逻辑处理，不清空
+      // 点在抽屉上：交给抽屉自身逻辑，不清空
       if (target.closest('[data-full-popup=\"true\"]')) return
 
-      // 其它任何地方：
-      // - 若当前存在弹窗：先关闭弹窗（fullMode / miniMode），保留 selection
-      // - 若当前仅存在 selection：清空所有状态
-      if (fullMode || miniMode) {
+      if (fullMode) {
         setFullMode(null)
-        setMiniMode(null)
       } else if (selection) {
         clearAll()
       }
@@ -552,7 +412,7 @@ export function LyricEditor({
     return () => {
       window.removeEventListener('click', handleGlobalClick)
     }
-  }, [selection, miniMode, fullMode, clearAll])
+  }, [selection, fullMode, clearAll])
 
   if (editMode) {
     return (
@@ -677,6 +537,7 @@ export function LyricEditor({
               wordIndex++
               const hasNote = !!notes[anchorId]
               const inSentenceRange = sentenceRangeAnchorSet.has(anchorId)
+              const isPressing = pressingAnchorId === anchorId
               const handlers = getWordHandlers(anchorId, word)
               return (
                 <span
@@ -685,11 +546,14 @@ export function LyricEditor({
                   id={anchorId}
                   role="button"
                   tabIndex={0}
-                  className={`cursor-pointer rounded px-0.5 -mx-0.5 hover:bg-amber-200/50 transition-colors select-none ${
-                    hasNote ? 'underline decoration-amber-600 decoration-2 underline-offset-2' : ''
-                  } ${inSentenceRange ? 'bg-amber-100/70' : ''}`}
+                  // 手指按住时立刻变色，让用户知道「按住是有反应的、再等一下就成」；
+                  // 触摸屏没有 hover，所以按压反馈是这里唯一的可点提示。
+                  className={`cursor-pointer rounded px-0.5 -mx-0.5 transition-colors select-none touch-manipulation ${
+                    isPressing ? 'bg-amber-300/70' : ''
+                  } ${hasNote ? 'underline decoration-amber-600 decoration-2 underline-offset-2' : ''} ${
+                    inSentenceRange ? 'bg-amber-100/70' : ''
+                  }`}
                   {...handlers}
-                  onContextMenu={(e) => e.preventDefault()}
                 >
                   {word}
                 </span>
@@ -771,52 +635,18 @@ export function LyricEditor({
       </div>
       </div>
 
-      {/* 小气泡：保存 / 更多（轻量操作），仅在未打开大弹窗时显示 */}
-      {selection && popupPosition && miniMode && !fullMode && (
-        <div
-          data-mini-bubble="true"
-          className="fixed z-20 bg-white shadow-lg rounded-full px-2 py-1 flex items-center gap-1 text-xs border border-stone-200/80"
-          style={{ left: popupPosition.left, top: popupPosition.top }}
-        >
-          <button
-            type="button"
-            onClick={handleMiniSave}
-            className="px-2 py-0.5 rounded-full bg-amber-600 hover:bg-amber-700 text-white"
-          >
-            保存
-          </button>
-          <button
-            type="button"
-            onClick={handleMiniMore}
-            className="px-2 py-0.5 rounded-full bg-stone-100 hover:bg-stone-200 text-ink-muted"
-          >
-            更多
-          </button>
-        </div>
-      )}
-
-      {/* 大弹窗：单词模式（音标、词性、释义）或句摘模式（句型、释义） */}
-      {selection && popupPosition && fullMode && (
+      {/* 底部抽屉：单词模式（音标、词性、释义）或句摘模式（句型、释义） */}
+      {selection && fullMode && (
         <>
           <div
             data-full-popup="true"
-            className={`fixed z-20 bg-white shadow-xl p-3 ${
-              isMobile
-                ? 'left-0 right-0 bottom-0 w-full rounded-t-2xl max-h-[70vh] overflow-y-auto'
-                : 'w-[260px] rounded-lg'
-            }`}
-            style={
-              isMobile
-                ? { paddingBottom: 'max(env(safe-area-inset-bottom), 16px)' }
-                : { left: popupPosition.left, top: popupPosition.top }
-            }
+            className="fixed z-20 bg-white shadow-xl p-3 left-0 right-0 bottom-0 w-full rounded-t-2xl max-h-[70vh] overflow-y-auto"
+            style={{ paddingBottom: 'max(env(safe-area-inset-bottom), 16px)' }}
             onClick={(e) => e.stopPropagation()}
           >
-            {isMobile && (
-              <div className="flex justify-center pt-2 pb-1">
-                <div className="w-10 h-1 rounded-full bg-stone-200" aria-hidden />
-              </div>
-            )}
+            <div className="flex justify-center pt-2 pb-1">
+              <div className="w-10 h-1 rounded-full bg-stone-200" aria-hidden />
+            </div>
             <div className="flex items-center justify-between mb-2">
               <span className="font-lyric-en font-serif text-amber-800 font-semibold text-base truncate max-w-[220px]">
                 {selection.type === 'word' ? selection.word : selection.text}

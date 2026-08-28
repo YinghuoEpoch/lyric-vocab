@@ -30,7 +30,8 @@ import {
   addBookWithPages
 } from './storage'
 
-type MobilePanel = 'left' | 'right' | null
+/** 当前展开的侧栏；null = 都收起。左右互斥，所以一个状态就够 */
+type ActivePanel = 'left' | 'right' | null
 type AppMode = 'read' | 'review'
 type ReviewTarget = { type: 'page'; id: string } | { type: 'book'; id: string } | null
 
@@ -96,8 +97,7 @@ export default function App() {
 
   const [editMode, setEditMode] = useState(false)
   const [reviewEditMode, setReviewEditMode] = useState(false)
-  const [rightOpen, setRightOpen] = useState(false)
-  const [mobilePanel, setMobilePanel] = useState<MobilePanel>(null)
+  const [activePanel, setActivePanel] = useState<ActivePanel>(null)
   const [scrollTarget, setScrollTarget] = useState<{ pageId: string; anchorId: string } | null>(null)
   const [pendingSentenceEdit, setPendingSentenceEdit] = useState<Sentence | null>(null)
   const [documentReadingProgress, setDocumentReadingProgress] = useState(0)
@@ -416,12 +416,12 @@ export default function App() {
 
   const handleSelectPage = useCallback((page: LyricPage) => {
     setCurrentPageId(page.id)
-    setMobilePanel(null)
+    setActivePanel(null)
   }, [])
 
   const handleReviewTargetChange = useCallback((target: ReviewTarget) => {
     setReviewTarget(target)
-    setMobilePanel(null)
+    setActivePanel(null)
   }, [])
 
   const handleAddPage = useCallback(
@@ -510,15 +510,14 @@ export default function App() {
 
   const handleScrollToWord = useCallback((pageId: string, anchorId: string) => {
     setScrollTarget({ pageId, anchorId })
-    setMobilePanel(null)
+    setActivePanel(null)
   }, [])
 
   const handleEditSentence = useCallback((sentence: Sentence) => {
     // 1. 设置滚动目标（使用句子的起始 anchorId）
     setScrollTarget({ pageId: sentence.docId, anchorId: sentence.startAnchorId })
     // 2. 关闭右侧栏
-    setRightOpen(false)
-    setMobilePanel(null)
+    setActivePanel(null)
     // 3. 设置"待编辑的句子"状态，供 LyricEditor 使用
     setPendingSentenceEdit(sentence)
   }, [])
@@ -734,9 +733,8 @@ export default function App() {
     [refreshData]
   )
 
-  const showLeft = mobilePanel === 'left'
-  // 移动端：使用 mobilePanel；但如果 rightOpen 为 true，也显示遮罩（即使 mobilePanel 被清空）
-  const showRight = mobilePanel === 'right' || (mode === 'read' && rightOpen)
+  const showLeft = activePanel === 'left'
+  const showRight = activePanel === 'right'
 
   const overlayVisible = showLeft || showRight
   const VocabularyDashboardAny = VocabularyDashboard as any
@@ -749,10 +747,7 @@ export default function App() {
           overlayVisible ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
         }`}
         aria-hidden
-        onClick={() => {
-          setMobilePanel(null)
-          setRightOpen(false)
-        }}
+        onClick={() => setActivePanel(null)}
       />
 
       {/* 左侧栏：固定高度，内部独立滚动 */}
@@ -849,7 +844,7 @@ export default function App() {
         <header className="shrink-0 flex items-center gap-2 px-3 py-2 border-b border-gray-200 bg-white">
           <button
             type="button"
-            onClick={() => setMobilePanel((p) => (p === 'left' ? null : 'left'))}
+            onClick={() => setActivePanel((p) => (p === 'left' ? null : 'left'))}
             className="md:hidden p-2 rounded-lg hover:bg-stone-100 text-ink-muted"
             aria-label="打开文库"
           >
@@ -866,8 +861,7 @@ export default function App() {
               if (mode === 'review') {
                 setReviewEditMode((v) => !v)
               } else {
-                setRightOpen(true)
-                setMobilePanel((p) => (p === 'right' ? null : 'right'))
+                setActivePanel((p) => (p === 'right' ? null : 'right'))
               }
             }}
             className={`p-2 rounded-lg ${mode === 'read' ? 'md:hidden ' : ''}${
@@ -914,7 +908,7 @@ export default function App() {
                 nextPage={nextPage}
                 onSelectPage={(pageId) => {
                   setCurrentPageId(pageId)
-                  setMobilePanel(null)
+                  setActivePanel(null)
                 }}
                 onReadingProgressChange={setDocumentReadingProgress}
                 readerSettings={readerSettings}
@@ -925,12 +919,11 @@ export default function App() {
               </div>
             )}
             {/* 笔记栏呼出：仅阅读模式且右侧关闭时显示 */}
-            {!rightOpen && (
+            {!showRight && (
               <button
                 type="button"
                 onClick={() => {
-                  setRightOpen(true)
-                  setMobilePanel(null)
+                  setActivePanel('right')
                 }}
                 className="hidden md:flex fixed right-4 top-1/2 -translate-y-1/2 z-10 items-center gap-2 px-3 py-2 rounded-full border border-paper-border bg-white shadow-md hover:bg-amber-50 hover:border-amber-300 text-ink-muted hover:text-amber-800 transition-colors"
                 title="打开笔记"
@@ -957,11 +950,11 @@ export default function App() {
       </main>
       </div>
 
-      {/* 右侧栏：阅读模式下始终挂载（与左侧一致），用 rightOpen 控制 translate 才能稳定播滑入/滑出动画 */}
+      {/* 右侧栏：阅读模式下始终挂载（与左侧一致），用 showRight 控制 translate 才能稳定播滑入/滑出动画 */}
       {mode === 'read' && (
         <div
-          className={`h-full flex flex-col shrink-0 ${rightOpen ? 'fixed md:relative' : 'fixed'} inset-y-0 right-0 z-30 md:z-auto transform transition-transform duration-200 ease-out ${
-            rightOpen ? 'translate-x-0' : 'translate-x-full'
+          className={`h-full flex flex-col shrink-0 ${showRight ? 'fixed md:relative' : 'fixed'} inset-y-0 right-0 z-30 md:z-auto transform transition-transform duration-200 ease-out ${
+            showRight ? 'translate-x-0' : 'translate-x-full'
           }`}
         >
           <RightSidebar
@@ -971,10 +964,7 @@ export default function App() {
             onScrollToWord={handleScrollToWord}
             onEditSentence={handleEditSentence}
             currentPageId={currentPageId}
-            onClose={() => {
-              setRightOpen(false)
-              setMobilePanel(null)
-            }}
+            onClose={() => setActivePanel(null)}
             documentProgress={documentReadingProgress}
             currentDocIndex={currentDocIndex}
             totalDocsInFolder={totalDocsInFolder}

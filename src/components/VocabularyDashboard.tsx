@@ -2,7 +2,6 @@ import { useEffect, useState } from 'react'
 import { BookOpen, FileText, Eye, EyeOff } from 'lucide-react'
 import type { LyricPage, NotesMap, Sentence, WordNote } from '../types'
 import { getFolderReviewData } from '../hooks/getFolderReviewData'
-import { useIsMobile } from '../hooks/useIsMobile'
 
 export type ReviewTarget =
   | { type: 'page'; id: string }
@@ -278,10 +277,10 @@ function VocabCard({
   isEditMode: boolean
   onUpdateWord: (word: string, updates: Partial<WordNote>) => void
 }) {
-  const [hover, setHover] = useState(false)
-  const isMobile = useIsMobile()
-  const showEnglish = !hideEnglish || hover
-  const showChinese = !hideChinese || hover
+  // 遮住答案时，点一下卡片翻开 / 再点一下盖回去（触摸屏没有 hover，只能靠点）
+  const [revealed, setRevealed] = useState(false)
+  const showEnglish = !hideEnglish || revealed
+  const showChinese = !hideChinese || revealed
   const [localPos, setLocalPos] = useState(item.pos ?? '')
   const [localPhonetic, setLocalPhonetic] = useState(item.phonetic ?? '')
   const [localDefinition, setLocalDefinition] = useState(item.definition ?? '')
@@ -308,9 +307,12 @@ function VocabCard({
 
   return (
     <div
-      className="rounded-xl border border-stone-200 bg-white p-4 shadow-sm hover:shadow-md hover:border-amber-200/60 transition-all min-h-[100px]"
-      onMouseEnter={() => setHover(true)}
-      onMouseLeave={() => setHover(false)}
+      className="rounded-xl border border-stone-200 bg-white p-4 shadow-sm transition-all min-h-[100px]"
+      onClick={(e) => {
+        // 点在输入框 / 按钮上时不要连带翻开答案
+        if ((e.target as HTMLElement).closest('input, textarea, button, select, a')) return
+        setRevealed((v) => !v)
+      }}
     >
       <div className="flex items-start justify-between gap-2 flex-wrap">
         <div className="min-w-0 flex-1 min-h-[28px]">
@@ -320,7 +322,7 @@ function VocabCard({
             </span>
           ) : (
             <span className="text-ink-muted/70 text-sm">
-              {isMobile ? '点击显示英文' : '悬停显示英文'}
+              点击显示英文
             </span>
           )}
         </div>
@@ -380,7 +382,7 @@ function VocabCard({
             </span>
           ) : (
             <span className="text-ink-muted/60 text-xs">
-              {isMobile ? '点击显示释义' : '悬停显示释义'}
+              点击显示释义
             </span>
           )}
         </div>
@@ -402,10 +404,10 @@ function SentenceCard({
   isEditMode: boolean
   onUpdateSentence?: (id: string, updates: Partial<Pick<Sentence, 'grammar' | 'meaning'>>) => void
 }) {
-  const [hover, setHover] = useState(false)
-  const isMobile = useIsMobile()
-  const showEnglish = !hideEnglish || hover
-  const showChinese = !hideChinese || hover
+  // 遮住答案时，点一下卡片翻开 / 再点一下盖回去（触摸屏没有 hover，只能靠点）
+  const [revealed, setRevealed] = useState(false)
+  const showEnglish = !hideEnglish || revealed
+  const showChinese = !hideChinese || revealed
   const [localGrammar, setLocalGrammar] = useState(item.grammar ?? '')
   const [localMeaning, setLocalMeaning] = useState(item.meaning ?? '')
 
@@ -423,9 +425,12 @@ function SentenceCard({
 
   return (
     <div
-      className="rounded-xl border border-stone-200 bg-white p-4 shadow-sm hover:shadow-md hover:border-amber-200/60 transition-all min-h-[100px]"
-      onMouseEnter={() => setHover(true)}
-      onMouseLeave={() => setHover(false)}
+      className="rounded-xl border border-stone-200 bg-white p-4 shadow-sm transition-all min-h-[100px]"
+      onClick={(e) => {
+        // 点在输入框 / 按钮上时不要连带翻开答案
+        if ((e.target as HTMLElement).closest('input, textarea, button, select, a')) return
+        setRevealed((v) => !v)
+      }}
     >
       <div className="min-h-[28px]">
         {showEnglish ? (
@@ -434,7 +439,7 @@ function SentenceCard({
           </p>
         ) : (
           <span className="text-ink-muted/70 text-sm">
-            {isMobile ? '点击显示英文' : '悬停显示英文'}
+            点击显示英文
           </span>
         )}
       </div>
@@ -470,7 +475,7 @@ function SentenceCard({
                 <span className="text-sm text-ink-muted leading-snug block">{item.meaning}</span>
               ) : (
                 <span className="text-ink-muted/60 text-xs">
-                  {isMobile ? '点击显示翻译' : '悬停显示翻译'}
+                  点击显示翻译
                 </span>
               )}
             </div>
