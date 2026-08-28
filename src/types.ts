@@ -47,6 +47,13 @@ export interface AppData {
   notes: Record<string, NotesMap> // pageId -> NotesMap
   /** 句摘备份：按数组整体存到备份 JSON 中；运行期仍主要使用 localStorage 中的 SENTENCES_KEY */
   sentences?: Sentence[]
+  /**
+   * 统一标注表（新模型，见下方 Annotation）。
+   *
+   * 目前与上面的 notes / sentences 并存：那两份是旧模型的存量数据，
+   * 迁移之后仍原样保留不删，作为可回退的保险。等新模型在真机上跑稳了再清理。
+   */
+  annotations?: Annotation[]
 }
 
 export type ReaderSettings = {
@@ -77,4 +84,66 @@ export interface Sentence {
   orphaned?: boolean
   /** 由 AI 自动填充；含义同 WordNote.auto */
   auto?: boolean
+}
+
+/**
+ * 标注：单词 / 短语 / 句子的统一模型。
+ *
+ * 和旧的 WordNote / Sentence 最大的区别是**身份**。
+ * 旧模型里单词笔记的键就是它的坐标（`L0W2` = 第 0 行第 2 个词），
+ * 位置即身份 —— 于是正文一编辑，身份就跟着变，只能靠事后「对账」把笔记搬回去。
+ * 这里 id 是稳定的，位置降级成一个普通属性，位置变了改属性就行。
+ *
+ * 三种类型只差范围长短，因此共用同一份逻辑：
+ * 单词是首尾同一个坐标，短语和句子是首尾不同的坐标。
+ */
+export type AnnotationType = 'word' | 'phrase' | 'sentence'
+
+export interface Annotation {
+  /** 稳定身份。创建后永不改变 —— 位置、原文、内容怎么变都不影响它 */
+  id: string
+  /** 所属文档 ID */
+  docId: string
+  type: AnnotationType
+  /**
+   * 范围的起止坐标（anchorId，形如 `L0W2`）。单词标注首尾相同。
+   *
+   * 为 null 表示「原文已删除」：孤儿按定义就是没有位置的，这里如实记成没有。
+   * 旧模型里做不到这点 —— 表以坐标为键，孤儿只好编一个假坐标 `orphan:xxx`
+   * 免得和真坐标撞车。那个补丁在这里不需要了。
+   */
+  start: string | null
+  end: string | null
+  /**
+   * 范围对应的原文。单词标注就是这个词本身。
+   * 用于卡片显示，以及原文被删又改回来时按文字把标注找回来。
+   */
+  text: string
+  /** 卡片排序。只在同一文档、同一类型内比较大小，数值本身无意义 */
+  order: number
+  createdAt: number
+
+  // —— 单词 / 短语的内容 ——
+  phonetic?: string
+  pos?: string
+  definition?: string
+  /** 词的原形（stood -> stand）。目前不显示，留给以后接词典用 */
+  lemma?: string
+
+  // —— 句子的内容 ——
+  /** 句型/语法说明 */
+  grammar?: string
+  /** 翻译或释义 */
+  meaning?: string
+
+  /**
+   * 由 AI 自动填充，是一份「待复核清单」。
+   * 用户手动改过之后应清掉此标记。
+   */
+  auto?: boolean
+}
+
+/** 是不是孤儿（原文已删除）。没有位置就是孤儿，不再单独存一个标记字段，省得两处打架 */
+export function isOrphanAnnotation(a: Annotation): boolean {
+  return a.start === null || a.end === null
 }
