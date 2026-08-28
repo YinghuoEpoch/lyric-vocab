@@ -14,6 +14,8 @@ import { reconcilePage, makeOrphanKey } from './utils/reconcile'
 import { migratePage } from './utils/migrateTokenizer'
 import { importFile } from './importers'
 import { useBackHandler, handleBackPress, BackPriority } from './hooks/useBackHandler'
+import { useAutoFill } from './hooks/useAutoFill'
+import { AutoFillDialog } from './components/AutoFillDialog'
 import {
   getAppData,
   replaceAllData,
@@ -273,6 +275,7 @@ export default function App() {
       pos?: string
       definition?: string
       orphaned?: boolean
+      auto?: boolean
     }> = []
     for (const pageId of Object.keys(appData.notes)) {
       if (!activePageIds.has(pageId)) continue
@@ -287,7 +290,8 @@ export default function App() {
             phonetic: n.phonetic,
             pos: n.pos,
             definition: n.definition,
-            orphaned: n.orphaned
+            orphaned: n.orphaned,
+            auto: n.auto
           })
       }
     }
@@ -920,6 +924,17 @@ export default function App() {
   const showRight = activePanel === 'right'
 
   const overlayVisible = showLeft || showRight
+  /** 「一键填充」：范围跟着当前复习的文档或文库走 */
+  const autoFill = useAutoFill({
+    appData,
+    sentences,
+    reviewTarget,
+    writeNotes: useCallback(async (pageId, next) => {
+      setAppData(await replacePageNotes(pageId, next))
+    }, []),
+    setSentences
+  })
+
   const VocabularyDashboardAny = VocabularyDashboard as any
 
   return (
@@ -1075,6 +1090,7 @@ export default function App() {
             onUpdateWord={handleUpdateWord}
             onUpdateSentence={handleUpdateSentence}
             onVocabCountChange={setReviewVocabCount}
+            onOpenAutoFill={autoFill.openDialog}
           />
         )}
       </main>
@@ -1105,6 +1121,17 @@ export default function App() {
       )}
 
       {/* 用户协议与版权声明：首次启动未同意时全屏弹窗 */}
+      <AutoFillDialog
+        open={autoFill.open}
+        emptyWords={autoFill.emptyWords}
+        emptySentences={autoFill.emptySentences}
+        scopeName={autoFill.scopeName}
+        state={autoFill.state}
+        onStart={autoFill.start}
+        onCancel={autoFill.cancel}
+        onClose={autoFill.closeDialog}
+      />
+
       {/* 「原文已删除」确认弹窗：沿用用户协议那张居中卡片的样式 */}
       {orphanPrompt && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 p-4">

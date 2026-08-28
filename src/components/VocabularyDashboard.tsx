@@ -1,5 +1,5 @@
 import { memo, useEffect, useState } from 'react'
-import { BookOpen, FileText, Eye, EyeOff } from 'lucide-react'
+import { BookOpen, FileText, Eye, EyeOff, Sparkles } from 'lucide-react'
 import type { LyricPage, NotesMap, Sentence, WordNote } from '../types'
 import { getFolderReviewData } from '../hooks/getFolderReviewData'
 
@@ -18,6 +18,8 @@ interface VocabCardItem {
   definition?: string
   /** 原文已删除：正文里已经没有这个词了，但笔记被保留下来 */
   orphaned?: boolean
+  /** 由 AI 自动填充，需要复核 */
+  auto?: boolean
    // 仅用于文件夹复习模式下的词频统计
   frequency?: number
 }
@@ -34,6 +36,8 @@ export interface VocabularyDashboardProps {
   /** 复习模式下编辑句摘（句型/翻译） */
   onUpdateSentence?: (id: string, updates: Partial<Pick<Sentence, 'grammar' | 'meaning'>>) => void
   onVocabCountChange?: (count: number) => void
+  /** 打开「一键填充」对话框；范围就是当前复习的文档或文库 */
+  onOpenAutoFill?: () => void
   [key: string]: any
 }
 
@@ -45,7 +49,8 @@ function VocabularyDashboardInner({
   isEditMode,
   onUpdateWord,
   onUpdateSentence,
-  onVocabCountChange
+  onVocabCountChange,
+  onOpenAutoFill
 }: VocabularyDashboardProps) {
   const [hideEnglish, setHideEnglish] = useState(false)
   const [hideChinese, setHideChinese] = useState(false)
@@ -68,7 +73,8 @@ function VocabularyDashboardInner({
         phonetic: n!.phonetic,
         pos: n!.pos,
         definition: n!.definition,
-        orphaned: n!.orphaned
+        orphaned: n!.orphaned,
+        auto: n!.auto
       }))
   }
 
@@ -97,6 +103,8 @@ function VocabularyDashboardInner({
           phonetic: i.phonetic,
           pos: i.pos,
           definition: i.definition,
+          orphaned: i.orphaned,
+          auto: i.auto,
           frequency: i.frequency
         }))
       })
@@ -114,6 +122,8 @@ function VocabularyDashboardInner({
           phonetic: i.phonetic,
           pos: i.pos,
           definition: i.definition,
+          orphaned: i.orphaned,
+          auto: i.auto,
           frequency: i.frequency
         }))
       })
@@ -196,13 +206,26 @@ function VocabularyDashboardInner({
             隐藏中文
           </button>
         </div>
-        <button
-          type="button"
-          onClick={() => setReviewMode((v) => (v === 'vocab' ? 'sentence' : 'vocab'))}
-          className="px-3 py-1.5 rounded-lg text-sm font-medium text-ink-muted hover:bg-stone-100 focus:bg-stone-100 focus:outline-none transition-colors"
-        >
-          {reviewMode === 'vocab' ? '词' : '句'}
-        </button>
+        <div className="flex items-center gap-2">
+          {onOpenAutoFill && (
+            <button
+              type="button"
+              onClick={onOpenAutoFill}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium bg-amber-600 hover:bg-amber-700 text-white transition-colors"
+              title="用 AI 补全空白笔记"
+            >
+              <Sparkles className="w-4 h-4" />
+              一键填充
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={() => setReviewMode((v) => (v === 'vocab' ? 'sentence' : 'vocab'))}
+            className="px-3 py-1.5 rounded-lg text-sm font-medium text-ink-muted hover:bg-stone-100 focus:bg-stone-100 focus:outline-none transition-colors"
+          >
+            {reviewMode === 'vocab' ? '词' : '句'}
+          </button>
+        </div>
       </div>
 
       <div className="flex-1 min-h-0 overflow-y-auto scroll-area p-6">
@@ -334,6 +357,14 @@ function VocabCard({
               title="正文里已经没有这个词了，笔记被保留下来"
             >
               原文已删除
+            </span>
+          )}
+          {item.auto && (
+            <span
+              className="inline-block mt-1 ml-1 px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 text-xs font-medium border border-amber-200"
+              title="由 AI 自动填充，建议复核"
+            >
+              AI
             </span>
           )}
         </div>

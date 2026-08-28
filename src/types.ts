@@ -25,6 +25,13 @@ export interface WordNote {
   pos?: string
   definition?: string
   /**
+   * 由 AI 自动填充。用于在界面上标出「这条是机器填的、需要复核」，
+   * 也便于一键撤销全部自动填充的内容。用户手动改过之后应清掉此标记。
+   */
+  auto?: boolean
+  /** 词的原形（stood -> stand）。目前不显示，留给以后接词典用。 */
+  lemma?: string
+  /**
    * 原文已删除：正文编辑后找不到这个词了，但用户选择了保留笔记。
    * 界面上会标出来，方便一眼认出「这条笔记在文中已经没有对应内容了」。
    * 若之后原文里又出现这个词，对账时会自动重新挂上并清掉此标记。
@@ -68,4 +75,6 @@ export interface Sentence {
   date: number
   /** 原文已删除；含义同 WordNote.orphaned */
   orphaned?: boolean
+  /** 由 AI 自动填充；含义同 WordNote.auto */
+  auto?: boolean
 }

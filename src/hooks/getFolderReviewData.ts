@@ -8,6 +8,9 @@ export interface FolderVocabItem {
   phonetic?: string
   pos?: string
   definition?: string
+  /** 原文已删除 / 由 AI 填充：文库模式的卡片也要显示这些标记 */
+  orphaned?: boolean
+  auto?: boolean
   frequency: number
 }
 
@@ -38,6 +41,8 @@ export function getFolderReviewData(
           phonetic: n.phonetic,
           pos: n.pos,
           definition: n.definition,
+          orphaned: n.orphaned,
+          auto: n.auto,
           frequency: 1
         })
       } else {

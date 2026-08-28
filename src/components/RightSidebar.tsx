@@ -11,6 +11,8 @@ interface VocabItem {
   definition?: string
   /** 原文已删除：正文里已经没有这个词了，但笔记被保留下来 */
   orphaned?: boolean
+  /** 由 AI 自动填充，需要复核 */
+  auto?: boolean
 }
 
 type NotesTab = 'vocab' | 'sentences'
@@ -56,6 +58,15 @@ function SentenceCard({
         >
           {sentence.text}
         </p>
+
+        {sentence.auto && !sentence.orphaned && (
+          <span
+            className="self-start px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 text-xs font-medium border border-amber-200"
+            title="由 AI 自动填充，建议复核"
+          >
+            AI
+          </span>
+        )}
 
         {sentence.orphaned && (
           <div className="flex items-center gap-1.5">
@@ -255,6 +266,14 @@ function RightSidebarInner({
                         title="正文里已经没有这个词了，笔记被保留下来"
                       >
                         原文已删除
+                      </span>
+                    )}
+                    {item.auto && (
+                      <span
+                        className="shrink-0 px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 text-xs font-medium border border-amber-200"
+                        title="由 AI 自动填充，建议复核"
+                      >
+                        AI
                       </span>
                     )}
                     {item.pos && (
