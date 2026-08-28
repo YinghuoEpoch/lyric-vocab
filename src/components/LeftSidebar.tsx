@@ -151,6 +151,12 @@ export function LeftSidebar({
   className = ''
 }: LeftSidebarProps) {
   const [pageLayout, setPageLayout] = useState<LyricPage[]>(pages)
+  /**
+   * 文库顺序的本地副本。
+   * 和 pageLayout 同理：拖拽过程中先在本地重排，松手时列表已经在新位置上，
+   * 掉落动画才不会先飞回原处、等数据绕一圈回来再跳过去。
+   */
+  const [bookLayout, setBookLayout] = useState<LyricBook[]>(books)
   const [editing, setEditing] = useState<Editing>(null)
   const [editValue, setEditValue] = useState('')
   const [menuOpen, setMenuOpen] = useState<MenuKind>(null)
@@ -190,6 +196,11 @@ export function LeftSidebar({
       window.removeEventListener('click', handleGlobalClick)
     }
   }, [menuOpen])
+
+  useEffect(() => {
+    // 外部数据变更时，同步更新本地布局（例如加载/恢复备份）
+    setBookLayout(books)
+  }, [books])
 
   useEffect(() => {
     // 外部数据变更时，同步更新本地布局（例如加载/恢复备份）
@@ -384,6 +395,25 @@ export function LeftSidebar({
         return
       }
 
+      // 实时乐观更新：文库拖到另一个文库上时，立即调整 bookLayout
+      if (activeData.type === 'book' && overData.type === 'book') {
+        const activeBookId = activeData.id
+        const overBookId = overData.id
+
+        setBookLayout((current) => {
+          const fromIndex = current.findIndex((b) => b.id === activeBookId)
+          const toIndex = current.findIndex((b) => b.id === overBookId)
+          if (fromIndex === -1 || toIndex === -1 || fromIndex === toIndex) return current
+
+          const next = [...current]
+          const [moved] = next.splice(fromIndex, 1)
+          next.splice(toIndex, 0, moved)
+          return next
+        })
+        setDragOverBookId(null)
+        return
+      }
+
        // 实时乐观更新：文档拖到其他文档或文件夹时，立即调整 pageLayout
        if (activeData.type === 'page' && overData.type === 'page') {
          const activePageId = activeData.id
@@ -444,27 +474,15 @@ export function LeftSidebar({
 
   const handleDragEnd = useCallback(
     (event: DragEndEvent) => {
-      const { active, over } = event
+      const { active } = event
 
       const activeData = active.data.current as ItemKind | undefined
-      const overData = over?.data.current as ItemKind | undefined
       if (!activeData) return
 
-      // 文库排序：仅在「文库拖到文库上且位置发生变化」时才更新顺序
-      if (
-        activeData.type === 'book' &&
-        overData?.type === 'book' &&
-        active.id !== over?.id
-      ) {
-        const orderedIds = [...books.map((b) => b.id)]
-        const fromIndex = orderedIds.indexOf(activeData.id)
-        const toIndex = orderedIds.indexOf(overData.id)
-        if (fromIndex !== -1 && toIndex !== -1 && fromIndex !== toIndex) {
-          const next = [...orderedIds]
-          const [moved] = next.splice(fromIndex, 1)
-          next.splice(toIndex, 0, moved)
-          onReorderBooks(next)
-        }
+      // 文库排序：拖拽过程中已通过 handleDragOver 实时更新 bookLayout，
+      // 这里直接按最终的 bookLayout 持久化（与文档的处理保持一致）
+      if (activeData.type === 'book') {
+        onReorderBooks(bookLayout.map((b) => b.id))
       }
 
       // 文档拖拽：
@@ -480,13 +498,13 @@ export function LeftSidebar({
       setActiveItem(null)
       setDragOverBookId(null)
     },
-    [books, pageLayout, onReorderBooks, onReorderPages]
+    [bookLayout, pageLayout, onReorderBooks, onReorderPages]
   )
 
   const renderActiveOverlay = () => {
     if (!activeItem) return null
     if (activeItem.type === 'book') {
-      const book = books.find((b) => b.id === activeItem.id)
+      const book = bookLayout.find((b) => b.id === activeItem.id)
       if (!book) return null
       return (
         <div className="mb-4">
@@ -725,10 +743,10 @@ export function LeftSidebar({
             <p className="px-3 py-4 text-sm text-ink-muted leading-relaxed">暂无文库，点击上方 + 新建</p>
           )}
           <SortableContext
-            items={books.map((b) => b.id)}
+            items={bookLayout.map((b) => b.id)}
             strategy={verticalListSortingStrategy}
           >
-            {books.map((book) => {
+            {bookLayout.map((book) => {
               const bookPages = pageLayout.filter((p) => p.bookId === book.id && !p.deletedAt)
               const isEditingBook = editing?.type === 'book' && editing.id === book.id
               const bookSelected = isBookSelected(book.id)
