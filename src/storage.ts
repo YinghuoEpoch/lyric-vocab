@@ -262,6 +262,22 @@ export async function saveNoteForPage(
   return commit(data)
 }
 
+/**
+ * 整体替换某篇文档的全部单词笔记。
+ * 用于正文编辑后的「对账」：一次性把所有笔记搬到新坐标上，
+ * 逐条改的话中间状态会出现两条笔记抢同一个坐标。
+ */
+export async function replacePageNotes(pageId: string, nextNotes: NotesMap): Promise<AppData> {
+  const data = await ensureLoaded()
+  if (Object.keys(nextNotes).length === 0) {
+    const { [pageId]: _removed, ...rest } = data.notes
+    data.notes = rest
+  } else {
+    data.notes = { ...data.notes, [pageId]: nextNotes }
+  }
+  return commit(data)
+}
+
 export async function deleteNoteForPage(pageId: string, anchorId: string): Promise<AppData> {
   const data = await ensureLoaded()
   const pageNotes = data.notes[pageId]

@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useMemo } from 'react'
+import { useState, useCallback, useEffect, useMemo, useRef } from 'react'
 import { Capacitor } from '@capacitor/core'
 import { App as CapacitorApp } from '@capacitor/app'
 import { Menu, PanelRightOpen, BookOpen, PenLine } from 'lucide-react'
@@ -9,6 +9,7 @@ import { VocabularyDashboard } from './components/VocabularyDashboard'
 import { useExportBackup } from './hooks/useExportBackup'
 import type { AppData, LyricBook, LyricPage, ReaderSettings, Sentence, WordNote } from './types'
 import { SAMPLE_PAGE_ID, SAMPLE_SENTENCES } from './sampleData'
+import { reconcilePage } from './utils/reconcile'
 import {
   getAppData,
   replaceAllData,
@@ -26,7 +27,8 @@ import {
   reorderBooks,
   reorderPages,
   updateWordEverywhere,
-  addBookWithPages
+  addBookWithPages,
+  replacePageNotes
 } from './storage'
 
 /** 当前展开的侧栏；null = 都收起。左右互斥，所以一个状态就够 */
@@ -37,6 +39,8 @@ type ReviewTarget = { type: 'page'; id: string } | { type: 'book'; id: string } 
 const READER_SETTINGS_KEY = 'lyric-vocab-reader-settings'
 const SENTENCES_KEY = 'user_sentences'
 const USER_AGREEMENT_KEY = 'user_agreement_v1'
+/** 编辑模式下暂存的「编辑前正文」，用于退出时对账；正常流程走完即清除 */
+const PRE_EDIT_KEY = 'lyric-vocab-pre-edit'
 const defaultReaderSettings: ReaderSettings = {
   fontSize: 18,
   fontFamily: 'sans',
@@ -486,6 +490,119 @@ export default function App() {
     [currentPageId, refreshData]
   )
 
+  /**
+   * 正文编辑后的「笔记对账」。
+   *
+   * 笔记挂在坐标（第几行第几个词）上，正文一改坐标就会错位。这里拿编辑前的快照
+   * 和编辑后的正文对比，算出对照表，把笔记和句摘搬到新位置；实在找不到对应原文的，
+   * 列出来问用户是否一并删除（默认保留，因为这些释义都是一条条敲进去的）。
+   */
+  const reconcileAfterEdit = useCallback(
+    async (pageId: string, oldContent: string, newContent: string) => {
+      if (oldContent === newContent) return
+
+      const data = await getAppData()
+      const pageNotes = data.notes[pageId] ?? {}
+      const pageSentences = sentences.filter((s) => s.docId === pageId)
+      if (Object.keys(pageNotes).length === 0 && pageSentences.length === 0) return
+
+      const result = reconcilePage(oldContent, newContent, pageNotes, pageSentences)
+      if (!result.changed) return
+
+      let notesToWrite = result.notes
+      let sentencesToKeep = result.sentences
+
+      const orphanWords = result.orphanNotes.map((n) => n.word).filter(Boolean)
+      const hasOrphans = result.orphanNotes.length > 0 || result.orphanSentences.length > 0
+
+      if (hasOrphans) {
+        const parts: string[] = ['以下笔记对应的原文已经不在文中了：\n']
+        if (orphanWords.length > 0) parts.push(`单词：${orphanWords.join('、')}`)
+        for (const s of result.orphanSentences) {
+          const preview = s.text.length > 30 ? `${s.text.slice(0, 30)}…` : s.text
+          parts.push(`句子：「${preview}」`)
+        }
+        parts.push('\n是否一并删除这些笔记？\n点「取消」则先保留。')
+
+        if (!window.confirm(parts.join('\n'))) {
+          // 用户选择保留：孤儿笔记原样留在旧坐标上，不动它们
+          notesToWrite = { ...result.notes }
+          for (const orphan of result.orphanNotes) {
+            if (!notesToWrite[orphan.anchorId]) notesToWrite[orphan.anchorId] = pageNotes[orphan.anchorId]
+          }
+          sentencesToKeep = [...result.sentences, ...result.orphanSentences]
+        }
+      }
+
+      setAppData(await replacePageNotes(pageId, notesToWrite))
+      setSentences((prev) => [...prev.filter((s) => s.docId !== pageId), ...sentencesToKeep])
+    },
+    [sentences]
+  )
+
+  const handleEditModeChange = useCallback(
+    (next: boolean, finalContent?: string) => {
+      if (next) {
+        // 进入编辑：拍一份正文快照。顺手写进 localStorage —— 万一编辑途中 App 被杀掉，
+        // 下次启动还能把这次对账补上。
+        if (currentPage) {
+          try {
+            localStorage.setItem(
+              PRE_EDIT_KEY,
+              JSON.stringify({ pageId: currentPage.id, content: currentPage.content })
+            )
+          } catch {
+            // 存不下就算了，大不了这次不对账
+          }
+        }
+        setEditMode(true)
+        return
+      }
+
+      setEditMode(false)
+      const pageId = currentPage?.id
+      let snapshot: string | null = null
+      try {
+        const raw = localStorage.getItem(PRE_EDIT_KEY)
+        if (raw) {
+          const parsed = JSON.parse(raw) as { pageId: string; content: string }
+          if (parsed.pageId === pageId) snapshot = parsed.content
+        }
+        localStorage.removeItem(PRE_EDIT_KEY)
+      } catch {
+        snapshot = null
+      }
+
+      if (pageId && snapshot !== null) {
+        const latest = finalContent ?? currentPage?.content ?? ''
+        void reconcileAfterEdit(pageId, snapshot, latest)
+      }
+    },
+    [currentPage, reconcileAfterEdit]
+  )
+
+  // 编辑途中 App 被系统杀掉的补救：启动时若发现残留的「编辑前快照」，把那次对账补上。
+  // 正常退出编辑时快照会被清掉，所以这里能捡到东西就说明上次没走完流程。
+  const recoveredRef = useRef(false)
+  useEffect(() => {
+    if (initializing || recoveredRef.current) return
+    recoveredRef.current = true
+
+    let snapshot: { pageId: string; content: string } | null = null
+    try {
+      const raw = localStorage.getItem(PRE_EDIT_KEY)
+      if (raw) snapshot = JSON.parse(raw) as { pageId: string; content: string }
+      localStorage.removeItem(PRE_EDIT_KEY)
+    } catch {
+      snapshot = null
+    }
+    if (!snapshot) return
+
+    const page = appData.pages.find((p) => p.id === snapshot!.pageId)
+    if (!page) return
+    void reconcileAfterEdit(snapshot.pageId, snapshot.content, page.content)
+  }, [initializing, appData.pages, reconcileAfterEdit])
+
   const handleAddSentence = useCallback(
     (s: {
       text: string
@@ -868,7 +985,7 @@ export default function App() {
                 pendingSentenceEdit={pendingSentenceEdit}
                 onDeleteSentence={handleDeleteSentence}
                 editMode={editMode}
-                onEditModeChange={setEditMode}
+                onEditModeChange={handleEditModeChange}
                 savedProgress={currentPage.progress}
                 onSaveProgress={handleSaveProgress}
                 prevPage={prevPage}

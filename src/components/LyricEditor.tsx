@@ -3,6 +3,7 @@ import { tokenizeLine } from '../utils/tokenize'
 import type { NotesMap, ReaderSettings, Sentence, WordNote } from '../types'
 import { X, Trash2 } from 'lucide-react'
 import { useWordInteraction } from '../hooks/useWordInteraction'
+import { buildWordList } from '../utils/reconcile'
 
 const PROGRESS_DEBOUNCE_MS = 700
 
@@ -35,7 +36,8 @@ interface LyricEditorProps {
   /** 删除句摘 */
   onDeleteSentence?: (startAnchorId: string, endAnchorId: string) => void
   editMode: boolean
-  onEditModeChange: (v: boolean) => void
+  /** 切换编辑模式；退出时把最终正文一并交出去，供上层做笔记对账 */
+  onEditModeChange: (v: boolean, finalContent?: string) => void
   /** 上次保存的滚动位置，打开文档时恢复 */
   savedProgress?: number
   /** 滚动停止后回调，用于持久化进度 */
@@ -78,21 +80,11 @@ export function LyricEditor({
 }: LyricEditorProps) {
   const lines = content ? content.split(/\n/) : ['']
 
-  /** 文档顺序下的所有英文词（用于句摘范围与高亮） */
-  const orderedWords = useMemo(() => {
-    const out: { anchorId: string; word: string }[] = []
-    lines.forEach((line, lineIndex) => {
-      const segments = tokenizeLine(line)
-      let wordIndex = 0
-      for (const seg of segments) {
-        if (seg.type === 'en') {
-          out.push({ anchorId: getAnchorId(lineIndex, wordIndex), word: seg.text })
-          wordIndex++
-        }
-      }
-    })
-    return out
-  }, [lines])
+  /**
+   * 文档顺序下的所有英文词（用于句摘范围与高亮）。
+   * 编号规则与「对账」共用同一份实现，避免两边算出来的坐标对不上。
+   */
+  const orderedWords = useMemo(() => buildWordList(content), [content])
 
   const getRangeText = useCallback(
     (startAnchorId: string, endAnchorId: string) => {
@@ -441,7 +433,7 @@ export function LyricEditor({
           <span className="text-sm opacity-80">编辑全文</span>
           <button
             type="button"
-            onClick={() => onEditModeChange(false)}
+            onClick={() => onEditModeChange(false, draft)}
             className="text-sm text-amber-500 hover:text-amber-400 font-medium"
           >
             完成
