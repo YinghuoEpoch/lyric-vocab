@@ -11,6 +11,7 @@ import { useExportBackup } from './hooks/useExportBackup'
 import type { AppData, LyricBook, LyricPage, ReaderSettings, Sentence, WordNote } from './types'
 import { SAMPLE_PAGE_ID, SAMPLE_SENTENCES } from './sampleData'
 import { reconcilePage, makeOrphanKey } from './utils/reconcile'
+import { migratePage } from './utils/migrateTokenizer'
 import { useBackHandler, handleBackPress, BackPriority } from './hooks/useBackHandler'
 import {
   getAppData,
@@ -43,6 +44,8 @@ const SENTENCES_KEY = 'user_sentences'
 const USER_AGREEMENT_KEY = 'user_agreement_v1'
 /** 编辑模式下暂存的「编辑前正文」，用于退出时对账；正常流程走完即清除 */
 const PRE_EDIT_KEY = 'lyric-vocab-pre-edit'
+/** 切词规则变更后的一次性数据迁移标记 */
+const TOKENIZER_MIGRATION_KEY = 'lyric-vocab-tokenizer-migrated-v2'
 const defaultReaderSettings: ReaderSettings = {
   fontSize: 18,
   fontFamily: 'sans',
@@ -141,6 +144,10 @@ export default function App() {
       // ignore
     }
   }, [sentences])
+
+  /** 供一次性迁移读取当前句摘，避免把 sentences 写进依赖导致反复触发 */
+  const sentencesRef = useRef(sentences)
+  sentencesRef.current = sentences
 
   useEffect(() => {
     try {
@@ -668,6 +675,51 @@ export default function App() {
     if (!page) return
     void reconcileAfterEdit(snapshot.pageId, snapshot.content, page.content)
   }, [initializing, appData.pages, reconcileAfterEdit])
+
+  /**
+   * 一次性数据迁移：切词规则改了（统一两种撇号、拆出缩写后缀、数字纳入单词、
+   * 落单的连字符不再算词），同一段正文数出来的词序号会和从前对不上，
+   * 所以要把已有笔记按字符位置搬到新编号上。跑过一次就用标记记住，不再重复。
+   */
+  const migratedRef = useRef(false)
+  useEffect(() => {
+    if (initializing || migratedRef.current) return
+    migratedRef.current = true
+
+    try {
+      if (localStorage.getItem(TOKENIZER_MIGRATION_KEY) === 'done') return
+    } catch {
+      return // 读不到就别乱改用户数据
+    }
+
+    void (async () => {
+      try {
+        const data = await getAppData()
+        let touched = false
+
+        for (const page of data.pages) {
+          const pageNotes = data.notes[page.id] ?? {}
+          const pageSentences = sentencesRef.current.filter((s) => s.docId === page.id)
+          if (Object.keys(pageNotes).length === 0 && pageSentences.length === 0) continue
+
+          const result = migratePage(page.content, pageNotes, pageSentences)
+          if (!result.changed) continue
+
+          await replacePageNotes(page.id, result.notes)
+          setSentences((prev) => [
+            ...prev.filter((s) => s.docId !== page.id),
+            ...result.sentences
+          ])
+          touched = true
+        }
+
+        if (touched) await refreshData()
+        localStorage.setItem(TOKENIZER_MIGRATION_KEY, 'done')
+      } catch {
+        // 迁移失败就先不打标记，下次启动再试；数据保持原样
+      }
+    })()
+  }, [initializing, refreshData])
 
   /** 从生词板删除一条单词笔记（目前只有「原文已删除」的条目会露出这个入口） */
   const handleDeleteVocabNote = useCallback(
