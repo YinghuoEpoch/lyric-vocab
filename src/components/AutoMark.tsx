@@ -1,4 +1,6 @@
-import { Sparkles } from 'lucide-react'
+// Sparkle（单数）是单个四芒星；Sparkles（复数）是一大两小，那个留给「一键填充」按钮。
+// 角标要小而安静，单颗星更合适。
+import { Sparkle } from 'lucide-react'
 
 /**
  * 「这条是 AI 填的」的角标。
@@ -16,7 +18,7 @@ export function AutoMark() {
       className="inline-block align-super ml-0.5 text-stone-400"
       aria-label="AI 填充"
     >
-      <Sparkles className="inline w-2.5 h-2.5" aria-hidden />
+      <Sparkle className="inline w-2.5 h-2.5" aria-hidden />
     </span>
   )
 }
