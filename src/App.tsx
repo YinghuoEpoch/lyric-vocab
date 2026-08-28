@@ -1,5 +1,6 @@
 import { useState, useCallback, useEffect, useMemo, useRef } from 'react'
 import { Capacitor } from '@capacitor/core'
+import type { PluginListenerHandle } from '@capacitor/core'
 import { App as CapacitorApp } from '@capacitor/app'
 import { Menu, PanelRightOpen, BookOpen, PenLine } from 'lucide-react'
 import { LeftSidebar } from './components/LeftSidebar'
@@ -9,7 +10,7 @@ import { VocabularyDashboard } from './components/VocabularyDashboard'
 import { useExportBackup } from './hooks/useExportBackup'
 import type { AppData, LyricBook, LyricPage, ReaderSettings, Sentence, WordNote } from './types'
 import { SAMPLE_PAGE_ID, SAMPLE_SENTENCES } from './sampleData'
-import { reconcilePage } from './utils/reconcile'
+import { reconcilePage, makeOrphanKey } from './utils/reconcile'
 import {
   getAppData,
   replaceAllData,
@@ -103,6 +104,12 @@ export default function App() {
   const [activePanel, setActivePanel] = useState<ActivePanel>(null)
   const [scrollTarget, setScrollTarget] = useState<{ pageId: string; anchorId: string } | null>(null)
   const [pendingSentenceEdit, setPendingSentenceEdit] = useState<Sentence | null>(null)
+  /** 「原文已删除」确认弹窗；resolve 用于把用户的选择交回给对账流程 */
+  const [orphanPrompt, setOrphanPrompt] = useState<{
+    words: string[]
+    sentences: Sentence[]
+    resolve: (shouldDelete: boolean) => void
+  } | null>(null)
   const [documentReadingProgress, setDocumentReadingProgress] = useState(0)
   const [reviewVocabCount, setReviewVocabCount] = useState(0)
   const [readerSettings, setReaderSettings] = useState<ReaderSettings>(loadReaderSettings)
@@ -493,6 +500,44 @@ export default function App() {
   )
 
   /**
+   * 询问用户如何处置「原文已删除」的笔记。
+   * 用 Promise 包住 app 内弹窗，让调用方可以像 window.confirm 一样 await，
+   * 但不会像系统弹窗那样卡住 JS 线程、把页面布局弄坏。
+   */
+  const askOrphanDecision = useCallback(
+    (words: string[], orphanSentences: Sentence[]): Promise<boolean> =>
+      new Promise<boolean>((resolve) => {
+        setOrphanPrompt({ words, sentences: orphanSentences, resolve })
+      }),
+    []
+  )
+
+  const closeOrphanPrompt = useCallback((shouldDelete: boolean) => {
+    setOrphanPrompt((current) => {
+      current?.resolve(shouldDelete)
+      return null
+    })
+  }, [])
+
+  // 弹窗开着时接管安卓返回键：返回 = 保留。
+  // 不接管的话，返回键会按默认行为直接退出 App，弹窗里的选择也就丢了。
+  useEffect(() => {
+    if (!orphanPrompt || !Capacitor.isNativePlatform()) return
+    let handle: PluginListenerHandle | undefined
+    let cancelled = false
+
+    void CapacitorApp.addListener('backButton', () => closeOrphanPrompt(false)).then((h) => {
+      if (cancelled) void h.remove()
+      else handle = h
+    })
+
+    return () => {
+      cancelled = true
+      void handle?.remove()
+    }
+  }, [orphanPrompt, closeOrphanPrompt])
+
+  /**
    * 正文编辑后的「笔记对账」。
    *
    * 笔记挂在坐标（第几行第几个词）上，正文一改坐标就会错位。这里拿编辑前的快照
@@ -518,24 +563,19 @@ export default function App() {
       const hasOrphans = result.newOrphanNotes.length > 0 || result.newOrphanSentences.length > 0
 
       if (hasOrphans) {
-        const parts: string[] = ['以下笔记对应的原文已经不在文中了：\n']
-        if (orphanWords.length > 0) parts.push(`单词：${orphanWords.join('、')}`)
-        for (const s of result.newOrphanSentences) {
-          const preview = s.text.length > 30 ? `${s.text.slice(0, 30)}…` : s.text
-          parts.push(`句子：「${preview}」`)
-        }
-        parts.push('\n是否一并删除这些笔记？\n点「取消」则保留，并在生词表里标记为「原文已删除」。')
+        // 用 app 自己的弹窗询问，而不是 window.confirm。
+        // 系统弹窗会卡住整个 JS 线程，而此刻输入法刚收起、窗口正在变回原高，
+        // 页面因此拿不到这次尺寸变化，就会卡在被压扁的高度上（下半屏留一块空白）。
+        const shouldDelete = await askOrphanDecision(orphanWords, result.newOrphanSentences)
 
-        if (!window.confirm(parts.join('\n'))) {
-          // 用户选择保留：留在原坐标上并打标记。
-          // 打了标记之后，以后每次对账都不会再拿它来打扰用户；
-          // 若哪天原文里又出现这个词，会自动重新挂上并清掉标记。
+        if (!shouldDelete) {
+          // 保留：换成一个永远不会和真实坐标撞车的键，并打上标记。
+          // 之前是留在老坐标上，结果要么给顶替上来的词画了线，
+          // 要么坐标已被别的笔记占用而被悄悄丢掉。
           notesToWrite = { ...result.notes }
           for (const orphan of result.newOrphanNotes) {
             const original = pageNotes[orphan.anchorId]
-            if (original && !notesToWrite[orphan.anchorId]) {
-              notesToWrite[orphan.anchorId] = { ...original, orphaned: true }
-            }
+            if (original) notesToWrite[makeOrphanKey()] = { ...original, orphaned: true }
           }
           sentencesToKeep = [
             ...result.sentences,
@@ -547,7 +587,7 @@ export default function App() {
       setAppData(await replacePageNotes(pageId, notesToWrite))
       setSentences((prev) => [...prev.filter((s) => s.docId !== pageId), ...sentencesToKeep])
     },
-    [sentences]
+    [sentences, askOrphanDecision]
   )
 
   const handleEditModeChange = useCallback(
@@ -568,6 +608,9 @@ export default function App() {
         setEditMode(true)
         return
       }
+
+      // 先让输入框失焦收起键盘，再走后面的流程，避免弹窗和键盘收起撞在一起
+      if (document.activeElement instanceof HTMLElement) document.activeElement.blur()
 
       setEditMode(false)
       const pageId = currentPage?.id
@@ -1067,6 +1110,71 @@ export default function App() {
       )}
 
       {/* 用户协议与版权声明：首次启动未同意时全屏弹窗 */}
+      {/* 「原文已删除」确认弹窗：沿用用户协议那张居中卡片的样式 */}
+      {orphanPrompt && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 p-4">
+          <div className="max-w-sm w-[90%] max-h-[85vh] overflow-y-auto bg-white rounded-2xl shadow-xl border border-paper-border p-4 space-y-3">
+            <h2 className="text-base font-semibold text-ink text-center mb-1">原文已删除</h2>
+            <p className="text-xs text-ink-muted leading-relaxed">
+              下面这些笔记，在正文里已经找不到对应内容了：
+            </p>
+
+            <div className="space-y-2 max-h-[40vh] overflow-y-auto">
+              {orphanPrompt.words.length > 0 && (
+                <div className="rounded-lg bg-stone-50 border border-paper-border p-2.5">
+                  <p className="text-xs text-ink-muted mb-1.5">单词</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {orphanPrompt.words.map((w) => (
+                      <span
+                        key={w}
+                        className="font-lyric-en font-serif text-amber-800 font-semibold text-sm px-2 py-0.5 rounded-full bg-white border border-stone-200"
+                      >
+                        {w}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {orphanPrompt.sentences.length > 0 && (
+                <div className="rounded-lg bg-stone-50 border border-paper-border p-2.5">
+                  <p className="text-xs text-ink-muted mb-1.5">句子</p>
+                  <ul className="space-y-1.5">
+                    {orphanPrompt.sentences.map((s) => (
+                      <li key={s.id} className="font-serif text-sm text-ink leading-snug line-clamp-2">
+                        {s.text}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </div>
+
+            <p className="text-xs text-ink-muted leading-relaxed">
+              选择保留的话，它们会留在生词表里，并标记为「原文已删除」；
+              以后不会再提示你，若原文中重新出现该内容会自动恢复。
+            </p>
+
+            <div className="flex gap-2 pt-1">
+              <button
+                type="button"
+                className="flex-1 h-9 rounded-lg border border-stone-300 text-stone-600 text-sm hover:bg-stone-50"
+                onClick={() => closeOrphanPrompt(false)}
+              >
+                保留
+              </button>
+              <button
+                type="button"
+                className="flex-1 h-9 rounded-lg bg-amber-600 hover:bg-amber-700 text-white text-sm font-medium"
+                onClick={() => closeOrphanPrompt(true)}
+              >
+                一并删除
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {agreementChecked && !userAgreementAccepted && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 p-4">
           <div className="max-w-sm w-[90%] max-h-[85vh] overflow-y-auto bg-white rounded-2xl shadow-xl border border-paper-border p-4 space-y-3 text-sm leading-relaxed">

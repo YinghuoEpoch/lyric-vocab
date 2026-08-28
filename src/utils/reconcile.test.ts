@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { buildWordList, alignWords, reconcilePage } from './reconcile'
+import { buildWordList, alignWords, reconcilePage, isOrphanKey, makeOrphanKey } from './reconcile'
 import type { NotesMap, Sentence } from '../types'
 
 /**
@@ -135,7 +135,12 @@ describe('reconcilePage：已标记「原文已删除」的笔记', () => {
     const r = reconcilePage(NEW, NEW + '\nmore text here', notes, [])
 
     expect(r.newOrphanNotes).toEqual([])
-    expect(r.notes.L0W5?.orphaned).toBe(true)
+    // 仍然保留，但已挪到孤儿键下，不再占着 L0W5 这个真实坐标
+    const keys = Object.keys(r.notes)
+    expect(keys).toHaveLength(1)
+    expect(isOrphanKey(keys[0])).toBe(true)
+    expect(r.notes[keys[0]].orphaned).toBe(true)
+    expect(r.notes[keys[0]].word).toBe('tall')
   })
 
   it('原文里重新出现该词时自动重新挂上并清掉标记', () => {
@@ -198,5 +203,49 @@ describe('reconcilePage：句摘', () => {
     expect(r.sentences[0].orphaned).toBeUndefined()
     expect(r.sentences[0].startAnchorId).toBe('L2W1')
     expect(r.sentences[0].endAnchorId).toBe('L2W3')
+  })
+})
+
+describe('孤儿键：不占用真实坐标', () => {
+  it('新生成的孤儿键不会被认成坐标，且每次都不同', () => {
+    const a = makeOrphanKey()
+    const b = makeOrphanKey()
+    expect(isOrphanKey(a)).toBe(true)
+    expect(isOrphanKey('L0W2')).toBe(false)
+    expect(a).not.toBe(b)
+  })
+
+  it('老版本存在真实坐标上的孤儿，会被迁移到孤儿键，不再霸占该坐标', () => {
+    // 模拟旧数据：stood 已被删且标记为孤儿，却still存在 L0W2 上；
+    // 而新正文里 L0W2 站着的是 up
+    const OLD = 'I never up very tall'
+    const notes: NotesMap = { L0W2: note('stood', { orphaned: true, definition: '站立' }) }
+    const r = reconcilePage(OLD, OLD, notes, [])
+
+    const keys = Object.keys(r.notes)
+    expect(keys).toHaveLength(1)
+    expect(isOrphanKey(keys[0])).toBe(true)
+    // 关键：L0W2 不再挂着任何笔记，所以正文里的 up 不会被画线
+    expect(r.notes.L0W2).toBeUndefined()
+    expect(r.notes[keys[0]].definition).toBe('站立')
+  })
+
+  it('坐标被别的笔记占用时，保留的孤儿不会被挤掉（旧实现会静默丢失）', () => {
+    const OLD = 'I never stood up very tall'
+    const NEW = 'I never up very tall'
+    const notes: NotesMap = { L0W2: note('stood'), L0W3: note('up') }
+    const r = reconcilePage(OLD, NEW, notes, [])
+
+    // up 跟随到 L0W2，stood 进入待确认
+    expect(r.notes.L0W2?.word).toBe('up')
+    expect(r.newOrphanNotes.map((n) => n.word)).toEqual(['stood'])
+
+    // 模拟用户选「保留」：用孤儿键写入，两条笔记应当共存
+    const written: NotesMap = { ...r.notes }
+    for (const orphan of r.newOrphanNotes) {
+      written[makeOrphanKey()] = { ...notes[orphan.anchorId], orphaned: true }
+    }
+    expect(Object.values(written).map((n) => n.word).sort()).toEqual(['stood', 'up'])
+    expect(written.L0W2?.word).toBe('up')
   })
 })

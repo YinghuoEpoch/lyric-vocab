@@ -19,6 +19,28 @@ import type { NotesMap, Sentence } from '../types'
 /** LCS 的计算量上限；超过就退回快速近似算法，避免超长文档卡住 */
 const LCS_CELL_CAP = 1_000_000
 
+/**
+ * 孤儿笔记的键前缀。
+ *
+ * 孤儿按定义就是「正文里已经没有对应内容」的笔记，也就是没有位置。
+ * 但笔记表是以坐标为键的，如果继续把孤儿留在它的老坐标上，会出两种事故：
+ * 1. 那个坐标并没消失，只是换了别的词站上去 —— 于是给错误的词画了下划线
+ * 2. 若该坐标已被另一条正常笔记占用，两者互相覆盖 —— 用户选了「保留」，笔记却没了
+ * 所以孤儿一律改用这个前缀开头的键，永远不可能和真实坐标撞车，
+ * 正文里也不会有任何词能匹配上它。
+ */
+const ORPHAN_PREFIX = 'orphan:'
+
+/** 这个键是不是孤儿键（而非真实坐标） */
+export function isOrphanKey(key: string): boolean {
+  return key.startsWith(ORPHAN_PREFIX)
+}
+
+/** 生成一个新的孤儿键 */
+export function makeOrphanKey(): string {
+  return ORPHAN_PREFIX + Date.now().toString(36) + Math.random().toString(36).slice(2, 8)
+}
+
 export interface WordRef {
   anchorId: string
   word: string
@@ -246,7 +268,10 @@ export function reconcilePage(
       claimed.add(target.anchorId)
       changed = true
     } else {
-      nextNotes[anchorId] = note
+      // 仍然找不到：留在孤儿键下。老版本可能把孤儿存在真实坐标上，这里顺手迁移过去。
+      const key = isOrphanKey(anchorId) ? anchorId : makeOrphanKey()
+      nextNotes[key] = note
+      if (key !== anchorId) changed = true
     }
   }
 

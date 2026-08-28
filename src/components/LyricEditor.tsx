@@ -257,6 +257,8 @@ export function LyricEditor({
     if (!sentences || sentences.length === 0) return new Set<string>()
     const set = new Set<string>()
     for (const s of sentences) {
+      // 同理：已标记「原文已删除」的句摘不再在正文里画虚线范围
+      if (s.orphaned) continue
       const i = orderedWords.findIndex((w) => w.anchorId === s.startAnchorId)
       const j = orderedWords.findIndex((w) => w.anchorId === s.endAnchorId)
       if (i === -1 || j === -1) continue
@@ -551,7 +553,8 @@ export function LyricEditor({
               const word = seg.text
               const anchorId = getAnchorId(lineIndex, wordIndex)
               wordIndex++
-              const hasNote = !!notes[anchorId]
+              // 孤儿笔记不画线：它的坐标已经失效，画出来就是给错误的词加下划线
+              const hasNote = !!notes[anchorId] && !notes[anchorId].orphaned
               const inSentenceRange = sentenceRangeAnchorSet.has(anchorId)
               const isPressing = pressingAnchorId === anchorId
               const handlers = getWordHandlers(anchorId, word)
