@@ -180,3 +180,65 @@ export function findRangeAnnotation(
       a.end === endAnchorId
   )
 }
+
+/** 右侧生词板的一条 */
+export interface VocabItemView {
+  word: string
+  /** 有位置的用坐标，孤儿用 id —— 和 annotationKey 同一套 */
+  anchorId: string
+  pageId: string
+  phonetic?: string
+  pos?: string
+  definition?: string
+  orphaned?: boolean
+  auto?: boolean
+  /** 是短语不是单词 */
+  isPhrase?: boolean
+}
+
+/**
+ * 右侧生词板的清单：单词和短语**混在一起按 order 排**。
+ *
+ * 从前这份清单是分两步拼的（先塞全部单词、再把短语追加在末尾），
+ * 于是短语永远排在所有单词后面，跟它在正文里的位置无关 ——
+ * 而复习页走的是「一起筛出来一起排」，两边对不上。现在两边同一条路。
+ *
+ * order 是按排序分组编的（vocab 组 = 单词 + 短语），本来就可以直接比大小。
+ */
+export function buildVocabList(
+  annotations: Annotation[],
+  activePageIds: Set<string>
+): VocabItemView[] {
+  const byDoc = new Map<string, Annotation[]>()
+  for (const a of annotations) {
+    if (a.type === 'sentence' || !a.text || !activePageIds.has(a.docId)) continue
+    const list = byDoc.get(a.docId)
+    if (list) list.push(a)
+    else byDoc.set(a.docId, [a])
+  }
+
+  const out: VocabItemView[] = []
+  for (const [, list] of byDoc) {
+    list.sort((x, y) => x.order - y.order)
+    // 键撞车的处理跟 buildNotesIndex 一致：后来的退回用 id，两条都留下
+    const usedKeys = new Set<string>()
+    for (const a of list) {
+      const key = annotationKey(a)
+      const anchorId = usedKeys.has(key) ? a.id : key
+      usedKeys.add(anchorId)
+      const item: VocabItemView = { word: a.text, anchorId, pageId: a.docId }
+      if (a.definition !== undefined) item.definition = a.definition
+      if (a.auto) item.auto = true
+      if (isOrphanAnnotation(a)) item.orphaned = true
+      if (a.type === 'phrase') {
+        // 短语没有音标 / 词性，那两格在卡片上根本不画
+        item.isPhrase = true
+      } else {
+        if (a.phonetic !== undefined) item.phonetic = a.phonetic
+        if (a.pos !== undefined) item.pos = a.pos
+      }
+      out.push(item)
+    }
+  }
+  return out
+}

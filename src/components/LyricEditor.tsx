@@ -9,6 +9,30 @@ import { buildWordList, getRangeText as sliceRangeText } from '../utils/reconcil
 
 const PROGRESS_DEBOUNCE_MS = 700
 
+/**
+ * 正文里三种标记的线。
+ *
+ * 三条都走 text-decoration（不是 border-b）—— 同一套坐标系，都从基线往下量，
+ * 才好把位置错开；border-b 落在「内容盒底部」，两层嵌套时是同一个位置，
+ * 于是短语的实线会把句摘的虚线整条盖掉（这正是从前的毛病）。
+ *
+ * 位置一律用 em：正文字号是用户可调的，用 px 的话调大字号线就贴到字上去了。
+ * 范围越大线越靠下：单词 < 短语 < 句摘，三者叠在一起时都看得见。
+ * 线型也各不相同：直实线 / 波浪线 / 虚线，不必靠长短去分辨。
+ *
+ * 这几个数是量出来的，不是估的（18px 字号、行距 1.8 时）：
+ * 基线往下 4px 是内容盒底部（从前两条 border-b 都落在这儿，所以会重叠），
+ * 9.7px 是行盒底部，再往下还有 5.7px 行间空气才碰到下一行的字顶 ——
+ * 也就是说基线以下约 15px 都是安全的。三条线分别落在 2 / 6.5 / 10.8px，
+ * 彼此隔开 1.5px 以上，最深的一条离下一行还有 3px 富余。
+ */
+const WORD_LINE_CLASS =
+  'underline decoration-solid decoration-amber-600 decoration-2 underline-offset-2'
+const PHRASE_LINE_CLASS =
+  'underline decoration-wavy decoration-amber-600/90 decoration-1 underline-offset-[0.36em]'
+const SENTENCE_LINE_CLASS =
+  'underline decoration-dashed decoration-amber-600 decoration-1 underline-offset-[0.6em]'
+
 /** 单词选择：仅一个词 */
 type WordSelection = { type: 'word'; anchorId: string; word: string }
 /** 句摘选择：从 start 到 end 的连续词范围（按文档顺序） */
@@ -700,7 +724,7 @@ function LyricEditorInner({
                   // 手指按住时立刻变色，让用户知道「按住是有反应的、再等一下就成」；
                   // 触摸屏没有 hover，所以按压反馈是这里唯一的可点提示。
                   className={`cursor-pointer rounded px-0.5 -mx-0.5 transition-colors select-none touch-manipulation ${highlightClass} ${
-                    hasNote ? 'underline decoration-amber-600 decoration-2 underline-offset-2' : ''
+                    hasNote ? WORD_LINE_CLASS : ''
                   }`}
                   {...handlers}
                 >
@@ -743,19 +767,21 @@ function LyricEditorInner({
             }
 
             if (kind) {
-              // 短语：一条连续的实线（穿过词与词之间的空格，看得出是「一个整体」）
-              // 句摘：虚线。两者同时命中就都画，实线在内、虚线在外。
+              // 三条线共用一套画法（text-decoration）：都从基线往下量，
+              // 位置一律用 em，字号调大时跟着一起长，不会挤到下一行去。
+              // 范围越大，线越靠下：单词(2px) < 短语(0.3em) < 句摘(0.55em)，
+              // 叠在一起时三条都看得见 —— 从前短语用 border-b，
+              // 和句摘的 border-b 落在同一条水平线上，虚线整条被实线盖住。
+              // 线型也各不相同：单词直实线、短语波浪线、句摘虚线，一眼可分。
               const inner = phraseSegmentMask[segIdx] ? (
-                <span className="border-b-2 border-amber-600/80 pb-[1px]">{chunkElems}</span>
+                <span className={PHRASE_LINE_CLASS}>{chunkElems}</span>
               ) : (
                 chunkElems
               )
               lineChildren.push(
                 <span
                   key={`chunk-${lineIndex}-${segIdx}`}
-                  className={
-                    savedSegmentMask[segIdx] ? 'border-b border-dashed border-amber-600 pb-[1px]' : ''
-                  }
+                  className={savedSegmentMask[segIdx] ? SENTENCE_LINE_CLASS : ''}
                 >
                   {inner}
                 </span>

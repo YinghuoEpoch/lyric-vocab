@@ -24,6 +24,7 @@ import {
   buildNotesIndex,
   buildPhraseList,
   buildSentenceList,
+  buildVocabList,
   findAnnotationByKey,
   findRangeAnnotation,
   findWordAnnotation
@@ -300,52 +301,11 @@ export default function App() {
     [annotations, currentPageId]
   )
 
-  const vocabList = useMemo(() => {
-    const activePageIds = new Set(activePages.map((p) => p.id))
-    const out: Array<{
-      word: string
-      anchorId: string
-      pageId: string
-      phonetic?: string
-      pos?: string
-      definition?: string
-      orphaned?: boolean
-      auto?: boolean
-      isPhrase?: boolean
-    }> = []
-    for (const pageId of Object.keys(notesIndex)) {
-      if (!activePageIds.has(pageId)) continue
-      const map = notesIndex[pageId]
-      for (const anchorId of Object.keys(map)) {
-        const n = map[anchorId]
-        if (n?.word)
-          out.push({
-            word: n.word,
-            anchorId,
-            pageId,
-            phonetic: n.phonetic,
-            pos: n.pos,
-            definition: n.definition,
-            orphaned: n.orphaned,
-            auto: n.auto
-          })
-      }
-    }
-    // 短语也是词汇，跟单词同一张清单；孤儿没有坐标，用 id 顶上（删除那条路认得）
-    for (const a of annotations) {
-      if (a.type !== 'phrase' || !activePageIds.has(a.docId) || !a.text) continue
-      out.push({
-        word: a.text,
-        anchorId: a.start ?? a.id,
-        pageId: a.docId,
-        definition: a.definition,
-        orphaned: a.start === null || undefined,
-        auto: a.auto,
-        isPhrase: true
-      })
-    }
-    return out
-  }, [notesIndex, activePages, annotations])
+  /** 右侧生词板：单词与短语混在一起、按正文顺序排（和复习页同一条路） */
+  const vocabList = useMemo(
+    () => buildVocabList(annotations, new Set(activePages.map((p) => p.id))),
+    [annotations, activePages]
+  )
 
   useEffect(() => {
     if (!currentPageId && activePages.length > 0) {
