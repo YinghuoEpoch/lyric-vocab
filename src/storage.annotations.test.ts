@@ -113,7 +113,7 @@ describe('增删改', () => {
   })
 })
 
-describe('updateAnnotationsByWord：改一个词，全库跟着改', () => {
+describe('updateVocabByText：改一个词，全库跟着改', () => {
   it('跨文档命中同一个词，且不区分大小写', async () => {
     const s = await fresh({
       pages: [page('p1'), page('p2')],
@@ -124,7 +124,7 @@ describe('updateAnnotationsByWord：改一个词，全库跟着改', () => {
       ]
     })
 
-    const data = await s.updateAnnotationsByWord('STOOD', { definition: '站立' })
+    const data = await s.updateVocabByText('STOOD', { definition: '站立' })
     const byId = new Map(data.annotations!.map((a) => [a.id, a]))
     expect(byId.get('a')!.definition).toBe('站立')
     expect(byId.get('b')!.definition).toBe('站立')
@@ -137,9 +137,48 @@ describe('updateAnnotationsByWord：改一个词，全库跟着改', () => {
       annotations: [anno({ id: 'a', text: 'stood', auto: true, definition: 'AI 猜的' })]
     })
 
-    const data = await s.updateAnnotationsByWord('stood', { definition: '我自己写的' })
+    const data = await s.updateVocabByText('stood', { definition: '我自己写的' })
     expect(data.annotations![0].auto).toBeUndefined()
     expect(data.annotations![0].definition).toBe('我自己写的')
+  })
+
+  it('短语也要改到 —— 复习页里它和单词是同一列卡片', async () => {
+    const s = await fresh({
+      pages: [page('p1')],
+      annotations: [
+        anno({
+          id: 'p',
+          type: 'phrase',
+          text: 'take off',
+          auto: true,
+          definition: 'AI 猜的',
+          grammar: 'AI 猜的用法'
+        })
+      ]
+    })
+
+    const data = await s.updateVocabByText('take off', {
+      definition: '起飞',
+      grammar: '常用于飞机'
+    })
+    expect(data.annotations![0].definition).toBe('起飞')
+    expect(data.annotations![0].grammar).toBe('常用于飞机')
+    // 从前这里写死 type !== 'word'，短语被静静跳过：改了不报错也存不进去
+    expect(data.annotations![0].auto).toBeUndefined()
+  })
+
+  it('短语和单词按原文各认各的，不会互相串', async () => {
+    const s = await fresh({
+      pages: [page('p1')],
+      annotations: [
+        anno({ id: 'w', text: 'take' }),
+        anno({ id: 'p', type: 'phrase', text: 'take off' })
+      ]
+    })
+    const data = await s.updateVocabByText('take off', { definition: '起飞' })
+    const byId = new Map(data.annotations!.map((a) => [a.id, a]))
+    expect(byId.get('p')!.definition).toBe('起飞')
+    expect(byId.get('w')!.definition).toBeUndefined()
   })
 
   it('句摘不参与 —— 它不是「词」', async () => {
@@ -147,7 +186,7 @@ describe('updateAnnotationsByWord：改一个词，全库跟着改', () => {
       pages: [page('p1')],
       annotations: [anno({ id: 's', type: 'sentence', text: 'stood' })]
     })
-    const data = await s.updateAnnotationsByWord('stood', { definition: '站立' })
+    const data = await s.updateVocabByText('stood', { definition: '站立' })
     expect(data.annotations![0].definition).toBeUndefined()
   })
 })

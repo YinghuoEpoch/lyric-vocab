@@ -577,7 +577,7 @@ export async function replaceDocAnnotations(
  * 全库其它文档里的 stood 一起跟着改。
  * 这是用户的手动编辑，所以顺手清掉「AI 填充」标记。
  */
-export async function updateAnnotationsByWord(
+export async function updateVocabByText(
   spelling: string,
   updates: Partial<Omit<Annotation, 'id' | 'docId' | 'type' | 'start' | 'end' | 'text' | 'order'>>
 ): Promise<AppData> {
@@ -588,7 +588,12 @@ export async function updateAnnotationsByWord(
 
   let changed = false
   const next = (data.annotations ?? []).map((a) => {
-    if (a.type !== 'word' || a.text.trim().toLowerCase() !== target) return a
+    // 单词**和短语**都算 —— 复习页里它们是同一列卡片，改法也是同一条路。
+    // 从前这里写死 `type !== 'word'`，短语被静静跳过：改了不报错、也存不进去，
+    // 退出编辑模式就打回原形（角标自然也清不掉）。函数从前叫
+    // updateAnnotationsByWord，「word」这个名字正是当初漏掉短语的由来。
+    // 短语的原文必然带空格，和单个词撞不了车。
+    if (a.type === 'sentence' || a.text.trim().toLowerCase() !== target) return a
     changed = true
     const { auto: _wasAuto, ...kept } = a
     return { ...kept, ...updates }

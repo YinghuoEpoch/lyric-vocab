@@ -53,7 +53,7 @@ import {
   saveAnnotation,
   deleteAnnotation,
   replaceDocAnnotations,
-  updateAnnotationsByWord,
+  updateVocabByText,
   orderForNewAnnotation,
   reorderAnnotations,
   runAnnotationMigration
@@ -1018,7 +1018,7 @@ export default function App() {
   const handleUpdateWord = useCallback(
     (word: string, updates: Partial<WordNote> & { grammar?: string }) => {
       const { word: _ignored, orphaned: _alsoIgnored, ...fields } = updates
-      void (async () => setAppData(await updateAnnotationsByWord(word, fields)))()
+      void (async () => setAppData(await updateVocabByText(word, fields)))()
     },
     []
   )

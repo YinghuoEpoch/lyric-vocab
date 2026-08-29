@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useState } from 'react'
+import { memo, useCallback, useEffect, useRef, useState } from 'react'
 import { BookOpen, FileText, Eye, EyeOff, Sparkles, GripVertical, X } from 'lucide-react'
 import {
   DndContext,
@@ -615,6 +615,22 @@ function VocabCard({
     })
   }
 
+  /**
+   * 离开编辑模式（或卡片被卸掉）时，把还没提交的改动落下去。
+   *
+   * 从前**只有 onBlur 一个触发点**。手机上改完直接点铅笔退出时，
+   * 输入框往往还没来得及失焦就被换掉了，那次改动就这么悄悄没了 ——
+   * 数据没存，AI 角标自然也不会消失。
+   * 这里用「进编辑模式时登记、离开时执行」的清理函数兜住，
+   * 不管失焦事件来不来都保得住。
+   */
+  const saveRef = useRef(handleSave)
+  saveRef.current = handleSave
+  useEffect(() => {
+    if (!isEditMode) return
+    return () => saveRef.current()
+  }, [isEditMode])
+
   return (
     <div
       className="rounded-xl border border-stone-200 bg-white p-4 shadow-sm transition-all min-h-[100px]"
@@ -792,6 +808,14 @@ function SentenceCard({
     if (nextGrammar === (item.grammar ?? '') && nextMeaning === (item.meaning ?? '')) return
     onUpdateSentence?.(item.id, { grammar: nextGrammar, meaning: nextMeaning })
   }
+
+  /** 同生词卡：离开编辑模式时兜底保存，不指望失焦事件一定来得及 */
+  const saveRef = useRef(handleSave)
+  saveRef.current = handleSave
+  useEffect(() => {
+    if (!isEditMode) return
+    return () => saveRef.current()
+  }, [isEditMode])
 
   return (
     <div
