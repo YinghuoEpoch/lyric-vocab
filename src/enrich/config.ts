@@ -21,6 +21,12 @@ export interface ProviderPreset {
   editable: boolean
   /** 界面上的一句提示：去哪儿拿 Key、地址该怎么填 */
   hint: string
+  /**
+   * 填法示例，显示在输入框下面的一行小字里。
+   * 不写进输入框的 placeholder：那里放不下（框内可显示约 257px，
+   * 带 https:// 的完整网址要 264px），超出的部分会被切掉且没法滑动去看。
+   */
+  example?: string
 }
 
 export const PROVIDERS: ProviderPreset[] = [
@@ -38,7 +44,9 @@ export const PROVIDERS: ProviderPreset[] = [
     baseUrl: '',
     model: '',
     editable: true,
-    hint: '填服务商给的「OpenAI 兼容」地址和模型名，例如 https://dashscope.aliyuncs.com/compatible-mode/v1 与 qwen-plus'
+    hint: '填服务商「OpenAI 兼容」接口的地址和模型名',
+    // 省掉 https:// 是有底气的：normalizeBaseUrl 会自动补上
+    example: '例：api.moonshot.cn/v1 · moonshot-v1-8k'
   }
 ]
 

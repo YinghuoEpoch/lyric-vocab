@@ -2,6 +2,7 @@ import { describe, it, expect, vi, afterEach } from 'vitest'
 import {
   createOpenAICompatibleEnricher,
   describeHttpError,
+  extractErrorMessage,
   isJsonModeUnsupported
 } from './openaiCompatible'
 import type { ResolvedProvider } from './config'
@@ -131,6 +132,28 @@ describe('错误说人话', () => {
 
   it('服务商自己的原文附在后面，排查时有据可查', () => {
     expect(describeHttpError(500, 'upstream timeout', '自定义')).toMatch(/upstream timeout/)
+  })
+
+  it('只取错误体里那句话，不把整坨 JSON 倒到界面上', () => {
+    const body = JSON.stringify({
+      error: { message: 'Incorrect API key provided.', type: 'invalid_request_error', code: null }
+    })
+    expect(extractErrorMessage(body)).toBe('Incorrect API key provided.')
+    expect(describeHttpError(401, body, '自定义')).toBe(
+      'API Key 无效或没有权限，请检查后重新填写：Incorrect API key provided.'
+    )
+  })
+
+  it('message 在最外层的那种也认', () => {
+    expect(extractErrorMessage('{"message":"token 已过期"}')).toBe('token 已过期')
+  })
+
+  it('不是 JSON（网关直接返回 HTML）就原样截断，不至于把信息全丢掉', () => {
+    expect(extractErrorMessage('<html>502 Bad Gateway</html>')).toBe('<html>502 Bad Gateway</html>')
+  })
+
+  it('空的错误体不留一个孤零零的冒号', () => {
+    expect(describeHttpError(500, '   ', '自定义')).toBe('自定义 服务暂时不可用（500），请稍后再试')
   })
 
   it('只有提到 response_format 的 400 才算「不支持 JSON 模式」', () => {

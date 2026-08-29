@@ -208,7 +208,7 @@ export function AutoFillDialog({
                   autoCorrect="off"
                   value={draft.baseUrl}
                   onChange={(e) => patch({ baseUrl: e.target.value })}
-                  placeholder="服务地址，如 https://api.moonshot.cn/v1"
+                  placeholder="服务地址"
                   className={inputClass}
                 />
                 <input
@@ -217,7 +217,7 @@ export function AutoFillDialog({
                   autoCorrect="off"
                   value={draft.model}
                   onChange={(e) => patch({ model: e.target.value })}
-                  placeholder="模型名，如 moonshot-v1-8k"
+                  placeholder="模型名"
                   className={inputClass}
                 />
               </div>
@@ -232,7 +232,10 @@ export function AutoFillDialog({
               className={inputClass}
             />
 
-            <p className="text-xs text-ink-muted leading-relaxed">{preset.hint}</p>
+            <p className="text-xs text-ink-muted leading-relaxed break-words">{preset.hint}</p>
+            {preset.example && (
+              <p className="text-xs text-ink-muted leading-relaxed break-words">{preset.example}</p>
+            )}
 
             {test.phase === 'ok' && (
               <p className="text-sm text-emerald-700 flex items-start gap-1.5">
@@ -244,7 +247,7 @@ export function AutoFillDialog({
               </p>
             )}
             {test.phase === 'fail' && (
-              <p className="text-sm text-red-600 leading-relaxed">{test.message}</p>
+              <p className="text-sm text-red-600 leading-relaxed break-words">{test.message}</p>
             )}
 
             <div className="flex gap-2 pt-1">
@@ -328,12 +331,12 @@ export function AutoFillDialog({
             )}
 
             {state.phase === 'error' && (
-              <p className="text-sm text-red-600 leading-relaxed">{state.message}</p>
+              <p className="text-sm text-red-600 leading-relaxed break-words">{state.message}</p>
             )}
 
             <p className="text-xs text-ink-muted leading-relaxed">
               内容由 AI 生成，会标上「AI」记号，可能有错，建议复核。
-              单词和它所在的那一行会被发送给 {savedTarget}。
+              单词和它所在的那一行会被发送给 <span className="break-all">{savedTarget}</span>。
             </p>
 
             <div className="flex gap-2 pt-1">

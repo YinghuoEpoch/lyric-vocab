@@ -97,7 +97,7 @@ export function collectResults<T extends Record<string, unknown>>(
  * 因为现在对面可能是任何一家；服务商自己的原文附在后面，真要排查时有据可查。
  */
 export function describeHttpError(status: number, body: string, providerName: string): string {
-  const detail = body.trim().slice(0, 160)
+  const detail = extractErrorMessage(body)
   const tail = detail ? `：${detail}` : ''
   if (status === 401 || status === 403) return `API Key 无效或没有权限，请检查后重新填写${tail}`
   if (status === 402) return `${providerName} 账户余额不足，请先充值${tail}`
@@ -105,6 +105,28 @@ export function describeHttpError(status: number, body: string, providerName: st
   if (status === 429) return `请求太频繁或已达用量上限，请稍后再试${tail}`
   if (status >= 500) return `${providerName} 服务暂时不可用（${status}），请稍后再试${tail}`
   return `调用失败（${status}）${tail}`
+}
+
+/**
+ * 从服务商返回的错误体里取出人能读的那句话。
+ *
+ * 各家出错时返回的是一整坨 JSON，原样贴到界面上又长又难看，
+ * 还会在手机上被截断在半个词上。真正有用的只有里面的 message 一项。
+ */
+export function extractErrorMessage(body: string): string {
+  const text = body.trim()
+  if (!text) return ''
+  try {
+    const parsed = JSON.parse(text) as {
+      error?: { message?: unknown }
+      message?: unknown
+    }
+    const message = parsed.error?.message ?? parsed.message
+    if (typeof message === 'string' && message.trim()) return message.trim().slice(0, 160)
+  } catch {
+    // 不是 JSON（有的网关直接返回 HTML 或纯文本），退回原样截断
+  }
+  return text.slice(0, 160)
 }
 
 /** 这个 400 是不是「不支持 JSON 模式」引起的 —— 是的话去掉那个参数重试一次 */
