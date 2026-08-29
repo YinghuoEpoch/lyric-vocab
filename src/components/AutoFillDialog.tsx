@@ -1,8 +1,7 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Sparkles, X, Check, Loader2 } from 'lucide-react'
 import {
   PROVIDERS,
-  defaultConfig,
   findProvider,
   loadConfig,
   missingField,
@@ -67,12 +66,15 @@ export function AutoFillDialog({
    * 编辑中的配置必须放进 state。
    * 直接在渲染时读 localStorage 的话，保存之后没有任何 state 变化，
    * 组件不会重渲染，界面就一直停在「请填 Key」那一屏。
+   *
+   * **初值必须当场读出来**，不能先给一份空配置等 effect 再填：
+   * 那样第一次打开会先按「还没设过 AI」渲染一帧，密码输入框一闪而过 ——
+   * 手机上足够让安全键盘弹出来，而框随即消失，键盘就再也关不掉了。
    */
-  const [draft, setDraft] = useState<AiConfig>(defaultConfig)
-  const [saved, setSaved] = useState<AiConfig>(defaultConfig)
+  const [draft, setDraft] = useState<AiConfig>(loadConfig)
+  const [saved, setSaved] = useState<AiConfig>(loadConfig)
   const [editing, setEditing] = useState(false)
   const [test, setTest] = useState<TestState>({ phase: 'idle' })
-  const inputRef = useRef<HTMLInputElement>(null)
 
   const ready = resolveConfig(saved) !== null
   const needSetup = !ready || editing
@@ -104,10 +106,6 @@ export function AutoFillDialog({
       setTest({ phase: 'idle' })
     }
   }, [open])
-
-  useEffect(() => {
-    if (open && needSetup) inputRef.current?.focus()
-  }, [open, needSetup])
 
   // 返回键：跑的时候先取消，闲着的时候直接关
   useBackHandler(open, BackPriority.orphanPrompt, () => (running ? onCancel() : onClose()))
@@ -224,7 +222,6 @@ export function AutoFillDialog({
             )}
 
             <input
-              ref={inputRef}
               type="password"
               value={draftKey}
               onChange={(e) => setKey(e.target.value)}
@@ -232,10 +229,13 @@ export function AutoFillDialog({
               className={inputClass}
             />
 
-            <p className="text-xs text-ink-muted leading-relaxed break-words">{preset.hint}</p>
-            {preset.example && (
-              <p className="text-xs text-ink-muted leading-relaxed break-words">{preset.example}</p>
-            )}
+            {/* 提示与示例挨在一起，中间不留空行：它们是同一句话的两半 */}
+            <div className="space-y-0.5 text-xs text-ink-muted leading-relaxed break-words">
+              <p>{preset.hint}</p>
+              {preset.examples?.map((line) => (
+                <p key={line}>{line}</p>
+              ))}
+            </div>
 
             {test.phase === 'ok' && (
               <p className="text-sm text-emerald-700 flex items-start gap-1.5">
