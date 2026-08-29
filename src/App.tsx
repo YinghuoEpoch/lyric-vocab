@@ -8,7 +8,16 @@ import { RightSidebar } from './components/RightSidebar'
 import { LyricEditor } from './components/LyricEditor'
 import { VocabularyDashboard } from './components/VocabularyDashboard'
 import { useExportBackup } from './hooks/useExportBackup'
-import type { Annotation, AppData, LyricBook, LyricPage, ReaderSettings, Sentence, WordNote } from './types'
+import type {
+  Annotation,
+  AnnotationType,
+  AppData,
+  LyricBook,
+  LyricPage,
+  ReaderSettings,
+  Sentence,
+  WordNote
+} from './types'
 import { reconcileAnnotations, markAnnotationOrphaned } from './utils/reconcile'
 import {
   annotationToSentence,
@@ -44,6 +53,7 @@ import {
   replaceDocAnnotations,
   updateAnnotationsByWord,
   nextAnnotationOrder,
+  reorderAnnotations,
   runAnnotationMigration
 } from './storage'
 
@@ -959,6 +969,14 @@ export default function App() {
     void (async () => setAppData(await updateAnnotationsByWord(word, fields)))()
   }, [])
 
+  /** 复习页拖拽调整卡片顺序。排序逻辑只在存储层实现一份，这里拿结果直接更新界面 */
+  const handleReorderCards = useCallback(
+    (docId: string, type: AnnotationType, ids: string[]) => {
+      void (async () => setAppData(await reorderAnnotations(docId, type, ids)))()
+    },
+    []
+  )
+
   const handleUpdateSentence = useCallback(
     (id: string, updates: Partial<Pick<Sentence, 'grammar' | 'meaning'>>) => {
       const target = (dataRef.current.annotations ?? []).find((a) => a.id === id)
@@ -1169,11 +1187,11 @@ export default function App() {
             reviewTarget={reviewTarget}
             books={activeBooks.map((b) => ({ id: b.id, name: b.name }))}
             pages={activePages}
-            notes={notesIndex}
-            sentences={sentences}
+            annotations={annotations}
             isEditMode={reviewEditMode}
             onUpdateWord={handleUpdateWord}
             onUpdateSentence={handleUpdateSentence}
+            onReorder={handleReorderCards}
             onVocabCountChange={setReviewVocabCount}
             onOpenAutoFill={autoFill.openDialog}
             autoFillCount={autoFill.emptyWords + autoFill.emptySentences}

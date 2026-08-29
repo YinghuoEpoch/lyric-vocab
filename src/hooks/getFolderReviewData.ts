@@ -1,4 +1,5 @@
-import type { LyricPage, NotesMap } from '../types'
+import type { Annotation, LyricPage } from '../types'
+import { isOrphanAnnotation } from '../types'
 
 export interface FolderVocabItem {
   id: string
@@ -14,41 +15,48 @@ export interface FolderVocabItem {
   frequency: number
 }
 
+/**
+ * 文库级复习：把该文库下所有文档的生词按拼写合并，统计出现次数。
+ *
+ * 注意这里的条目是**合并出来的**，不是某一条标注本身 ——
+ * 同一个词在三篇文档里各标过一次，这里只出现一条、频次记 3。
+ * 所以文库模式的卡片没法拖拽排序（拖了也没有一条标注可以写回去），
+ * 排序只在单篇文档的复习里提供。
+ */
 export function getFolderReviewData(
   bookId: string,
   pages: LyricPage[],
-  notes: Record<string, NotesMap>
+  annotations: Annotation[]
 ): { high: FolderVocabItem[]; normal: FolderVocabItem[] } {
   const pagesInBook = pages.filter((p) => p.bookId === bookId && !p.deletedAt)
+  const titleOf = new Map(pagesInBook.map((p) => [p.id, p.title || '未命名']))
+
+  const inBook = annotations
+    .filter((a) => a.type !== 'sentence' && titleOf.has(a.docId) && a.text)
+    .sort((a, b) => a.order - b.order)
 
   const byWord = new Map<string, FolderVocabItem>()
 
-  for (const page of pagesInBook) {
-    const map = notes[page.id]
-    if (!map) continue
-    const pageTitle = page.title || '未命名'
-
-    for (const n of Object.values(map)) {
-      if (!n?.word) continue
-      const key = n.word.trim().toLowerCase()
-      const existing = byWord.get(key)
-      if (!existing) {
-        byWord.set(key, {
-          id: `${page.id}-${key}`,
-          pageId: page.id,
-          pageTitle,
-          word: n.word,
-          phonetic: n.phonetic,
-          pos: n.pos,
-          definition: n.definition,
-          orphaned: n.orphaned,
-          auto: n.auto,
-          frequency: 1
-        })
-      } else {
-        existing.frequency += 1
-        // 保留第一次出现的定义/音标/词性即可，后续冲突忽略
-      }
+  for (const a of inBook) {
+    const key = a.text.trim().toLowerCase()
+    if (!key) continue
+    const existing = byWord.get(key)
+    if (!existing) {
+      byWord.set(key, {
+        id: `${a.docId}-${key}`,
+        pageId: a.docId,
+        pageTitle: titleOf.get(a.docId) ?? '未命名',
+        word: a.text,
+        phonetic: a.phonetic,
+        pos: a.pos,
+        definition: a.definition,
+        orphaned: isOrphanAnnotation(a) || undefined,
+        auto: a.auto,
+        frequency: 1
+      })
+    } else {
+      existing.frequency += 1
+      // 保留第一次出现的定义/音标/词性即可，后续冲突忽略
     }
   }
 
@@ -66,4 +74,3 @@ export function getFolderReviewData(
 
   return { high, normal }
 }
-

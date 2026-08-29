@@ -1,6 +1,19 @@
-import { memo, useEffect, useState } from 'react'
-import { BookOpen, FileText, Eye, EyeOff, Sparkles } from 'lucide-react'
-import type { LyricPage, NotesMap, Sentence, WordNote } from '../types'
+import { memo, useCallback, useEffect, useState } from 'react'
+import { BookOpen, FileText, Eye, EyeOff, Sparkles, GripVertical } from 'lucide-react'
+import {
+  DndContext,
+  closestCenter,
+  useSensor,
+  useSensors,
+  PointerSensor,
+  type DragEndEvent
+} from '@dnd-kit/core'
+import { restrictToWindowEdges } from '@dnd-kit/modifiers'
+import { SortableContext, rectSortingStrategy, useSortable, arrayMove } from '@dnd-kit/sortable'
+import { CSS } from '@dnd-kit/utilities'
+import type { Annotation, AnnotationType, LyricPage, Sentence, WordNote } from '../types'
+import { isOrphanAnnotation } from '../types'
+import { annotationToSentence } from '../utils/annotationViews'
 import { AutoMark } from './AutoMark'
 import { getFolderReviewData } from '../hooks/getFolderReviewData'
 
@@ -10,9 +23,13 @@ export type ReviewTarget =
   | null
 
 interface VocabCardItem {
+  /**
+   * 单篇复习时是标注自己的 id，可以直接拿去排序。
+   * 文库复习时是「文档+拼写」拼出来的合并键 —— 那是合并出来的条目，不能排序。
+   */
+  id: string
   pageId: string
   pageTitle: string
-  anchorId: string
   word: string
   phonetic?: string
   pos?: string
@@ -29,14 +46,18 @@ export interface VocabularyDashboardProps {
   reviewTarget: ReviewTarget
   books: { id: string; name: string }[]
   pages: LyricPage[]
-  notes: Record<string, NotesMap>
-  /** 句摘列表，用于复习模式下的「句」模式 */
-  sentences?: Sentence[]
+  /** 标注表（全部）。组件自己按当前复习范围筛 */
+  annotations: Annotation[]
   isEditMode: boolean
   onUpdateWord: (word: string, updates: Partial<WordNote>) => void
   /** 复习模式下编辑句摘（句型/翻译） */
   onUpdateSentence?: (id: string, updates: Partial<Pick<Sentence, 'grammar' | 'meaning'>>) => void
   onVocabCountChange?: (count: number) => void
+  /**
+   * 调整卡片顺序。只有单篇文档的复习会调用 ——
+   * 文库复习的条目是合并出来的，没有对应的标注可写回。
+   */
+  onReorder?: (docId: string, type: AnnotationType, ids: string[]) => void
   /** 打开「一键填充」对话框；范围就是当前复习的文档或文库 */
   onOpenAutoFill?: () => void
   /** 当前范围内还有多少条空白笔记；为 0 时不显示填充按钮（没什么可填的） */
@@ -47,14 +68,14 @@ export interface VocabularyDashboardProps {
 function VocabularyDashboardInner({
   reviewTarget,
   pages,
-  notes,
-  sentences = [],
+  annotations,
   isEditMode,
   onUpdateWord,
   onUpdateSentence,
   onVocabCountChange,
   onOpenAutoFill,
-  autoFillCount = 0
+  autoFillCount = 0,
+  onReorder
 }: VocabularyDashboardProps) {
   const [hideEnglish, setHideEnglish] = useState(false)
   const [hideChinese, setHideChinese] = useState(false)
@@ -64,21 +85,20 @@ function VocabularyDashboardInner({
     pages.find((p) => p.id === pageId)?.title || '未命名'
 
   const getVocabByPage = (pageId: string): VocabCardItem[] => {
-    const map = notes[pageId]
-    if (!map) return []
     const pageTitle = getPageTitle(pageId)
-    return Object.entries(map)
-      .filter(([, n]) => n?.word)
-      .map(([anchorId, n]) => ({
+    return annotations
+      .filter((a) => a.docId === pageId && a.type !== 'sentence' && a.text)
+      .sort((a, b) => a.order - b.order)
+      .map((a) => ({
+        id: a.id,
         pageId,
         pageTitle,
-        anchorId,
-        word: n!.word,
-        phonetic: n!.phonetic,
-        pos: n!.pos,
-        definition: n!.definition,
-        orphaned: n!.orphaned,
-        auto: n!.auto
+        word: a.text,
+        phonetic: a.phonetic,
+        pos: a.pos,
+        definition: a.definition,
+        orphaned: isOrphanAnnotation(a) || undefined,
+        auto: a.auto
       }))
   }
 
@@ -91,7 +111,7 @@ function VocabularyDashboardInner({
     }
 
     // 文件夹级别复习：按词汇聚合 + 词频统计
-    const { high, normal } = getFolderReviewData(reviewTarget.id, pages, notes)
+    const { high, normal } = getFolderReviewData(reviewTarget.id, pages, annotations)
 
     const sections: { title: string; pageId: string; items: VocabCardItem[] }[] = []
 
@@ -102,7 +122,7 @@ function VocabularyDashboardInner({
         items: high.map((i) => ({
           pageId: i.pageId,
           pageTitle: i.pageTitle,
-          anchorId: i.id,
+          id: i.id,
           word: i.word,
           phonetic: i.phonetic,
           pos: i.pos,
@@ -121,7 +141,7 @@ function VocabularyDashboardInner({
         items: normal.map((i) => ({
           pageId: i.pageId,
           pageTitle: i.pageTitle,
-          anchorId: i.id,
+          id: i.id,
           word: i.word,
           phonetic: i.phonetic,
           pos: i.pos,
@@ -139,7 +159,13 @@ function VocabularyDashboardInner({
   type SentenceSection = { title: string; pageId: string; items: Sentence[] }
 
   const getGroupedSentences = (): SentenceSection[] => {
-    if (!reviewTarget || !sentences.length) return []
+    if (!reviewTarget) return []
+    const sentences = annotations
+      .filter((a) => a.type === 'sentence')
+      .sort((a, b) => a.order - b.order)
+      .map(annotationToSentence)
+    if (!sentences.length) return []
+
     if (reviewTarget.type === 'page') {
       const items = sentences.filter((s) => s.docId === reviewTarget.id)
       if (items.length === 0) return []
@@ -164,6 +190,33 @@ function VocabularyDashboardInner({
         items: byPage.get(p.id)!
       }))
   }
+
+  /**
+   * 能不能拖拽排序。
+   *
+   * 只在「单篇文档 + 编辑模式」下开放：
+   * - 文库复习的条目是按拼写合并出来的，拖了没有一条标注可以写回去
+   * - 平时不开，免得翻卡片时误拖
+   */
+  const sortable = isEditMode && reviewTarget?.type === 'page' && !!onReorder
+
+  const sensors = useSensors(
+    // 激活阈值很小，安全性来自「必须按住手柄」这一事实（和左侧栏同一套做法）
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } })
+  )
+
+  const handleDragEnd = useCallback(
+    (event: DragEndEvent, type: AnnotationType, ids: string[]) => {
+      const { active, over } = event
+      if (!over || active.id === over.id) return
+      const from = ids.indexOf(String(active.id))
+      const to = ids.indexOf(String(over.id))
+      if (from === -1 || to === -1) return
+      if (reviewTarget?.type !== 'page') return
+      onReorder?.(reviewTarget.id, type, arrayMove(ids, from, to))
+    },
+    [onReorder, reviewTarget]
+  )
 
   const grouped = getGroupedVocab()
   const groupedSentences = getGroupedSentences()
@@ -256,18 +309,27 @@ function VocabularyDashboardInner({
                   {group.title}
                   <span className="text-xs font-normal text-gray-400">({group.items.length})</span>
                 </h2>
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                <CardGrid
+                  sortable={sortable}
+                  sensors={sensors}
+                  ids={group.items.map((i) => i.id)}
+                  onDragEnd={(e) => handleDragEnd(e, 'word', group.items.map((i) => i.id))}
+                >
                   {group.items.map((item) => (
-                    <VocabCard
-                      key={item.anchorId}
-                      item={item}
-                      hideEnglish={hideEnglish}
-                      hideChinese={hideChinese}
-                      isEditMode={isEditMode}
-                      onUpdateWord={onUpdateWord}
-                    />
+                    <SortableCard key={item.id} id={item.id} sortable={sortable}>
+                      {(handle) => (
+                        <VocabCard
+                          item={item}
+                          hideEnglish={hideEnglish}
+                          hideChinese={hideChinese}
+                          isEditMode={isEditMode}
+                          onUpdateWord={onUpdateWord}
+                          dragHandle={handle}
+                        />
+                      )}
+                    </SortableCard>
                   ))}
-                </div>
+                </CardGrid>
               </section>
             ))}
           </div>
@@ -280,18 +342,27 @@ function VocabularyDashboardInner({
                   {group.title}
                   <span className="text-xs font-normal text-gray-400">({group.items.length})</span>
                 </h2>
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                <CardGrid
+                  sortable={sortable}
+                  sensors={sensors}
+                  ids={group.items.map((i) => i.id)}
+                  onDragEnd={(e) => handleDragEnd(e, 'sentence', group.items.map((i) => i.id))}
+                >
                   {group.items.map((item) => (
-                    <SentenceCard
-                      key={item.id}
-                      item={item}
-                      hideEnglish={hideEnglish}
-                      hideChinese={hideChinese}
-                      isEditMode={isEditMode}
-                      onUpdateSentence={onUpdateSentence}
-                    />
+                    <SortableCard key={item.id} id={item.id} sortable={sortable}>
+                      {(handle) => (
+                        <SentenceCard
+                          item={item}
+                          hideEnglish={hideEnglish}
+                          hideChinese={hideChinese}
+                          isEditMode={isEditMode}
+                          onUpdateSentence={onUpdateSentence}
+                          dragHandle={handle}
+                        />
+                      )}
+                    </SortableCard>
                   ))}
-                </div>
+                </CardGrid>
               </section>
             ))}
           </div>
@@ -301,18 +372,107 @@ function VocabularyDashboardInner({
   )
 }
 
+const GRID_CLASS = 'grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4'
+
+/** 卡片网格。不能排序时就是个普通网格，连 DndContext 都不挂 */
+function CardGrid({
+  sortable,
+  sensors,
+  ids,
+  onDragEnd,
+  children
+}: {
+  sortable: boolean
+  sensors: ReturnType<typeof useSensors>
+  ids: string[]
+  onDragEnd: (event: DragEndEvent) => void
+  children: React.ReactNode
+}) {
+  if (!sortable) return <div className={GRID_CLASS}>{children}</div>
+  return (
+    <DndContext
+      sensors={sensors}
+      collisionDetection={closestCenter}
+      modifiers={[restrictToWindowEdges]}
+      onDragEnd={onDragEnd}
+    >
+      {/* 卡片是网格排布，用 rectSortingStrategy；竖列那套策略在这里会算错位置 */}
+      <SortableContext items={ids} strategy={rectSortingStrategy}>
+        <div className={GRID_CLASS}>{children}</div>
+      </SortableContext>
+    </DndContext>
+  )
+}
+
+/**
+ * 可拖动的卡片外壳。
+ *
+ * 手柄以 children 参数的形式交给卡片自己去摆 —— 卡片内部的排版各不相同，
+ * 外面用绝对定位去盖，迟早会和某个输入框撞上。
+ */
+function SortableCard({
+  id,
+  sortable,
+  children
+}: {
+  id: string
+  sortable: boolean
+  children: (handle: React.ReactNode) => React.ReactNode
+}) {
+  if (!sortable) return <>{children(null)}</>
+  return <SortableCardInner id={id}>{children}</SortableCardInner>
+}
+
+function SortableCardInner({
+  id,
+  children
+}: {
+  id: string
+  children: (handle: React.ReactNode) => React.ReactNode
+}) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id })
+
+  const style: React.CSSProperties = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    zIndex: isDragging ? 999 : undefined,
+    opacity: isDragging ? 0.4 : 1
+  }
+
+  const handle = (
+    <button
+      type="button"
+      className="shrink-0 -ml-1 p-1 rounded text-stone-300 hover:text-ink cursor-grab active:cursor-grabbing"
+      style={{ touchAction: 'none' }}
+      aria-label="拖动调整顺序"
+      {...attributes}
+      {...listeners}
+    >
+      <GripVertical className="w-4 h-4" />
+    </button>
+  )
+
+  return (
+    <div ref={setNodeRef} style={style}>
+      {children(handle)}
+    </div>
+  )
+}
+
 function VocabCard({
   item,
   hideEnglish,
   hideChinese,
   isEditMode,
-  onUpdateWord
+  onUpdateWord,
+  dragHandle
 }: {
   item: VocabCardItem
   hideEnglish: boolean
   hideChinese: boolean
   isEditMode: boolean
   onUpdateWord: (word: string, updates: Partial<WordNote>) => void
+  dragHandle?: React.ReactNode
 }) {
   // 遮住答案时，点一下卡片翻开 / 再点一下盖回去（触摸屏没有 hover，只能靠点）
   const [revealed, setRevealed] = useState(false)
@@ -352,6 +512,7 @@ function VocabCard({
       }}
     >
       <div className="flex items-start justify-between gap-2 flex-wrap">
+        {dragHandle}
         <div className="min-w-0 flex-1 min-h-[28px]">
           {showEnglish ? (
             <span className="font-lyric-en font-serif text-amber-800 font-bold text-lg block">
@@ -442,13 +603,15 @@ function SentenceCard({
   hideEnglish,
   hideChinese,
   isEditMode,
-  onUpdateSentence
+  onUpdateSentence,
+  dragHandle
 }: {
   item: Sentence
   hideEnglish: boolean
   hideChinese: boolean
   isEditMode: boolean
   onUpdateSentence?: (id: string, updates: Partial<Pick<Sentence, 'grammar' | 'meaning'>>) => void
+  dragHandle?: React.ReactNode
 }) {
   // 遮住答案时，点一下卡片翻开 / 再点一下盖回去（触摸屏没有 hover，只能靠点）
   const [revealed, setRevealed] = useState(false)
@@ -478,9 +641,10 @@ function SentenceCard({
         setRevealed((v) => !v)
       }}
     >
-      <div className="min-h-[28px]">
+      <div className="min-h-[28px] flex items-start gap-1">
+        {dragHandle}
         {showEnglish ? (
-          <p className="font-lyric-en font-serif text-amber-800 text-base leading-snug">
+          <p className="font-lyric-en font-serif text-amber-800 text-base leading-snug flex-1">
             {item.text}
             {item.auto && <AutoMark />}
           </p>
