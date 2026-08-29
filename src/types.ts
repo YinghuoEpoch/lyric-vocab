@@ -45,7 +45,13 @@ export interface AppData {
   books: LyricBook[]
   pages: LyricPage[]
   notes: Record<string, NotesMap> // pageId -> NotesMap
-  /** 句摘备份：按数组整体存到备份 JSON 中；运行期仍主要使用 localStorage 中的 SENTENCES_KEY */
+  /**
+   * 句摘（旧形状）。
+   *
+   * 运行期已经不用它了 —— 句摘现在就是 annotations 里 type 为 'sentence' 的标注。
+   * 保留两个用途：读取「统一标注模型」之前导出的老备份；
+   * 以及导出时额外写一份，万一要退回旧版本 APK，旧版本认得的正是这个字段。
+   */
   sentences?: Sentence[]
   /**
    * 统一标注表（新模型，见下方 Annotation）。

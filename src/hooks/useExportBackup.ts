@@ -1,48 +1,27 @@
-
 import { useCallback } from 'react'
 import { Capacitor } from '@capacitor/core'
 import { Filesystem, Directory, Encoding } from '@capacitor/filesystem'
 import { Share } from '@capacitor/share'
 import { getAppData } from '../storage'
-import type { Sentence } from '../types'
-
-// 与 App.tsx 中保持一致的本地存储 key
-const SENTENCES_KEY = 'user_sentences'
+import { buildSentenceList } from '../utils/annotationViews'
 
 /**
  * 导出备份 Hook。
  *
  * - Web：生成 JSON Blob + <a download> 下载
  * - 原生 App（Capacitor）：写入缓存目录，再通过 Share.share() 打开系统分享面板
+ *
+ * 备份现在从**一个地方**取数据（主库的标注表）。
+ * 从前要从主库 + localStorage 两处拼，很容易漏。
+ *
+ * 里面仍然额外写一份 sentences：那是旧形状，新版本用不到它，
+ * 但万一要退回旧版本 APK，旧版本认得的正是这个字段。
  */
 export function useExportBackup(): () => Promise<void> {
   const exportBackup = useCallback(async () => {
     try {
       const data = await getAppData()
-
-      // 额外从 localStorage 读取句摘（Sentence）并一并写入备份 JSON
-      let sentences: Sentence[] | undefined
-      try {
-        const raw = localStorage.getItem(SENTENCES_KEY)
-        if (raw) {
-          const parsed = JSON.parse(raw) as unknown
-          if (Array.isArray(parsed)) {
-            sentences = parsed.filter(
-              (x: unknown): x is Sentence =>
-                typeof x === 'object' &&
-                x !== null &&
-                typeof (x as Sentence).id === 'string' &&
-                typeof (x as Sentence).text === 'string' &&
-                typeof (x as Sentence).docId === 'string' &&
-                typeof (x as Sentence).date === 'number'
-            )
-          }
-        }
-      } catch {
-        // 句摘读取失败时忽略，不影响主数据备份
-      }
-
-      const payload = sentences ? { ...data, sentences } : data
+      const payload = { ...data, sentences: buildSentenceList(data.annotations ?? []) }
       const json = JSON.stringify(payload, null, 2)
 
       if (Capacitor.isNativePlatform()) {

@@ -10,7 +10,13 @@ import type {
   WordNote
 } from './types'
 import { migrateToAnnotations, type MigrationReport } from './utils/migrateAnnotations'
-import { SAMPLE_BOOK_ID, SAMPLE_PAGE_ID, YESTERDAY_ONCE_MORE, SAMPLE_NOTES } from './sampleData'
+import {
+  SAMPLE_BOOK_ID,
+  SAMPLE_PAGE_ID,
+  YESTERDAY_ONCE_MORE,
+  SAMPLE_NOTES,
+  SAMPLE_SENTENCES
+} from './sampleData'
 
 export const STORAGE_KEY = 'lyric-vocab-data'
 const KEY = STORAGE_KEY
@@ -152,20 +158,26 @@ function commit(data: AppData): AppData {
  */
 function makeSampleData(): AppData {
   const now = Date.now()
-  return {
-    books: [{ id: SAMPLE_BOOK_ID, name: '示例文库', createdAt: now }],
-    pages: [
-      {
-        id: SAMPLE_PAGE_ID,
-        bookId: SAMPLE_BOOK_ID,
-        title: 'Wish My Life Away',
-        content: YESTERDAY_ONCE_MORE,
-        updatedAt: now
-      }
-    ],
-    notes: { [SAMPLE_PAGE_ID]: { ...SAMPLE_NOTES } },
-    annotations: []
-  }
+  const books = [{ id: SAMPLE_BOOK_ID, name: '示例文库', createdAt: now }]
+  const pages = [
+    {
+      id: SAMPLE_PAGE_ID,
+      bookId: SAMPLE_BOOK_ID,
+      title: 'Wish My Life Away',
+      content: YESTERDAY_ONCE_MORE,
+      updatedAt: now
+    }
+  ]
+  const notes = { [SAMPLE_PAGE_ID]: { ...SAMPLE_NOTES } }
+
+  // 示例内容仍以旧形状写在 sampleData.ts 里（那份文件本身就是给人读的），
+  // 这里过一遍迁移器转成标注 —— 新装的 App 因此不必再跑一次启动迁移。
+  const { annotations } = migrateToAnnotations(
+    { pages, notes, sentences: SAMPLE_SENTENCES },
+    { makeId: generateId, now }
+  )
+
+  return { books, pages, notes, annotations, annotationsMigratedAt: now }
 }
 
 /**
@@ -187,7 +199,11 @@ export async function replaceAllData(next: AppData): Promise<AppData> {
   // 那种情况下把「迁移过」的标记一并清掉，让迁移重新跑一遍，
   // 否则恢复回来的笔记会一条都不出现在新模型里。
   data.annotations = next.annotations ?? []
-  data.annotationsMigratedAt = next.annotations?.length ? next.annotationsMigratedAt : undefined
+  // 备份里已经带着标注表，就一定要打上「迁移过」的标记 —— 否则启动迁移会拿
+  // 备份里的旧 notes 重建整张表，把恢复回来的标注覆盖掉。
+  data.annotationsMigratedAt = next.annotations?.length
+    ? (next.annotationsMigratedAt ?? Date.now())
+    : undefined
   await flush()
   return snapshot(data)
 }
@@ -279,6 +295,20 @@ export async function savePage(page: LyricPage): Promise<AppData> {
     : [...data.pages, next]
   return commit(data)
 }
+
+/*
+ * ============================================================
+ * 旧模型（notes）的写入接口 —— App 里已经没人调用了。
+ *
+ * 界面已全部改走标注表。这几个函数连同 data.notes 一起留着，
+ * 是「跑稳之前不删旧数据」这条安全网的一部分：
+ * 万一新模型出问题，旧数据和读写它的代码都还在。
+ * 等新版本在真机上用一阵子、确认无误，再连同 data.notes 一起清掉。
+ *
+ * 例外：replacePageNotes 还在用 —— 分词迁移（migrateTokenizer）
+ * 修的是旧形状的数据，得靠它写回去。
+ * ============================================================
+ */
 
 export async function saveNoteForPage(
   pageId: string,

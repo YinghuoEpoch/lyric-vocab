@@ -8,9 +8,16 @@ import { RightSidebar } from './components/RightSidebar'
 import { LyricEditor } from './components/LyricEditor'
 import { VocabularyDashboard } from './components/VocabularyDashboard'
 import { useExportBackup } from './hooks/useExportBackup'
-import type { AppData, LyricBook, LyricPage, ReaderSettings, Sentence, WordNote } from './types'
-import { SAMPLE_PAGE_ID, SAMPLE_SENTENCES } from './sampleData'
-import { reconcilePage, makeOrphanKey } from './utils/reconcile'
+import type { Annotation, AppData, LyricBook, LyricPage, ReaderSettings, Sentence, WordNote } from './types'
+import { reconcileAnnotations, markAnnotationOrphaned } from './utils/reconcile'
+import {
+  annotationToSentence,
+  buildNotesIndex,
+  buildSentenceList,
+  findAnnotationByKey,
+  findRangeAnnotation,
+  findWordAnnotation
+} from './utils/annotationViews'
 import { migratePage } from './utils/migrateTokenizer'
 import { importFile } from './importers'
 import { useBackHandler, handleBackPress, BackPriority } from './hooks/useBackHandler'
@@ -27,14 +34,17 @@ import {
   restorePage,
   deleteBookPermanently,
   deletePagePermanently,
-  deleteNoteForPage,
-  saveNoteForPage,
   generateId,
   reorderBooks,
   reorderPages,
-  updateWordEverywhere,
   addBookWithPages,
-  replacePageNotes
+  replacePageNotes,
+  saveAnnotation,
+  deleteAnnotation,
+  replaceDocAnnotations,
+  updateAnnotationsByWord,
+  nextAnnotationOrder,
+  runAnnotationMigration
 } from './storage'
 
 /** 当前展开的侧栏；null = 都收起。左右互斥，所以一个状态就够 */
@@ -84,6 +94,32 @@ function loadReaderSettings(): ReaderSettings {
   }
 }
 
+/**
+ * 读取住在 localStorage 里的旧句摘。
+ *
+ * 只在启动迁移时用一次。迁移之后句摘就在主库的标注表里了，
+ * 这个键不再被写入，也不删除 —— 留着当一份冻结的保险。
+ */
+function readLegacySentences(): Sentence[] {
+  try {
+    const raw = localStorage.getItem(SENTENCES_KEY)
+    if (!raw) return []
+    const parsed = JSON.parse(raw) as unknown
+    if (!Array.isArray(parsed)) return []
+    return parsed.filter(
+      (x: unknown): x is Sentence =>
+        typeof x === 'object' &&
+        x !== null &&
+        typeof (x as Sentence).id === 'string' &&
+        typeof (x as Sentence).text === 'string' &&
+        typeof (x as Sentence).docId === 'string' &&
+        typeof (x as Sentence).date === 'number'
+    )
+  } catch {
+    return []
+  }
+}
+
 export default function App() {
   const [appData, setAppData] = useState<AppData>({
     books: [],
@@ -91,6 +127,8 @@ export default function App() {
     notes: {}
   })
   const [initializing, setInitializing] = useState(true)
+  /** 启动迁移跑完了没有。没跑完之前别去动数据，否则改的是还没搬完的那一份 */
+  const [dataReady, setDataReady] = useState(false)
   const [userAgreementAccepted, setUserAgreementAccepted] = useState(false)
   const [agreementChecked, setAgreementChecked] = useState(false)
   const [mode, setMode] = useState<AppMode>('read')
@@ -120,37 +158,27 @@ export default function App() {
   const [documentReadingProgress, setDocumentReadingProgress] = useState(0)
   const [reviewVocabCount, setReviewVocabCount] = useState(0)
   const [readerSettings, setReaderSettings] = useState<ReaderSettings>(loadReaderSettings)
-  const [sentences, setSentences] = useState<Sentence[]>(() => {
-    try {
-      const raw = localStorage.getItem(SENTENCES_KEY)
-      if (!raw) return []
-      const parsed = JSON.parse(raw) as unknown
-      if (!Array.isArray(parsed)) return []
-      return parsed.filter(
-        (x: unknown): x is Sentence =>
-          typeof x === 'object' &&
-          x !== null &&
-          typeof (x as Sentence).id === 'string' &&
-          typeof (x as Sentence).text === 'string' &&
-          typeof (x as Sentence).docId === 'string' &&
-          typeof (x as Sentence).date === 'number'
-      )
-    } catch {
-      return []
-    }
-  })
 
-  useEffect(() => {
-    try {
-      localStorage.setItem(SENTENCES_KEY, JSON.stringify(sentences))
-    } catch {
-      // ignore
-    }
-  }, [sentences])
+  /**
+   * 标注表：单词、短语、句子的唯一权威数据。
+   *
+   * 界面各处要的形状不一样（阅读页按坐标查、复习页要排好序的列表），
+   * 都从这一份算出来 —— 见 utils/annotationViews。改数据一律回到标注表上改。
+   */
+  const annotations = useMemo(() => appData.annotations ?? [], [appData.annotations])
+  const notesIndex = useMemo(() => buildNotesIndex(annotations), [annotations])
+  const sentences = useMemo(() => buildSentenceList(annotations), [annotations])
 
-  /** 供一次性迁移读取当前句摘，避免把 sentences 写进依赖导致反复触发 */
-  const sentencesRef = useRef(sentences)
-  sentencesRef.current = sentences
+  /**
+   * 给回调读最新数据用。
+   *
+   * 不能直接把 appData / annotations 写进回调的依赖里 —— 那样每次数据一变，
+   * 回调就是个新函数，传下去会把 LyricEditor 等组件的 memo 打破，
+   * 于是滚动时（进度保存会更新 appData）整棵树又开始重渲染，
+   * 正好把之前做的「渲染隔离」抵消掉。
+   */
+  const dataRef = useRef(appData)
+  dataRef.current = appData
 
   useEffect(() => {
     try {
@@ -164,16 +192,6 @@ export default function App() {
       setAgreementChecked(true)
     }
   }, [])
-
-  // 使用示例文档且当前没有任何句摘时，自动注入示例句摘（Is to wish my life away）
-  const hasSamplePage = useMemo(
-    () => appData.pages.some((p) => p.id === SAMPLE_PAGE_ID),
-    [appData.pages]
-  )
-  useEffect(() => {
-    if (!hasSamplePage || sentences.length > 0) return
-    setSentences(SAMPLE_SENTENCES)
-  }, [hasSamplePage, sentences.length])
 
   useEffect(() => {
     try {
@@ -256,8 +274,8 @@ export default function App() {
   }, [mode, reviewTarget, currentPage, activePages, activeBooks])
 
   const notesForCurrent = useMemo(
-    () => (currentPageId ? (appData.notes[currentPageId] ?? {}) : {}),
-    [appData.notes, currentPageId]
+    () => (currentPageId ? (notesIndex[currentPageId] ?? {}) : {}),
+    [notesIndex, currentPageId]
   )
 
   const sentencesForCurrent = useMemo(
@@ -277,9 +295,9 @@ export default function App() {
       orphaned?: boolean
       auto?: boolean
     }> = []
-    for (const pageId of Object.keys(appData.notes)) {
+    for (const pageId of Object.keys(notesIndex)) {
       if (!activePageIds.has(pageId)) continue
-      const map = appData.notes[pageId]
+      const map = notesIndex[pageId]
       for (const anchorId of Object.keys(map)) {
         const n = map[anchorId]
         if (n?.word)
@@ -296,7 +314,7 @@ export default function App() {
       }
     }
     return out
-  }, [appData.notes, activePages])
+  }, [notesIndex, activePages])
 
   useEffect(() => {
     if (!currentPageId && activePages.length > 0) {
@@ -490,26 +508,52 @@ export default function App() {
     [currentPage, refreshData]
   )
 
+  /**
+   * 保存一条单词笔记。
+   *
+   * 这个坐标上已经有标注就改它（id 不变），没有才新建。
+   * 「按坐标找、按 id 存」是新模型的日常形态：坐标只是找人的线索，不是身份。
+   */
   const handleNoteSave = useCallback(
     (anchorId: string, note: WordNote) => {
       if (!currentPageId) return
       void (async () => {
-        await saveNoteForPage(currentPageId, anchorId, note)
-        await refreshData()
+        const latest = dataRef.current
+        const existing = findWordAnnotation(latest.annotations ?? [], currentPageId, anchorId)
+        const fields = {
+          text: note.word,
+          phonetic: note.phonetic,
+          pos: note.pos,
+          definition: note.definition
+        }
+        const next: Annotation = existing
+          ? { ...existing, ...fields }
+          : {
+              id: generateId(),
+              docId: currentPageId,
+              type: 'word',
+              start: anchorId,
+              end: anchorId,
+              order: nextAnnotationOrder(latest, currentPageId, 'word'),
+              createdAt: Date.now(),
+              ...fields
+            }
+        // 用户亲手写的，就不再算 AI 填的 —— 那个标记本质是「待复核清单」
+        delete next.auto
+        setAppData(await saveAnnotation(next))
       })()
     },
-    [currentPageId, refreshData]
+    [currentPageId]
   )
 
   const handleNoteDelete = useCallback(
     (anchorId: string) => {
       if (!currentPageId) return
-      void (async () => {
-        await deleteNoteForPage(currentPageId, anchorId)
-        await refreshData()
-      })()
+      const target = findWordAnnotation(dataRef.current.annotations ?? [], currentPageId, anchorId)
+      if (!target) return
+      void (async () => setAppData(await deleteAnnotation(target.id)))()
     },
-    [currentPageId, refreshData]
+    [currentPageId]
   )
 
   /**
@@ -574,45 +618,38 @@ export default function App() {
       if (oldContent === newContent) return
 
       const data = await getAppData()
-      const pageNotes = data.notes[pageId] ?? {}
-      const pageSentences = sentences.filter((s) => s.docId === pageId)
-      if (Object.keys(pageNotes).length === 0 && pageSentences.length === 0) return
+      const pageAnnotations = (data.annotations ?? []).filter((a) => a.docId === pageId)
+      if (pageAnnotations.length === 0) return
 
-      const result = reconcilePage(oldContent, newContent, pageNotes, pageSentences)
+      const result = reconcileAnnotations(oldContent, newContent, pageAnnotations)
       if (!result.changed) return
 
-      let notesToWrite = result.notes
-      let sentencesToKeep = result.sentences
+      let toWrite = result.annotations
 
-      const orphanWords = result.newOrphanNotes.map((n) => n.word).filter(Boolean)
-      const hasOrphans = result.newOrphanNotes.length > 0 || result.newOrphanSentences.length > 0
-
-      if (hasOrphans) {
+      if (result.newOrphans.length > 0) {
         // 用 app 自己的弹窗询问，而不是 window.confirm。
         // 系统弹窗会卡住整个 JS 线程，而此刻输入法刚收起、窗口正在变回原高，
         // 页面因此拿不到这次尺寸变化，就会卡在被压扁的高度上（下半屏留一块空白）。
-        const shouldDelete = await askOrphanDecision(orphanWords, result.newOrphanSentences)
+        const orphanWords = result.newOrphans
+          .filter((a) => a.type !== 'sentence')
+          .map((a) => a.text)
+          .filter(Boolean)
+        const orphanSentences = result.newOrphans
+          .filter((a) => a.type === 'sentence')
+          .map(annotationToSentence)
 
+        const shouldDelete = await askOrphanDecision(orphanWords, orphanSentences)
+
+        // 选保留：位置置空即可。旧模型这里要给每条编一个假坐标，
+        // 否则要么给顶替上来的词画了线，要么被占了坐标的笔记悄悄丢掉。
         if (!shouldDelete) {
-          // 保留：换成一个永远不会和真实坐标撞车的键，并打上标记。
-          // 之前是留在老坐标上，结果要么给顶替上来的词画了线，
-          // 要么坐标已被别的笔记占用而被悄悄丢掉。
-          notesToWrite = { ...result.notes }
-          for (const orphan of result.newOrphanNotes) {
-            const original = pageNotes[orphan.anchorId]
-            if (original) notesToWrite[makeOrphanKey()] = { ...original, orphaned: true }
-          }
-          sentencesToKeep = [
-            ...result.sentences,
-            ...result.newOrphanSentences.map((s) => ({ ...s, orphaned: true }))
-          ]
+          toWrite = [...result.annotations, ...result.newOrphans.map(markAnnotationOrphaned)]
         }
       }
 
-      setAppData(await replacePageNotes(pageId, notesToWrite))
-      setSentences((prev) => [...prev.filter((s) => s.docId !== pageId), ...sentencesToKeep])
+      setAppData(await replaceDocAnnotations(pageId, toWrite))
     },
-    [sentences, askOrphanDecision]
+    [askOrphanDecision]
   )
 
   const handleEditModeChange = useCallback(
@@ -663,7 +700,7 @@ export default function App() {
   // 正常退出编辑时快照会被清掉，所以这里能捡到东西就说明上次没走完流程。
   const recoveredRef = useRef(false)
   useEffect(() => {
-    if (initializing || recoveredRef.current) return
+    if (!dataReady || recoveredRef.current) return
     recoveredRef.current = true
 
     let snapshot: { pageId: string; content: string } | null = null
@@ -679,67 +716,96 @@ export default function App() {
     const page = appData.pages.find((p) => p.id === snapshot!.pageId)
     if (!page) return
     void reconcileAfterEdit(snapshot.pageId, snapshot.content, page.content)
-  }, [initializing, appData.pages, reconcileAfterEdit])
+  }, [dataReady, appData.pages, reconcileAfterEdit])
 
   /**
-   * 一次性数据迁移：切词规则改了（统一两种撇号、拆出缩写后缀、数字纳入单词、
-   * 落单的连字符不再算词），同一段正文数出来的词序号会和从前对不上，
-   * 所以要把已有笔记按字符位置搬到新编号上。跑过一次就用标记记住，不再重复。
+   * 启动时的一次性数据迁移，两步，顺序不能颠倒。
+   *
+   * 1. 分词迁移：切词规则改过（统一两种撇号、拆出缩写后缀、数字纳入单词、
+   *    落单的连字符不再算词），同一段正文数出来的词序号和从前对不上，
+   *    要把旧笔记按字符位置搬到新编号上。它改的是**旧形状**的数据。
+   * 2. 标注迁移：把旧的 notes + 句摘合并成统一的标注表。
+   *
+   * 必须先 1 后 2 —— 反过来的话，标注表是拿还没修正的坐标建的，
+   * 而第 1 步只认旧形状，改完也不会反映到标注表里。
+   *
+   * 两步各有各的守卫：分词迁移用 localStorage 标记，标注迁移的标记存在数据里
+   * （见 storage.runAnnotationMigration 的注释，那里说明了为什么不能用 localStorage）。
    */
   const migratedRef = useRef(false)
   useEffect(() => {
     if (initializing || migratedRef.current) return
     migratedRef.current = true
 
-    try {
-      if (localStorage.getItem(TOKENIZER_MIGRATION_KEY) === 'done') return
-    } catch {
-      return // 读不到就别乱改用户数据
-    }
-
     void (async () => {
+      // 句摘的老家是 localStorage。迁移之后它就只是一份冻结的备份，不再被写入。
+      const legacySentences = readLegacySentences()
+
+      // —— 第 1 步：分词迁移 ——
+      let tokenizerDone = true
       try {
-        const data = await getAppData()
-        let touched = false
-
-        for (const page of data.pages) {
-          const pageNotes = data.notes[page.id] ?? {}
-          const pageSentences = sentencesRef.current.filter((s) => s.docId === page.id)
-          if (Object.keys(pageNotes).length === 0 && pageSentences.length === 0) continue
-
-          const result = migratePage(page.content, pageNotes, pageSentences)
-          if (!result.changed) continue
-
-          await replacePageNotes(page.id, result.notes)
-          setSentences((prev) => [
-            ...prev.filter((s) => s.docId !== page.id),
-            ...result.sentences
-          ])
-          touched = true
-        }
-
-        if (touched) await refreshData()
-        localStorage.setItem(TOKENIZER_MIGRATION_KEY, 'done')
+        tokenizerDone = localStorage.getItem(TOKENIZER_MIGRATION_KEY) === 'done'
       } catch {
-        // 迁移失败就先不打标记，下次启动再试；数据保持原样
+        tokenizerDone = true // 读不到 localStorage 就别乱改用户数据
+      }
+
+      let sentencesForMigration = legacySentences
+      if (!tokenizerDone) {
+        try {
+          const data = await getAppData()
+          const migrated: Sentence[] = []
+
+          for (const page of data.pages) {
+            const pageNotes = data.notes[page.id] ?? {}
+            const pageSentences = legacySentences.filter((s) => s.docId === page.id)
+            if (Object.keys(pageNotes).length === 0 && pageSentences.length === 0) continue
+
+            const result = migratePage(page.content, pageNotes, pageSentences)
+            if (!result.changed) {
+              migrated.push(...pageSentences)
+              continue
+            }
+            await replacePageNotes(page.id, result.notes)
+            migrated.push(...result.sentences)
+          }
+
+          const touchedDocs = new Set(migrated.map((s) => s.docId))
+          sentencesForMigration = [
+            ...legacySentences.filter((s) => !touchedDocs.has(s.docId)),
+            ...migrated
+          ]
+          localStorage.setItem(TOKENIZER_MIGRATION_KEY, 'done')
+        } catch {
+          // 迁移失败就先不打标记，下次启动再试；数据保持原样
+        }
+      }
+
+      // —— 第 2 步：标注迁移 ——
+      try {
+        const { data } = await runAnnotationMigration(sentencesForMigration)
+        setAppData(data)
+      } catch {
+        // 失败也不打标记，下次启动再试
+      } finally {
+        setDataReady(true)
       }
     })()
-  }, [initializing, refreshData])
+  }, [initializing])
 
   /** 从生词板删除一条单词笔记（目前只有「原文已删除」的条目会露出这个入口） */
   const handleDeleteVocabNote = useCallback(
     (pageId: string, anchorId: string) => {
-      void (async () => {
-        await deleteNoteForPage(pageId, anchorId)
-        await refreshData()
-      })()
+      // 传回来的键有两种：正常笔记是坐标，孤儿是它自己的 id
+      const target = findAnnotationByKey(dataRef.current.annotations ?? [], pageId, anchorId)
+      if (!target) return
+      void (async () => setAppData(await deleteAnnotation(target.id)))()
     },
-    [refreshData]
+    []
   )
 
   /** 从生词板删除一条句摘 */
   const handleDeleteSentenceById = useCallback((id: string) => {
-    setSentences((prev) => prev.filter((s) => s.id !== id))
+    void (async () => setAppData(await deleteAnnotation(id)))()
   }, [])
 
   /** 恢复备份。提成稳定引用，否则 LeftSidebar 的 memo 会被这个内联函数破坏。 */
@@ -767,24 +833,23 @@ export default function App() {
                   // 还是旧数据，界面不会更新，而且下一次保存会把恢复的内容又覆盖回去。
                   setAppData(await replaceAllData(data))
 
-                  // 再尝试恢复句摘（Sentence）到 localStorage + 内存状态
-                  if (Array.isArray(data.sentences)) {
-                    const restoredSentences = data.sentences.filter(
-                      (x: unknown): x is Sentence =>
-                        typeof x === 'object' &&
-                        x !== null &&
-                        typeof (x as Sentence).id === 'string' &&
-                        typeof (x as Sentence).text === 'string' &&
-                        typeof (x as Sentence).docId === 'string' &&
-                        typeof (x as Sentence).date === 'number'
-                    )
-                    try {
-                      localStorage.setItem(SENTENCES_KEY, JSON.stringify(restoredSentences))
-                    } catch {
-                      // 如果写入失败，不阻塞主数据恢复
-                    }
-                    setSentences(restoredSentences)
-                  }
+                  // 备份可能是「统一标注模型」之前导出的：那种备份里句摘是单独一份，
+                  // 主库里没有标注表。补跑一次迁移把它们合并进来，
+                  // 否则恢复回来的笔记一条都不会出现在界面上。
+                  // 备份里已经带标注表的话，这一步会自己跳过。
+                  const restoredSentences = Array.isArray(data.sentences)
+                    ? data.sentences.filter(
+                        (x: unknown): x is Sentence =>
+                          typeof x === 'object' &&
+                          x !== null &&
+                          typeof (x as Sentence).id === 'string' &&
+                          typeof (x as Sentence).text === 'string' &&
+                          typeof (x as Sentence).docId === 'string' &&
+                          typeof (x as Sentence).date === 'number'
+                      )
+                    : []
+                  const { data: migrated } = await runAnnotationMigration(restoredSentences)
+                  setAppData(migrated)
 
                   setCurrentPageId(null)
                 } catch (e) {
@@ -802,6 +867,13 @@ export default function App() {
     setActivePanel(null)
   }, [])
 
+  /**
+   * 保存句摘。
+   *
+   * 同一段范围已经有句摘就改它，没有才新建 —— 和单词笔记同一个规矩。
+   * （旧实现在这里一律新增：从右侧栏点进来改一条已有句摘，
+   * 保存后会多出一条一模一样的。）
+   */
   const handleAddSentence = useCallback(
     (s: {
       text: string
@@ -811,14 +883,31 @@ export default function App() {
       startAnchorId: string
       endAnchorId: string
     }) => {
-      setSentences((prev) => [
-        ...prev,
-        {
-          ...s,
-          id: generateId(),
-          date: Date.now()
-        }
-      ])
+      void (async () => {
+        const latest = dataRef.current
+        const existing = findRangeAnnotation(
+          latest.annotations ?? [],
+          s.docId,
+          s.startAnchorId,
+          s.endAnchorId
+        )
+        const next: Annotation = existing
+          ? { ...existing, text: s.text, grammar: s.grammar, meaning: s.meaning }
+          : {
+              id: generateId(),
+              docId: s.docId,
+              type: 'sentence',
+              start: s.startAnchorId,
+              end: s.endAnchorId,
+              text: s.text,
+              order: nextAnnotationOrder(latest, s.docId, 'sentence'),
+              createdAt: Date.now(),
+              grammar: s.grammar,
+              meaning: s.meaning
+            }
+        delete next.auto // 用户亲手写的，不再算 AI 填的
+        setAppData(await saveAnnotation(next))
+      })()
     },
     []
   )
@@ -839,16 +928,15 @@ export default function App() {
 
   const handleDeleteSentence = useCallback(
     (startAnchorId: string, endAnchorId: string) => {
-      setSentences((prev) =>
-        prev.filter(
-          (s) =>
-            !(
-              s.docId === currentPageId &&
-              s.startAnchorId === startAnchorId &&
-              s.endAnchorId === endAnchorId
-            )
-        )
+      if (!currentPageId) return
+      const target = findRangeAnnotation(
+        dataRef.current.annotations ?? [],
+        currentPageId,
+        startAnchorId,
+        endAnchorId
       )
+      if (!target) return
+      void (async () => setAppData(await deleteAnnotation(target.id)))()
     },
     [currentPageId]
   )
@@ -866,26 +954,21 @@ export default function App() {
     []
   )
 
-  const handleUpdateWord = useCallback(
-    (word: string, updates: Partial<WordNote>) => {
-      void (async () => {
-        await updateWordEverywhere(word, updates)
-        await refreshData()
-      })()
-    },
-    [refreshData]
-  )
-
-  const handleUpdateSentence = useCallback((id: string, updates: Partial<Pick<Sentence, 'grammar' | 'meaning'>>) => {
-    setSentences((prev) =>
-      prev.map((s) => {
-        if (s.id !== id) return s
-        // 用户亲自改过，就不再算 AI 填的了 —— 标记本质是「待复核清单」
-        const { auto: _wasAuto, ...rest } = s
-        return { ...rest, ...updates, date: Date.now() }
-      })
-    )
+  const handleUpdateWord = useCallback((word: string, updates: Partial<WordNote>) => {
+    const { word: _ignored, orphaned: _alsoIgnored, ...fields } = updates
+    void (async () => setAppData(await updateAnnotationsByWord(word, fields)))()
   }, [])
+
+  const handleUpdateSentence = useCallback(
+    (id: string, updates: Partial<Pick<Sentence, 'grammar' | 'meaning'>>) => {
+      const target = (dataRef.current.annotations ?? []).find((a) => a.id === id)
+      if (!target) return
+      // 用户亲自改过，就不再算 AI 填的了 —— 标记本质是「待复核清单」
+      const { auto: _wasAuto, ...rest } = target
+      void (async () => setAppData(await saveAnnotation({ ...rest, ...updates })))()
+    },
+    []
+  )
 
   const handleAcceptAgreement = useCallback(() => {
     try {
@@ -932,15 +1015,12 @@ export default function App() {
   /** 「一键填充」：范围跟着当前复习的文档或文库走 */
   const autoFill = useAutoFill({
     appData,
-    sentences,
     reviewTarget,
-    writeNotes: useCallback(async (pageId, next) => {
-      setAppData(await replacePageNotes(pageId, next))
-    }, []),
-    setSentences
+    writeAnnotation: useCallback(async (annotation) => {
+      setAppData(await saveAnnotation(annotation))
+    }, [])
   })
 
-  const VocabularyDashboardAny = VocabularyDashboard as any
 
   return (
     <div className="h-full flex flex-col md:flex-row bg-paper overflow-hidden">
@@ -1085,11 +1165,11 @@ export default function App() {
           </>
         )}
         {!initializing && mode === 'review' && (
-          <VocabularyDashboardAny
+          <VocabularyDashboard
             reviewTarget={reviewTarget}
             books={activeBooks.map((b) => ({ id: b.id, name: b.name }))}
             pages={activePages}
-            notes={appData.notes}
+            notes={notesIndex}
             sentences={sentences}
             isEditMode={reviewEditMode}
             onUpdateWord={handleUpdateWord}
@@ -1112,7 +1192,6 @@ export default function App() {
           <RightSidebar
             vocab={vocabList}
             sentences={sentences}
-            setSentences={setSentences}
             onScrollToWord={handleScrollToWord}
             onEditSentence={handleEditSentence}
             onDeleteVocab={handleDeleteVocabNote}

@@ -1,7 +1,8 @@
 import { useCallback, useMemo, useRef, useState } from 'react'
-import type { AppData, NotesMap, Sentence } from '../types'
+import type { AppData, Annotation } from '../types'
 import { buildWordList } from '../utils/reconcile'
 import { getAppData } from '../storage'
+import { annotationToSentence, annotationToWordNote } from '../utils/annotationViews'
 import {
   createEnricher,
   fillWords,
@@ -23,29 +24,20 @@ import type { AutoFillState } from '../components/AutoFillDialog'
 
 type ReviewTarget = { type: 'page'; id: string } | { type: 'book'; id: string } | null
 
-/** 单词任务的 id 直接用「文档 + 坐标」，回填时据此找回原处 */
-const wordTaskId = (pageId: string, anchorId: string) => `${pageId}::${anchorId}`
-const parseWordTaskId = (id: string): [string, string] => {
-  const i = id.indexOf('::')
-  return [id.slice(0, i), id.slice(i + 2)]
-}
-
+/**
+ * 任务 id 直接用标注自己的 id。
+ *
+ * 旧实现用的是「文档 + 坐标」拼出来的 id。可填充要跑好一阵子，期间用户完全可以
+ * 去编辑正文 —— 坐标一变，回填就落到别的词上了。标注 id 不会变，这个隐患自然消失。
+ */
 export interface UseAutoFillArgs {
   appData: AppData
-  sentences: Sentence[]
   reviewTarget: ReviewTarget
-  /** 整体替换某篇文档的笔记 */
-  writeNotes: (pageId: string, notes: NotesMap) => Promise<void>
-  setSentences: React.Dispatch<React.SetStateAction<Sentence[]>>
+  /** 写回一条标注 */
+  writeAnnotation: (annotation: Annotation) => Promise<void>
 }
 
-export function useAutoFill({
-  appData,
-  sentences,
-  reviewTarget,
-  writeNotes,
-  setSentences
-}: UseAutoFillArgs) {
+export function useAutoFill({ appData, reviewTarget, writeAnnotation }: UseAutoFillArgs) {
   const [open, setOpen] = useState(false)
   const [state, setState] = useState<AutoFillState>({
     phase: 'idle',
@@ -69,35 +61,46 @@ export function useAutoFill({
     return appData.books.find((b) => b.id === reviewTarget.id)?.name || '未命名文库'
   }, [reviewTarget, appData.pages, appData.books])
 
+  const annotations = useMemo(() => appData.annotations ?? [], [appData.annotations])
+
   /** 范围内所有还是空白的单词笔记，附上它所在那一行作为上下文 */
   const wordTasks = useMemo<WordTask[]>(() => {
-    const tasks: WordTask[] = []
-    for (const pageId of scopePageIds) {
-      const map = appData.notes[pageId]
-      if (!map) continue
-      const page = appData.pages.find((p) => p.id === pageId)
-      const lines = page?.content ? page.content.split(/\r?\n/) : []
-      const words = page?.content ? buildWordList(page.content) : []
+    const inScope = new Set(scopePageIds)
+    const linesOf = new Map<string, string[]>()
+    const wordsOf = new Map<string, ReturnType<typeof buildWordList>>()
 
-      for (const [anchorId, note] of Object.entries(map)) {
-        if (!note?.word || !isWordNoteEmpty(note)) continue
-        const ref = words.find((w) => w.anchorId === anchorId)
-        tasks.push({
-          id: wordTaskId(pageId, anchorId),
-          word: note.word,
-          context: ref ? lines[ref.line] : undefined
-        })
+    const tasks: WordTask[] = []
+    for (const a of annotations) {
+      if (a.type === 'sentence' || !inScope.has(a.docId)) continue
+      if (!a.text || !isWordNoteEmpty(annotationToWordNote(a))) continue
+
+      if (!linesOf.has(a.docId)) {
+        const content = appData.pages.find((p) => p.id === a.docId)?.content ?? ''
+        linesOf.set(a.docId, content ? content.split(/\r?\n/) : [])
+        wordsOf.set(a.docId, content ? buildWordList(content) : [])
       }
+      const ref = a.start ? wordsOf.get(a.docId)!.find((w) => w.anchorId === a.start) : undefined
+      tasks.push({
+        id: a.id,
+        word: a.text,
+        context: ref ? linesOf.get(a.docId)![ref.line] : undefined
+      })
     }
     return tasks
-  }, [scopePageIds, appData.notes, appData.pages])
+  }, [scopePageIds, annotations, appData.pages])
 
   const sentenceTasks = useMemo<SentenceTask[]>(() => {
     const inScope = new Set(scopePageIds)
-    return sentences
-      .filter((s) => inScope.has(s.docId) && s.text.trim() && isSentenceEmpty(s))
-      .map((s) => ({ id: s.id, text: s.text }))
-  }, [scopePageIds, sentences])
+    return annotations
+      .filter(
+        (a) =>
+          a.type === 'sentence' &&
+          inScope.has(a.docId) &&
+          a.text.trim() &&
+          isSentenceEmpty(annotationToSentence(a))
+      )
+      .map((a) => ({ id: a.id, text: a.text }))
+  }, [scopePageIds, annotations])
 
   const openDialog = useCallback(() => {
     setState({ phase: 'idle', progress: { done: 0, total: 0, filled: 0 } })
@@ -138,27 +141,16 @@ export function useAutoFill({
           onProgress: (p: FillProgress) =>
             setState({ phase: 'running', progress: { done: p.done, total, filled: p.filled } }),
           onBatch: async (results) => {
-            const byPage = new Map<string, Record<string, (typeof results)[string]>>()
-            for (const [taskId, fill] of Object.entries(results)) {
-              const [pageId, anchorId] = parseWordTaskId(taskId)
-              const bucket = byPage.get(pageId) ?? {}
-              bucket[anchorId] = fill
-              byPage.set(pageId, bucket)
-            }
+            // 每批都重新读一遍：这中间用户可能改过东西，
+            // 拿创建闭包时的旧数据去写会把人家的修改冲掉
+            const latest = await getAppData()
+            const byId = new Map((latest.annotations ?? []).map((a) => [a.id, a]))
 
-            for (const [pageId, fills] of byPage) {
-              // 必须重新读一遍：writeNotes 是整篇替换，
-              // 用创建这个闭包时的旧数据去拼，会把前几批已经填好的内容冲掉
-              const latest = await getAppData()
-              const current = latest.notes[pageId] ?? {}
-              const next: NotesMap = { ...current }
-              for (const [anchorId, fill] of Object.entries(fills)) {
-                const note = current[anchorId]
-                // 期间用户可能自己写了内容，那就不要覆盖
-                if (!note || !isWordNoteEmpty(note)) continue
-                next[anchorId] = { ...note, ...fill, auto: true }
-              }
-              await writeNotes(pageId, next)
+            for (const [id, fill] of Object.entries(results)) {
+              const target = byId.get(id)
+              // 期间用户可能自己写了内容，或者把这条删了，那就跳过
+              if (!target || !isWordNoteEmpty(annotationToWordNote(target))) continue
+              await writeAnnotation({ ...target, ...fill, auto: true })
             }
           }
         })
@@ -177,14 +169,15 @@ export function useAutoFill({
                 filled: wordsFilled + p.filled
               }
             }),
-          onBatch: (results) => {
-            setSentences((prev) =>
-              prev.map((s) => {
-                const fill = results[s.id]
-                if (!fill || !isSentenceEmpty(s)) return s
-                return { ...s, ...fill, auto: true, date: Date.now() }
-              })
-            )
+          onBatch: async (results) => {
+            const latest = await getAppData()
+            const byId = new Map((latest.annotations ?? []).map((a) => [a.id, a]))
+
+            for (const [id, fill] of Object.entries(results)) {
+              const target = byId.get(id)
+              if (!target || !isSentenceEmpty(annotationToSentence(target))) continue
+              await writeAnnotation({ ...target, ...fill, auto: true })
+            }
           }
         })
 
@@ -204,7 +197,7 @@ export function useAutoFill({
         abortRef.current = null
       }
     })()
-  }, [wordTasks, sentenceTasks, writeNotes, setSentences])
+  }, [wordTasks, sentenceTasks, writeAnnotation])
 
   return {
     open,

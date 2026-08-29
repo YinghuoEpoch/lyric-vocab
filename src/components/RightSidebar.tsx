@@ -119,7 +119,6 @@ function SentenceCard({
 interface RightSidebarProps {
   vocab: VocabItem[]
   sentences: Sentence[]
-  setSentences: React.Dispatch<React.SetStateAction<Sentence[]>>
   onScrollToWord: (pageId: string, anchorId: string) => void
   onEditSentence: (sentence: Sentence) => void
   /** 删除一条单词笔记。目前只给「原文已删除」的条目用 —— 正常单词在正文里长按即可删，
@@ -141,7 +140,6 @@ interface RightSidebarProps {
 function RightSidebarInner({
   vocab,
   sentences,
-  setSentences: _setSentences,
   onScrollToWord,
   onEditSentence,
   onDeleteVocab,
@@ -171,7 +169,6 @@ function RightSidebarInner({
   }, [currentPageId, tab])
 
   // 避免未使用的 setter 在严格 TS 配置下报错
-  void _setSentences
 
 
   return (
