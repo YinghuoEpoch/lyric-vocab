@@ -73,6 +73,8 @@ interface LeftSidebarProps {
   onImportFile: (file: File) => void
   readerSettings: ReaderSettings
   onReaderSettingsChange: (s: ReaderSettings) => void
+  /** 侧栏此刻是不是被呼出着（仅手机尺寸有意义；宽屏一直挂着，恒为 false） */
+  panelOpen?: boolean
   className?: string
 }
 
@@ -150,6 +152,7 @@ function LeftSidebarInner({
   onImportFile,
   readerSettings,
   onReaderSettingsChange,
+  panelOpen = false,
   className = ''
 }: LeftSidebarProps) {
   const [pageLayout, setPageLayout] = useState<LyricPage[]>(pages)
@@ -218,6 +221,28 @@ function LeftSidebarInner({
     })
   )
 
+  /**
+   * 退出整理模式：把进入前展开着的文件夹恢复回去。
+   *
+   * 拆成单独一个函数，是因为退出有两条路 —— 手动点「整理」，
+   * 以及侧栏被收起时自动退出。两条路必须做同样的善后。
+   */
+  const exitOrganizeMode = useCallback(() => {
+    if (preEditOpenFoldersRef.current) {
+      const openSet = new Set(preEditOpenFoldersRef.current)
+      const restored: Record<string, boolean> = {}
+      for (const b of books) {
+        restored[b.id] = !openSet.has(b.id)
+      }
+      setCollapsedBooks(restored)
+      try {
+        localStorage.setItem(COLLAPSED_KEY, JSON.stringify(restored))
+      } catch {}
+    }
+    preEditOpenFoldersRef.current = null
+    setOrganizeMode(false)
+  }, [books])
+
   const toggleOrganizeMode = useCallback(() => {
     // 整理模式下不显示「更多」按钮，菜单开着时切进来会连带消失，
     // 状态留着没意义，顺手清掉
@@ -238,22 +263,22 @@ function LeftSidebarInner({
       } catch {}
       setOrganizeMode(true)
     } else {
-      // 退出整理模式：恢复进入前的展开状态
-      if (preEditOpenFoldersRef.current) {
-        const openSet = new Set(preEditOpenFoldersRef.current)
-        const restored: Record<string, boolean> = {}
-        for (const b of books) {
-          restored[b.id] = !openSet.has(b.id)
-        }
-        setCollapsedBooks(restored)
-        try {
-          localStorage.setItem(COLLAPSED_KEY, JSON.stringify(restored))
-        } catch {}
-      }
-      preEditOpenFoldersRef.current = null
-      setOrganizeMode(false)
+      exitOrganizeMode()
     }
-  }, [books, collapsedBooks, organizeMode])
+  }, [books, collapsedBooks, organizeMode, exitOrganizeMode])
+
+  /**
+   * 侧栏被收起时自动退出整理模式。
+   *
+   * 只认「开着 -> 关上」这个变化，不是「当前没开着就退出」——
+   * 宽屏上左侧栏一直挂着、panelOpen 恒为 false，后者会让整理模式刚点开就被关掉。
+   */
+  const panelWasOpenRef = useRef(panelOpen)
+  useEffect(() => {
+    const wasOpen = panelWasOpenRef.current
+    panelWasOpenRef.current = panelOpen
+    if (wasOpen && !panelOpen && organizeMode) exitOrganizeMode()
+  }, [panelOpen, organizeMode, exitOrganizeMode])
 
   useEffect(() => {
     if (editing && inputRef.current) {

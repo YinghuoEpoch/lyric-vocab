@@ -184,10 +184,16 @@ function RightSidebarInner({
               ({tab === 'vocab' ? filtered.length : filteredSentences.length})
             </span>
           </span>
+          {/*
+            手机上不显示：左侧栏也没有关闭键，两边这样才一致；
+            收起来靠点遮罩或按安卓返回键，两条路都通。
+            宽屏必须留着 —— 那边遮罩是隐藏的，浮动的「笔记」按钮开着时也不显示，
+            删了就再没有关掉它的办法。
+          */}
           <button
             type="button"
             onClick={onClose}
-            className="p-1.5 rounded-lg hover:bg-stone-100 text-ink-muted hover:text-ink"
+            className="hidden md:inline-flex p-1.5 rounded-lg hover:bg-stone-100 text-ink-muted hover:text-ink"
             title="关闭笔记"
           >
             <PanelRightClose className="w-4 h-4" />
@@ -222,29 +228,31 @@ function RightSidebarInner({
         {tab === 'vocab' ? (
           filtered.length === 0 ? (
             <p className="px-2 py-6 text-sm text-ink-muted leading-relaxed">
-              在文档中点击英文单词并保存笔记，生词会自动出现在这里。点击卡片可跳转到文中位置。
+              在文档中长按英文单词并保存笔记，生词会自动出现在这里。点单词可跳转到文中位置。
             </p>
           ) : (
             <ul className="space-y-2">
               {filtered.map((item, index) => (
               <li key={`${item.pageId}-${item.anchorId}`}>
-                {/* 外层用 div 而非 button：孤儿条目里还要再放一个删除按钮，
-                    button 套 button 是非法结构 */}
+                {/* 整张卡片不再是点击区：想看释义却被弹到正文里去，很烦。
+                    跳转只挂在单词本身上。 */}
                 <div
-                  role="button"
-                  tabIndex={0}
-                  onClick={() => onScrollToWord(item.pageId, item.anchorId)}
-                  className={`w-full text-left rounded-lg border border-stone-200/70 p-2.5 hover:border-stone-300/80 hover:shadow-sm transition-all group cursor-pointer ${
+                  className={`w-full text-left rounded-lg border border-stone-200/70 p-2.5 ${
                     index % 2 === 0 ? 'bg-white' : 'bg-gray-50/70'
                   }`}
                 >
                   {/* 顶部栏：单词 + 音标 | 词性胶囊 */}
                   <div className="flex items-center justify-between gap-2 flex-wrap">
                     <div className="flex items-baseline gap-2 min-w-0 flex-1">
-                      <span className="font-lyric-en font-serif text-amber-800 font-bold text-base shrink-0 group-hover:underline">
+                      <button
+                        type="button"
+                        onClick={() => onScrollToWord(item.pageId, item.anchorId)}
+                        className="font-lyric-en font-serif text-amber-800 font-bold text-base shrink-0 text-left hover:underline decoration-amber-600 decoration-2 underline-offset-2 rounded focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-400"
+                        title={`跳到「${item.word}」在文中的位置`}
+                      >
                         {item.word}
                         {item.auto && <AutoMark />}
-                      </span>
+                      </button>
                       {item.phonetic && (
                         <span className="text-xs text-ink-muted italic font-mono truncate">
                           {item.phonetic}

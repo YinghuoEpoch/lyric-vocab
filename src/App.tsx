@@ -1058,6 +1058,7 @@ export default function App() {
         }`}
       >
         <LeftSidebar
+          panelOpen={showLeft}
           mode={mode}
           onModeChange={setMode}
           reviewTarget={reviewTarget}

@@ -23,10 +23,13 @@ export function useExportBackup(): () => Promise<void> {
       const data = await getAppData()
       const payload = { ...data, sentences: buildSentenceList(data.annotations ?? []) }
       const json = JSON.stringify(payload, null, 2)
+      // 手机和网页用同一个名字。从前手机上写死叫 backup.json，
+      // 存进网盘或发给自己之后，一堆同名文件根本分不清哪个是哪个。
+      const filename = `文库备份-${new Date().toISOString().slice(0, 10)}.json`
 
       if (Capacitor.isNativePlatform()) {
         const { uri } = await Filesystem.writeFile({
-          path: 'backup.json',
+          path: filename,
           data: json,
           directory: Directory.Cache,
           encoding: Encoding.UTF8
@@ -41,7 +44,7 @@ export function useExportBackup(): () => Promise<void> {
         const blob = new Blob([json], { type: 'application/json' })
         const a = document.createElement('a')
         a.href = URL.createObjectURL(blob)
-        a.download = `文库备份-${new Date().toISOString().slice(0, 10)}.json`
+        a.download = filename
         a.click()
         URL.revokeObjectURL(a.href)
       }
