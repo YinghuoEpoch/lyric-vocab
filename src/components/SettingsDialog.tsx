@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { ChevronRight, Settings as SettingsIcon, X } from 'lucide-react'
 import { AiSettingsPanel } from './AiSettingsPanel'
+import { UserGuide } from './UserGuide'
 import { AGREEMENT_CLAUSES, AGREEMENT_TITLE } from '../agreement'
 import { describeTarget, loadConfig, resolveConfig, type AiConfig } from '../enrich'
 import { useBackHandler, BackPriority } from '../hooks/useBackHandler'
@@ -102,6 +103,8 @@ export function SettingsDialog({
   const [editingAi, setEditingAi] = useState(false)
   /** 正在看用户协议 */
   const [showAgreement, setShowAgreement] = useState(false)
+  /** 正在看使用说明 */
+  const [showGuide, setShowGuide] = useState(false)
   const backupInputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
@@ -109,6 +112,7 @@ export function SettingsDialog({
       setAiConfig(loadConfig())
       setEditingAi(false)
       setShowAgreement(false)
+      setShowGuide(false)
     }
   }, [open])
 
@@ -119,6 +123,7 @@ export function SettingsDialog({
   useBackHandler(open, BackPriority.settings, () => {
     if (editingAi) setEditingAi(false)
     else if (showAgreement) setShowAgreement(false)
+    else if (showGuide) setShowGuide(false)
     else onClose()
   })
 
@@ -131,13 +136,21 @@ export function SettingsDialog({
    * 而自定义供应商叫「自定义」等于没说，得显示实际域名。
    */
   const resolvedAi = resolveConfig(aiConfig)
-  const inSubScreen = editingAi || showAgreement
-  const title = editingAi ? 'AI 设置' : showAgreement ? AGREEMENT_TITLE : '设置'
+  const inSubScreen = editingAi || showAgreement || showGuide
+  const title = editingAi
+    ? 'AI 设置'
+    : showAgreement
+      ? AGREEMENT_TITLE
+      : showGuide
+        ? '使用说明'
+        : '设置'
   const back = editingAi
     ? () => setEditingAi(false)
     : showAgreement
       ? () => setShowAgreement(false)
-      : onClose
+      : showGuide
+        ? () => setShowGuide(false)
+        : onClose
 
   const setFontSize = (size: number) =>
     onReaderSettingsChange({ ...readerSettings, fontSize: size })
@@ -177,6 +190,8 @@ export function SettingsDialog({
                 onCancel={() => setEditingAi(false)}
               />
             </div>
+          ) : showGuide ? (
+            <UserGuide />
           ) : showAgreement ? (
             <div className="space-y-2 text-xs leading-relaxed text-ink-muted">
               {AGREEMENT_CLAUSES.map((line) => (
@@ -185,6 +200,22 @@ export function SettingsDialog({
             </div>
           ) : (
             <>
+              <Section title="上手">
+                <button
+                  type="button"
+                  onClick={() => setShowGuide(true)}
+                  className="w-full flex items-center gap-2 text-left"
+                >
+                  <span className="flex-1 min-w-0">
+                    <span className="text-sm text-ink block">使用说明</span>
+                    <span className="text-xs text-ink-muted block">
+                      界面上不太容易看出来的那些用法
+                    </span>
+                  </span>
+                  <ChevronRight className="w-4 h-4 text-ink-muted shrink-0" />
+                </button>
+              </Section>
+
               <Section title="阅读外观">
                 <div className="flex items-center justify-between gap-2">
                   <span className="text-sm text-ink">字号</span>
