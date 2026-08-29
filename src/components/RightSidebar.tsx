@@ -190,11 +190,13 @@ function VocabCard({ item, alt, isActive, onToggle, onScrollToWord, onDeleteVoca
     >
       {/* 顶部栏：单词 + 音标 | 词性胶囊 */}
       <div className="flex items-center justify-between gap-2 flex-wrap">
-        <div
-          className={`flex items-baseline gap-2 min-w-0 ${
-            item.isPhrase ? 'w-full' : 'flex-1'
-          }`}
-        >
+        {/*
+          短语和「短语」标签留在同一行。
+          曾让短语独占一行、把 173px 让到 223px —— 多装三分之一，
+          但标签被挤到下一行去，看着别扭。反正一行放不下就是省略号，
+          早截一点无所谓，点开就看全了。
+        */}
+        <div className="flex items-baseline gap-2 min-w-0 flex-1">
           <button
             type="button"
             onClick={(e) => {
