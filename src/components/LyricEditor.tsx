@@ -671,75 +671,90 @@ function LyricEditorInner({
       {/* 底部抽屉：单词模式（音标、词性、释义）或句摘模式（句型、释义） */}
       {selection && fullMode && (
         <>
+          {/*
+            抽屉是「浮在正文之上的一层」，但**不能加遮罩** ——
+            开着抽屉时还要能点正文里的下一个词把选区连成句子，遮罩会把这条路挡死。
+            所以分离感全靠自己：一条上边框 + 一片向上的投影。
+
+            顶部从前有一条装饰用的小横杠，它在暗示「可以往下拖关闭」，
+            可抽屉根本拖不动 —— 与其留一个骗人的手势提示，不如去掉。
+          */}
           <div
             data-full-popup="true"
-            className="fixed z-20 bg-white shadow-xl p-3 left-0 right-0 bottom-0 w-full rounded-t-2xl max-h-[70vh] overflow-y-auto"
-            style={{ paddingBottom: 'max(env(safe-area-inset-bottom), 16px)' }}
+            className="fixed z-20 bg-white border-t border-paper-border p-4 left-0 right-0 bottom-0 w-full rounded-t-2xl max-h-[70vh] overflow-y-auto"
+            style={{
+              paddingBottom: 'max(env(safe-area-inset-bottom), 16px)',
+              boxShadow: '0 -10px 28px -12px rgba(44, 44, 44, 0.22)'
+            }}
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="flex justify-center pt-2 pb-1">
-              <div className="w-10 h-1 rounded-full bg-stone-200" aria-hidden />
-            </div>
-            <div className="flex items-center justify-between mb-2">
-              <span className="font-lyric-en font-serif text-amber-800 font-semibold text-base truncate max-w-[220px]">
+            <div className="flex items-start justify-between gap-3 mb-3">
+              <span className="font-lyric-en font-serif text-amber-800 font-bold text-lg leading-snug min-w-0 break-words">
                 {selection.type === 'word' ? selection.word : selection.text}
               </span>
               <button
                 type="button"
                 onClick={closeFullPopup}
-                className="p-1 rounded hover:bg-stone-100 text-ink-muted shrink-0"
+                className="shrink-0 -mr-1 -mt-1 w-9 h-9 flex items-center justify-center rounded-lg hover:bg-stone-100 text-ink-muted"
                 aria-label="关闭"
               >
-                <X className="w-3.5 h-3.5" />
+                <X className="w-4 h-4" />
               </button>
             </div>
             {fullMode === 'word' ? (
-              <div className="grid grid-cols-2 gap-x-2 gap-y-2 mb-3">
+              /* 音标要装 /ˈbɜːrstɪŋ/，词性只要装 v. adj. —— 从前两者平分宽度，是错的 */
+              <div className="grid grid-cols-3 gap-2 mb-4">
                 <input
                   type="text"
                   placeholder="音标"
-                  className="h-8 px-2 py-1 text-sm rounded border border-paper-border bg-stone-50/80 text-ink placeholder-ink-muted focus:outline-none focus:ring-1 focus:ring-amber-500/40 focus:border-amber-500"
+                  aria-label="音标"
+                  className="field-sheet col-span-2 font-mono italic"
                   value={bubbleForm.phonetic ?? ''}
                   onChange={(e) => setBubbleForm((f) => ({ ...f, phonetic: e.target.value }))}
                 />
                 <input
                   type="text"
                   placeholder="词性"
-                  className="h-8 px-2 py-1 text-sm rounded border border-paper-border bg-stone-50/80 text-ink placeholder-ink-muted focus:outline-none focus:ring-1 focus:ring-amber-500/40 focus:border-amber-500"
+                  aria-label="词性"
+                  className="field-sheet text-center"
                   value={bubbleForm.pos ?? ''}
                   onChange={(e) => setBubbleForm((f) => ({ ...f, pos: e.target.value }))}
                 />
                 <input
                   type="text"
                   placeholder="中文释义"
-                  className="col-span-2 h-8 px-2 py-1 text-sm rounded border border-paper-border bg-stone-50/80 text-ink placeholder-ink-muted focus:outline-none focus:ring-1 focus:ring-amber-500/40 focus:border-amber-500"
+                  aria-label="中文释义"
+                  className="field-sheet col-span-3"
                   value={bubbleForm.definition ?? ''}
                   onChange={(e) => setBubbleForm((f) => ({ ...f, definition: e.target.value }))}
                 />
               </div>
             ) : (
-              <div className="grid grid-cols-1 gap-y-2 mb-3">
+              <div className="grid grid-cols-1 gap-2 mb-4">
                 <input
                   type="text"
-                  placeholder="句型/语法"
-                  className="h-8 px-2 py-1 text-sm rounded border border-paper-border bg-stone-50/80 text-ink placeholder-ink-muted focus:outline-none focus:ring-1 focus:ring-amber-500/40 focus:border-amber-500"
+                  placeholder="句型 / 语法"
+                  aria-label="句型语法"
+                  className="field-sheet"
                   value={sentenceForm.grammar}
                   onChange={(e) => setSentenceForm((f) => ({ ...f, grammar: e.target.value }))}
                 />
                 <input
                   type="text"
-                  placeholder="翻译/释义"
-                  className="h-8 px-2 py-1 text-sm rounded border border-paper-border bg-stone-50/80 text-ink placeholder-ink-muted focus:outline-none focus:ring-1 focus:ring-amber-500/40 focus:border-amber-500"
+                  placeholder="翻译 / 释义"
+                  aria-label="翻译释义"
+                  className="field-sheet"
                   value={sentenceForm.meaning}
                   onChange={(e) => setSentenceForm((f) => ({ ...f, meaning: e.target.value }))}
                 />
               </div>
             )}
-            <div className="flex gap-1.5">
+            {/* 保存是主操作，给到 44px；删除退成次要样式，不跟主按钮抢眼 */}
+            <div className="flex gap-2">
               <button
                 type="button"
                 onClick={saveBubble}
-                className="flex-1 h-8 rounded bg-amber-600 hover:bg-amber-700 text-white font-medium text-sm"
+                className="flex-1 h-11 rounded-lg bg-amber-600 hover:bg-amber-700 active:bg-amber-800 text-white font-medium text-[15px] transition-colors"
               >
                 保存
               </button>
@@ -747,10 +762,10 @@ function LyricEditorInner({
                 <button
                   type="button"
                   onClick={deleteMark}
-                  className="h-8 px-2 rounded border border-red-300 bg-white hover:bg-red-50 text-red-600 font-medium text-sm flex items-center gap-1"
+                  className="h-11 px-4 rounded-lg bg-stone-100 hover:bg-red-50 text-red-600 font-medium text-[15px] flex items-center gap-1.5 transition-colors"
                   title="删除标记"
                 >
-                  <Trash2 className="w-3.5 h-3.5" />
+                  <Trash2 className="w-4 h-4" />
                   删除
                 </button>
               )}
@@ -758,10 +773,10 @@ function LyricEditorInner({
                 <button
                   type="button"
                   onClick={handleDeleteSentence}
-                  className="h-8 px-2 rounded border border-red-300 bg-white hover:bg-red-50 text-red-600 font-medium text-sm flex items-center gap-1"
+                  className="h-11 px-4 rounded-lg bg-stone-100 hover:bg-red-50 text-red-600 font-medium text-[15px] flex items-center gap-1.5 transition-colors"
                   title="删除句摘"
                 >
-                  <Trash2 className="w-3.5 h-3.5" />
+                  <Trash2 className="w-4 h-4" />
                   删除
                 </button>
               )}

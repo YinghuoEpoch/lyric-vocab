@@ -15,6 +15,7 @@ import type { Annotation, AnnotationType, LyricPage, Sentence, WordNote } from '
 import { isOrphanAnnotation } from '../types'
 import { annotationToSentence } from '../utils/annotationViews'
 import { AutoMark } from './AutoMark'
+import { AutoTextarea } from './AutoTextarea'
 import { getFolderReviewData } from '../hooks/getFolderReviewData'
 
 export type ReviewTarget =
@@ -535,14 +536,21 @@ function VocabCard({
         </div>
         <div className="flex flex-col items-end gap-1">
           {isEditMode ? (
-            <input
-              type="text"
-              className="shrink-0 w-16 px-2 py-0.5 rounded-full bg-stone-100 text-ink text-xs font-medium border border-stone-200 focus:outline-none focus:ring-1 focus:ring-amber-400"
-              placeholder="词性"
-              value={localPos}
-              onChange={(e) => setLocalPos(e.target.value)}
-              onBlur={handleSave}
-            />
+            /* 保持阅读态那颗药丸的样子，宽度跟着内容走 */
+            <span className="pos-fit shrink-0" data-value={localPos || '词性'}>
+              <input
+                type="text"
+                /* size=1 是关键：不设的话输入框自带约 180px 的固有宽度，
+                   会把外层网格整个撑开，药丸就不再跟着内容收缩了 */
+                size={1}
+                className="field-pos"
+                placeholder="词性"
+                aria-label="词性"
+                value={localPos}
+                onChange={(e) => setLocalPos(e.target.value)}
+                onBlur={handleSave}
+              />
+            </span>
           ) : (
             item.pos &&
             showEnglish && (
@@ -559,10 +567,12 @@ function VocabCard({
         </div>
       </div>
       {isEditMode ? (
+        /* 类名和下面阅读态那一行保持一致，两种模式看起来才是同一行字 */
         <input
           type="text"
-          className="mt-1 w-full max-w-[12rem] text-sm text-ink-muted italic font-mono rounded-md border border-stone-200 px-2 py-0.5 bg-stone-50 focus:outline-none focus:ring-1 focus:ring-amber-400"
+          className="field-inline text-sm text-ink-muted italic font-mono mt-1"
           placeholder="音标"
+          aria-label="音标"
           value={localPhonetic}
           onChange={(e) => setLocalPhonetic(e.target.value)}
           onBlur={handleSave}
@@ -575,12 +585,12 @@ function VocabCard({
       {(isEditMode || item.definition) && (
         <div className="mt-2 pt-2 border-t border-stone-100 min-h-[32px]">
           {isEditMode ? (
-            <textarea
-              className="w-full text-sm text-ink-muted leading-snug rounded-md border border-stone-200 px-2 py-1 resize-none focus:outline-none focus:ring-1 focus:ring-amber-400"
-              rows={3}
-              placeholder="输入或编辑释义 / 备注"
+            <AutoTextarea
+              className="field-inline text-sm text-ink-muted leading-snug"
+              placeholder="释义 / 备注"
+              aria-label="释义"
               value={localDefinition}
-              onChange={(e) => setLocalDefinition(e.target.value)}
+              onChange={setLocalDefinition}
               onBlur={handleSave}
             />
           ) : showChinese ? (
@@ -656,21 +666,22 @@ function SentenceCard({
       </div>
       {isEditMode ? (
         <>
-          <input
-            type="text"
-            className="mt-1 w-full h-8 px-2 py-1 text-sm rounded-md border border-stone-200 bg-stone-50/80 text-ink placeholder-stone-400 focus:outline-none focus:ring-1 focus:ring-amber-400 focus:border-amber-500"
-            placeholder="句型/语法"
+          {/* 类名对齐下面阅读态的那两行，切换模式时字不会挪位 */}
+          <AutoTextarea
+            className="field-inline mt-1 text-sm text-stone-500 font-sans"
+            placeholder="句型 / 语法"
+            aria-label="句型语法"
             value={localGrammar}
-            onChange={(e) => setLocalGrammar(e.target.value)}
+            onChange={setLocalGrammar}
             onBlur={handleSave}
           />
           <div className="mt-2 pt-2 border-t border-stone-100 min-h-[32px]">
-            <textarea
-              className="w-full text-sm text-ink-muted leading-snug rounded-md border border-stone-200 px-2 py-1 resize-none focus:outline-none focus:ring-1 focus:ring-amber-400 placeholder-stone-400"
-              rows={3}
-              placeholder="翻译/释义"
+            <AutoTextarea
+              className="field-inline text-sm text-ink-muted leading-snug"
+              placeholder="翻译 / 释义"
+              aria-label="翻译"
               value={localMeaning}
-              onChange={(e) => setLocalMeaning(e.target.value)}
+              onChange={setLocalMeaning}
               onBlur={handleSave}
             />
           </div>

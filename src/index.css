@@ -86,3 +86,100 @@ body {
   scrollbar-width: thin;
   scrollbar-color: #d4d2ce transparent;
 }
+
+/*
+ * 就地编辑的输入框（复习页卡片用）。
+ *
+ * 从前编辑态给每个字段套一个灰框，一张卡片里套着三个小盒子，
+ * 切进编辑模式卡片还猛地长高三成，整屏跟着重新流动 —— 看着像张待填表格。
+ * 这里让输入框长得和阅读态一模一样：不画边框、不占额外空间、字体位置全不变，
+ * 只有点进去才在底下浮出一条琥珀色细线。
+ */
+.field-inline {
+  width: 100%;
+  display: block;
+  border: 0;
+  background: transparent;
+  padding: 0;
+  border-radius: 3px;
+  transition: box-shadow 0.15s, background-color 0.15s;
+}
+.field-inline:focus {
+  outline: none;
+  box-shadow: inset 0 -1.5px 0 #b45309;
+  background-color: rgba(254, 243, 199, 0.35);
+}
+.field-inline::placeholder {
+  color: rgba(92, 92, 92, 0.32);
+}
+
+/*
+ * 词性字段：保持阅读态那颗药丸的样子，宽度跟着内容走。
+ * 从前固定 64px，装不下稍长的词性。
+ */
+.pos-fit {
+  display: inline-grid;
+}
+.pos-fit::after,
+.pos-fit > input {
+  grid-area: 1 / 1;
+}
+/* 用一份看不见的同款文字把宽度撑出来 —— 纯 CSS 做「输入框跟着内容变宽」 */
+.pos-fit::after {
+  content: attr(data-value) ' ';
+  visibility: hidden;
+  white-space: pre;
+  font-size: 12px;
+  font-weight: 500;
+  padding: 2px 8px;
+  min-width: 3.2rem;
+}
+.field-pos {
+  width: 100%;
+  min-width: 0;
+  border: 0;
+  background-color: rgba(231, 229, 228, 0.8);
+  border-radius: 999px;
+  padding: 2px 8px;
+  font-size: 12px;
+  font-weight: 500;
+  color: #2c2c2c;
+  text-align: center;
+  transition: box-shadow 0.15s, background-color 0.15s;
+}
+.field-pos:focus {
+  outline: none;
+  box-shadow: 0 0 0 1.5px #b45309;
+  background-color: #fef3c7;
+}
+.field-pos::placeholder {
+  color: rgba(92, 92, 92, 0.4);
+}
+
+/*
+ * 抽屉里的输入框（阅读页长按取词/划句子）。
+ *
+ * 抽屉和卡片不同：它只为「填」而存在，没有阅读态，
+ * 所以字段必须一眼看得见 —— 但要看着像这套纸感界面里的东西。
+ * 去掉硬边框，改一层极淡的暖底；点进去才描边。
+ * 高度给到 40px：从前 32px，手指点着偏小，14px 的字塞进去也没有余量。
+ */
+.field-sheet {
+  width: 100%;
+  height: 40px;
+  border: 0;
+  background-color: #f7f5f0;
+  border-radius: 10px;
+  padding: 0 12px;
+  font-size: 14px;
+  color: #2c2c2c;
+  transition: box-shadow 0.15s, background-color 0.15s;
+}
+.field-sheet:focus {
+  outline: none;
+  box-shadow: 0 0 0 1.5px #b45309;
+  background-color: #fdfbf6;
+}
+.field-sheet::placeholder {
+  color: rgba(92, 92, 92, 0.45);
+}
