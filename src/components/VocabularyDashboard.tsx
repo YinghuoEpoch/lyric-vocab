@@ -453,8 +453,11 @@ function SpeakButton({
       className={`${className} transition-colors ${speaking ? 'text-amber-500' : 'text-amber-800'}`}
     >
       {children}
+      {/* align-middle 是按「小写字母那一段」的中线对齐（基线上方半个 x 高）。
+          原来用 align-baseline，图标正好落在大写高度的正中 ——
+          可卡片上的词多是小写，眼睛看的是小写那一段，于是显得高了 2px。 */}
       <Volume2
-        className={`inline-block w-3.5 h-3.5 ml-1 align-baseline ${
+        className={`inline-block w-3.5 h-3.5 ml-1 align-middle ${
           speaking ? 'opacity-100' : 'opacity-40'
         }`}
       />
