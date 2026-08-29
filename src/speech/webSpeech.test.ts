@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
-import { pickEnglishVoice, estimateDurationMs, errorMessage } from './webSpeech'
+import { pickEnglishVoice, estimateDurationMs } from './webSpeech'
+import { describeSpeechFailure, describeWebSpeechError } from './errors'
 
 /**
  * 朗读层的测试。
@@ -50,11 +51,28 @@ describe('兜底时长', () => {
 })
 
 describe('错误说人话', () => {
-  it('没有英文语音包时告诉用户去装', () => {
-    expect(errorMessage('language-unavailable')).toMatch(/语音包/)
+  it('网页版：没有英文语音时标出来，界面好给「去安装」的入口', () => {
+    const f = describeWebSpeechError('language-unavailable')
+    expect(f.missingVoice).toBe(true)
+    expect(f.message).toMatch(/英文语音/)
   })
 
-  it('认不出的错误码也给一句能照着做的话', () => {
-    expect(errorMessage(undefined)).toMatch(/文字转语音/)
+  it('网页版：认不出的错误码也给一句能照着做的话', () => {
+    expect(describeWebSpeechError(undefined).message).toMatch(/文字转语音/)
+  })
+
+  it('原生：报错文字里提到语音 / 语言，就当成缺语音包', () => {
+    expect(describeSpeechFailure(new Error('Language is not supported')).missingVoice).toBe(true)
+    expect(describeSpeechFailure(new Error('voice data missing')).missingVoice).toBe(true)
+  })
+
+  it('原生：别的错原样带出来，排查时有据可查', () => {
+    const f = describeSpeechFailure(new Error('engine busy'))
+    expect(f.missingVoice).toBe(false)
+    expect(f.message).toMatch(/engine busy/)
+  })
+
+  it('原生：什么都没说时也不能甩一句空话', () => {
+    expect(describeSpeechFailure(undefined).message).toMatch(/文字转语音/)
   })
 })

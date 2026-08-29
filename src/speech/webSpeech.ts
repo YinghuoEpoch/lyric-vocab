@@ -1,11 +1,12 @@
+import { describeWebSpeechError } from './errors'
 import { SpeechError, type Speaker, type SpeakOptions } from './types'
 
 /**
  * 用 WebView 自带的朗读能力发声（Web Speech API）。
  *
- * 它背后接的就是手机系统的语音引擎（安卓上通常是「Google 文字转语音」），
- * 所以不需要引任何库、也不需要联网 —— 前提是这台手机装了引擎和英文语音包。
- * 没装的话 speak 会直接报错，界面据此提示用户去系统设置里装。
+ * **这条路只在电脑浏览器里走得通**：安卓的 WebView 没有实现网页版朗读接口
+ * （手机 Chrome 有，WebView 没有），所以装成 App 之后走的是 nativeSpeech.ts。
+ * 留着它是为了开发时能在浏览器里调界面。
  */
 
 /**
@@ -92,7 +93,8 @@ export function createWebSpeaker(): Speaker {
           clearTimer()
           // 被自己的 cancel 打断不算出错
           if (e.error === 'interrupted' || e.error === 'canceled') return resolve()
-          reject(new SpeechError(errorMessage(e.error)))
+          const failure = describeWebSpeechError(e.error)
+          reject(new SpeechError(failure.message, failure.missingVoice))
         }
         // onend 没来时的兜底
         timer = window.setTimeout(finish, estimateDurationMs(content, utterance.rate) + 1500)
@@ -105,21 +107,5 @@ export function createWebSpeaker(): Speaker {
       clearTimer()
       synth.cancel()
     }
-  }
-}
-
-/** 把朗读引擎的错误码翻成人话 */
-export function errorMessage(code: string | undefined): string {
-  switch (code) {
-    case 'not-allowed':
-      return '系统不让自动发声，请先点一下屏幕再试'
-    case 'language-unavailable':
-    case 'voice-unavailable':
-      return '这台手机没有英文语音，去系统设置里装一个「文字转语音」的英文语音包'
-    case 'synthesis-unavailable':
-    case 'synthesis-failed':
-      return '手机的朗读引擎没能发声，检查一下系统的「文字转语音」设置'
-    default:
-      return '读不出来，检查一下系统的「文字转语音」设置'
   }
 }

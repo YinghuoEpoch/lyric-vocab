@@ -87,7 +87,7 @@ function VocabularyDashboardInner({
    * 点词 / 点句读出来。这台手机不支持朗读时 canSpeak 为 false，喇叭就不画。
    * 必须放在所有提前 return 之前 —— 钩子数量一旦忽多忽少，React 直接报错白屏。
    */
-  const { canSpeak, speakingId, speak, error: speechError, dismissError } = useSpeak()
+  const { canSpeak, speakingId, speak, error: speechError, installVoice, dismissError } = useSpeak()
 
   const getPageTitle = (pageId: string) =>
     pages.find((p) => p.id === pageId)?.title || '未命名'
@@ -314,7 +314,16 @@ function VocabularyDashboardInner({
 
       {speechError && (
         <div className="shrink-0 flex items-start gap-2 px-4 py-2 bg-amber-50 border-b border-amber-200 text-xs text-amber-900 leading-relaxed">
-          <span className="flex-1">{speechError}</span>
+          <span className="flex-1 break-words">{speechError.message}</span>
+          {speechError.missingVoice && installVoice && (
+            <button
+              type="button"
+              onClick={installVoice}
+              className="shrink-0 px-2 py-0.5 rounded border border-amber-300 hover:bg-amber-100 font-medium"
+            >
+              去安装
+            </button>
+          )}
           <button
             type="button"
             onClick={dismissError}

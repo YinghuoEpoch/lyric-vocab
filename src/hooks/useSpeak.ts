@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { createSpeaker, SpeechError } from '../speech'
+import { canOpenVoiceInstall, createSpeaker, openVoiceInstall, SpeechError } from '../speech'
 
 /**
  * 复习页的朗读：点哪张卡就读哪张，同时只读一个。
@@ -10,7 +10,7 @@ import { createSpeaker, SpeechError } from '../speech'
 export function useSpeak() {
   const speaker = useMemo(() => createSpeaker(), [])
   const [speakingId, setSpeakingId] = useState<string | null>(null)
-  const [error, setError] = useState<string | null>(null)
+  const [error, setError] = useState<{ message: string; missingVoice: boolean } | null>(null)
   /** 每次朗读发一个号，回调回来时对不上号就说明已经被后一次顶掉了 */
   const ticket = useRef(0)
 
@@ -37,7 +37,11 @@ export function useSpeak() {
         .speak(text, { rate })
         .catch((e) => {
           if (ticket.current !== mine) return
-          setError(e instanceof SpeechError ? e.message : '读不出来，检查一下系统的「文字转语音」设置')
+          setError(
+            e instanceof SpeechError
+              ? { message: e.message, missingVoice: e.missingVoice }
+              : { message: '读不出来，检查一下系统的「文字转语音」设置', missingVoice: false }
+          )
         })
         .finally(() => {
           if (ticket.current === mine) setSpeakingId(null)
@@ -52,6 +56,8 @@ export function useSpeak() {
     speakingId,
     speak,
     error,
+    /** 缺英文语音时，安卓上可以直接跳到系统的安装界面；浏览器里没有这条路 */
+    installVoice: canOpenVoiceInstall() ? () => void openVoiceInstall() : null,
     dismissError: useCallback(() => setError(null), [])
   }
 }

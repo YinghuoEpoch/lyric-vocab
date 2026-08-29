@@ -18,4 +18,12 @@ export interface SpeakOptions {
 }
 
 /** 朗读失败时抛这个，界面据此给一句人话 */
-export class SpeechError extends Error {}
+export class SpeechError extends Error {
+  /** 是不是「这台手机没有英文语音」—— 是的话界面给一个「去安装」的入口 */
+  missingVoice: boolean
+
+  constructor(message: string, missingVoice = false) {
+    super(message)
+    this.missingVoice = missingVoice
+  }
+}
