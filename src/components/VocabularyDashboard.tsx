@@ -268,20 +268,31 @@ function VocabularyDashboardInner({
           </button>
         </div>
         <div className="flex items-center gap-2">
-          {/* 全填完之后这个按钮就没用了，直接不显示；显示时顺便报个数
-              （数的是「还有格子空着」的笔记，单词和句子一起算） */}
-          {onOpenAutoFill && autoFillCount > 0 && (
+          {/* 常驻按钮。数的是「还有格子空着」的笔记，单词和句子一起算。
+              全填完了也留着 —— 一来位置固定，不会今天在明天不在；
+              二来「AI 设置」只有这条路进得去，从前全填完就再也改不了 Key 了。
+              没得可填时收成一枚安静的图标，与旁边的「词/句」同一等级，
+              有得可填才亮成实心并报数。 */}
+          {onOpenAutoFill && (
             <button
               type="button"
               onClick={onOpenAutoFill}
               /* 视觉微调：它和旁边三个按钮尺寸本来完全一致（32px），
                  但实心底色让它读起来像一个「物体」，另外三个只是「文字」，
                  于是显得更大更重。把盒子和图标各收一点，找回平衡。 */
-              className="flex items-center gap-1 px-2 py-[5px] rounded-lg text-sm font-medium bg-amber-600 hover:bg-amber-700 text-white transition-colors"
-              title={`还有 ${autoFillCount} 条笔记没填全，用 AI 补全`}
+              className={`flex items-center gap-1 px-2 py-[5px] rounded-lg text-sm font-medium transition-colors ${
+                autoFillCount > 0
+                  ? 'bg-amber-600 hover:bg-amber-700 text-white'
+                  : 'text-ink-muted hover:bg-stone-100'
+              }`}
+              title={
+                autoFillCount > 0
+                  ? `还有 ${autoFillCount} 条笔记没填全，用 AI 补全`
+                  : '笔记都填全了；点开可以改 AI 设置'
+              }
             >
               <Sparkles className="w-3.5 h-3.5" />
-              填充 {autoFillCount}
+              填充{autoFillCount > 0 ? ` ${autoFillCount}` : ''}
             </button>
           )}
           <button
