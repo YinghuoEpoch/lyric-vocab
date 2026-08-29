@@ -52,7 +52,7 @@ import {
   deleteAnnotation,
   replaceDocAnnotations,
   updateAnnotationsByWord,
-  nextAnnotationOrder,
+  orderForNewAnnotation,
   reorderAnnotations,
   runAnnotationMigration
 } from './storage'
@@ -544,7 +544,7 @@ export default function App() {
               type: 'word',
               start: anchorId,
               end: anchorId,
-              order: nextAnnotationOrder(latest, currentPageId, 'word'),
+              order: orderForNewAnnotation(latest, currentPageId, 'word', anchorId),
               createdAt: Date.now(),
               ...fields
             }
@@ -910,7 +910,7 @@ export default function App() {
               start: s.startAnchorId,
               end: s.endAnchorId,
               text: s.text,
-              order: nextAnnotationOrder(latest, s.docId, 'sentence'),
+              order: orderForNewAnnotation(latest, s.docId, 'sentence', s.startAnchorId),
               createdAt: Date.now(),
               grammar: s.grammar,
               meaning: s.meaning

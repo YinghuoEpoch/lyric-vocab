@@ -10,6 +10,7 @@ import type {
   WordNote
 } from './types'
 import { migrateToAnnotations, type MigrationReport } from './utils/migrateAnnotations'
+import { insertionOrder } from './utils/annotationOrder'
 import {
   SAMPLE_BOOK_ID,
   SAMPLE_PAGE_ID,
@@ -503,13 +504,29 @@ export function selectAnnotations(
     .sort((a, b) => a.order - b.order)
 }
 
-/** 新建标注时该给的 order：排在同文档同类型的最后 */
+/** 排在同文档同类型的最后。用于兜底和迁移；新建标注请用 orderForNewAnnotation */
 export function nextAnnotationOrder(data: AppData, docId: string, type: AnnotationType): number {
   let max = -1
   for (const a of data.annotations ?? []) {
     if (a.docId === docId && a.type === type && a.order > max) max = a.order
   }
   return max + 1
+}
+
+/**
+ * 新建标注时该给的 order：**按正文顺序插进去**，排在正文里紧挨着它前面那条的后面。
+ *
+ * 从前一律排最后，于是 `apple and ear` 里后标的 and 会跑到卡片列表末尾。
+ * 算法在 utils/annotationOrder.ts（纯函数、有单测），这里只负责挑出同文档同类型的那批。
+ */
+export function orderForNewAnnotation(
+  data: AppData,
+  docId: string,
+  type: AnnotationType,
+  start: string | null
+): number {
+  const siblings = (data.annotations ?? []).filter((a) => a.docId === docId && a.type === type)
+  return insertionOrder(siblings, start)
 }
 
 /** 新增或更新一条标注（按 id 认人） */

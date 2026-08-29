@@ -1,5 +1,5 @@
 import { memo, useCallback, useEffect, useState } from 'react'
-import { BookOpen, FileText, Eye, EyeOff, Sparkles, GripVertical, Volume2, X } from 'lucide-react'
+import { BookOpen, FileText, Eye, EyeOff, Sparkles, GripVertical, X } from 'lucide-react'
 import {
   DndContext,
   closestCenter,
@@ -18,7 +18,6 @@ import { AutoMark } from './AutoMark'
 import { AutoTextarea } from './AutoTextarea'
 import { getFolderReviewData } from '../hooks/getFolderReviewData'
 import { useSpeak } from '../hooks/useSpeak'
-import { iconAlignFor } from '../utils/speakIconAlign'
 
 export type ReviewTarget =
   | { type: 'page'; id: string }
@@ -423,9 +422,10 @@ function VocabularyDashboardInner({
 }
 
 /**
- * 可朗读的那段英文。
+ * 可朗读的那段英文：文字本身就是按钮，点一下读出来。
  *
- * 文字本身就是按钮 —— 手机上没有 hover，只能靠一枚小喇叭点明它可以点。
+ * **不放喇叭图标** —— 试过一版，摆在哪条中线上都别扭，
+ * 而正在念的时候文字会变色，反馈已经够了。
  * 读不了的手机（没装朗读引擎）直接退回普通文字，不摆一个按了没反应的按钮。
  */
 function SpeakButton({
@@ -445,16 +445,6 @@ function SpeakButton({
 }) {
   if (!canSpeak) return <span className={`${className} text-amber-800`}>{children}</span>
 
-  /**
-   * 图标紧跟在最后一个字母后面，就按那个字母的中线摆：
-   * 结尾小写用 align-middle（CSS 定义就是「基线上方半个 x 高」，字体无关，天生准）；
-   * 结尾大写则要落在大写高度的正中 —— CSS 没有现成关键字，自己算：
-   * `vertical-align: <长度>` 是把图标底边**抬高**这么多，抬高即图标中心上移，
-   * 所以要让「中心 = 基线 - 大写高一半」，得抬 (大写高一半 - 图标半高)，是个负数。
-   * 这个字体（Playfair Display）实测大写高约 0.72em，取一半即 0.36em。
-   */
-  const capAligned = iconAlignFor(typeof children === 'string' ? children : '') === 'cap'
-
   return (
     <button
       type="button"
@@ -464,19 +454,9 @@ function SpeakButton({
       className={`${className} transition-colors ${speaking ? 'text-amber-500' : 'text-amber-800'}`}
     >
       {children}
-      <Volume2
-        className={`inline-block ml-1 ${SPEAK_ICON_CLASS} ${capAligned ? '' : 'align-middle'} ${
-          speaking ? 'opacity-100' : 'opacity-40'
-        }`}
-        style={capAligned ? { verticalAlign: `calc(0.36em - ${SPEAK_ICON_PX / 2}px)` } : undefined}
-      />
     </button>
   )
 }
-
-/** 喇叭图标的尺寸。两处必须一致：类名负责画，像素值参与上面的对齐计算 */
-const SPEAK_ICON_PX = 14
-const SPEAK_ICON_CLASS = 'w-3.5 h-3.5'
 
 const GRID_CLASS = 'grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4'
 
