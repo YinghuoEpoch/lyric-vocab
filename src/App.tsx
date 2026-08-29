@@ -33,6 +33,10 @@ import { migratePage } from './utils/migrateTokenizer'
 import { importFile } from './importers'
 import { useBackHandler, handleBackPress, BackPriority } from './hooks/useBackHandler'
 import { useAutoFill } from './hooks/useAutoFill'
+import { useAutoMark } from './hooks/useAutoMark'
+import { AutoMarkDialog } from './components/AutoMarkDialog'
+import { createMarker } from './mark'
+import { describeTarget, loadConfig as loadAiConfig } from './enrich'
 import { AutoFillDialog } from './components/AutoFillDialog'
 import {
   getAppData,
@@ -52,6 +56,8 @@ import {
   replacePageNotes,
   saveAnnotation,
   deleteAnnotation,
+  deleteAnnotations,
+  addAnnotations,
   replaceDocAnnotations,
   updateVocabByText,
   orderForNewAnnotation,
@@ -1093,6 +1099,28 @@ export default function App() {
     }, [])
   })
 
+  /** 「一键划词」：只对当前打开的这一篇做 */
+  const autoMark = useAutoMark({
+    docId: currentPageId,
+    docName: currentPage?.title || '这一篇',
+    content: currentPage?.content ?? '',
+    writeAnnotations: useCallback(async (list) => {
+      setAppData(await addAnnotations(list))
+    }, [])
+  })
+
+  /** 划完那条战报只属于它跑的那一篇 —— 翻到别的文档就该消失 */
+  const markOutcome =
+    autoMark.outcome && autoMark.outcome.docId === currentPageId ? autoMark.outcome : null
+
+  const handleUndoMark = useCallback(
+    (ids: string[]) => {
+      void (async () => setAppData(await deleteAnnotations(ids)))()
+      autoMark.dismissOutcome()
+    },
+    [autoMark]
+  )
+
 
   return (
     <div className="h-full flex flex-col md:flex-row bg-paper overflow-hidden">
@@ -1270,6 +1298,10 @@ export default function App() {
             sentences={sentences}
             onScrollToWord={handleScrollToWord}
             onEditSentence={handleEditSentence}
+            onAutoMark={currentPageId ? autoMark.openDialog : undefined}
+            markOutcome={markOutcome}
+            onUndoMark={handleUndoMark}
+            onDismissMark={autoMark.dismissOutcome}
             onDeleteVocab={handleDeleteVocabNote}
             onDeleteSentence={handleDeleteSentenceById}
             currentPageId={currentPageId}
@@ -1292,6 +1324,23 @@ export default function App() {
         onStart={autoFill.start}
         onCancel={autoFill.cancel}
         onClose={autoFill.closeDialog}
+      />
+
+      {/* 一键划词：从阅读页的生词板顶上进来，只对当前这一篇做 */}
+      <AutoMarkDialog
+        open={autoMark.open}
+        docName={autoMark.docName}
+        ready={createMarker() !== null}
+        targetName={describeTarget(loadAiConfig())}
+        state={autoMark.state}
+        onStart={autoMark.start}
+        onCancel={autoMark.cancel}
+        onClose={autoMark.closeDialog}
+        onOpenAiSettings={() => {
+          // Key 是同一份，没道理配两遍 —— 直接借「一键填充」那张设置屏
+          autoMark.closeDialog()
+          autoFill.openDialog()
+        }}
       />
 
       {/* 「原文已删除」确认弹窗：沿用用户协议那张居中卡片的样式 */}

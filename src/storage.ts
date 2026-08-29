@@ -545,6 +545,31 @@ export async function saveAnnotation(annotation: Annotation): Promise<AppData> {
   return commit(data)
 }
 
+/**
+ * 一次新增一批标注。
+ *
+ * 「一键划词」一次能划出几十条 —— 逐条调 saveAnnotation 会落盘几十次，
+ * 而且每次都触发一轮界面重算。这里只提交一次。
+ */
+export async function addAnnotations(list: Annotation[]): Promise<AppData> {
+  const data = await ensureLoaded()
+  if (list.length === 0) return snapshot(data)
+  data.annotations = [...(data.annotations ?? []), ...list]
+  return commit(data)
+}
+
+/** 一次删掉一批标注。给「整批撤销」用 */
+export async function deleteAnnotations(ids: readonly string[]): Promise<AppData> {
+  const data = await ensureLoaded()
+  if (ids.length === 0) return snapshot(data)
+  const doomed = new Set(ids)
+  const all = data.annotations ?? []
+  const next = all.filter((a) => !doomed.has(a.id))
+  if (next.length === all.length) return snapshot(data)
+  data.annotations = next
+  return commit(data)
+}
+
 /** 按 id 删除一条标注 */
 export async function deleteAnnotation(id: string): Promise<AppData> {
   const data = await ensureLoaded()

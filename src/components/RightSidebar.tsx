@@ -1,5 +1,5 @@
 import { memo, useState, useEffect } from 'react'
-import { PanelRightClose, BookOpen, ChevronRight, Trash2 } from 'lucide-react'
+import { PanelRightClose, BookOpen, ChevronRight, Trash2, Wand2, Undo2, X } from 'lucide-react'
 import type { Sentence } from '../types'
 import { AutoMark } from './AutoMark'
 
@@ -130,6 +130,12 @@ interface RightSidebarProps {
   onDeleteSentence: (id: string) => void
   currentPageId: string | null
   onClose: () => void
+  /** 一键划词。不给就不显示那个按钮 */
+  onAutoMark?: () => void
+  /** 刚划完那一批的战报；null 表示没有可显示的 */
+  markOutcome?: { marked: number; missed: number; createdIds: string[] } | null
+  onUndoMark?: (ids: string[]) => void
+  onDismissMark?: () => void
   /** 当前文档阅读进度 0–100 */
   documentProgress?: number
   /** 当前文档在同组内的索引（0-based） */
@@ -148,6 +154,10 @@ function RightSidebarInner({
   onDeleteSentence,
   currentPageId,
   onClose,
+  onAutoMark,
+  markOutcome = null,
+  onUndoMark,
+  onDismissMark,
   documentProgress = 0,
   currentDocIndex = 0,
   totalDocsInFolder = 0,
@@ -192,14 +202,29 @@ function RightSidebarInner({
             宽屏必须留着 —— 那边遮罩是隐藏的，浮动的「笔记」按钮开着时也不显示，
             删了就再没有关掉它的办法。
           */}
-          <button
-            type="button"
-            onClick={onClose}
-            className="hidden md:inline-flex p-1.5 rounded-lg hover:bg-stone-100 text-ink-muted hover:text-ink"
-            title="关闭笔记"
-          >
-            <PanelRightClose className="w-4 h-4" />
-          </button>
+          <div className="flex items-center gap-0.5">
+            {/* 一键划词：入口放在这儿，因为它做的是「对着这一篇正文挑词」，
+                而生词板正是这一篇笔记的所在 —— 划完新词就出现在下面这张清单里 */}
+            {onAutoMark && (
+              <button
+                type="button"
+                onClick={onAutoMark}
+                className="p-1.5 rounded-lg hover:bg-stone-100 text-ink-muted hover:text-amber-700"
+                title="一键划词：让 AI 通读全文挑出重点词"
+                aria-label="一键划词"
+              >
+                <Wand2 className="w-4 h-4" />
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={onClose}
+              className="hidden md:inline-flex p-1.5 rounded-lg hover:bg-stone-100 text-ink-muted hover:text-ink"
+              title="关闭笔记"
+            >
+              <PanelRightClose className="w-4 h-4" />
+            </button>
+          </div>
         </div>
         <div className="flex rounded-lg border border-stone-200/80 p-0.5 bg-stone-50/80">
           <button
@@ -226,6 +251,39 @@ function RightSidebarInner({
           </button>
         </div>
       </div>
+      {/*
+        刚划完那一批的战报。**如实报数** —— AI 挑了多少、真划上多少是两回事，
+        对不上的一律跳过而不是猜到别的词头上，所以差额要摆出来给人看见。
+        一次划几十条，没有撤销的话没人敢按这个按钮，所以撤销就摆在同一行。
+      */}
+      {markOutcome && (
+        <div className="shrink-0 flex items-start gap-2 px-3 py-2 bg-amber-50 border-b border-amber-200 text-xs text-amber-900 leading-relaxed">
+          <span className="flex-1">
+            已划上 {markOutcome.marked} 条
+            {markOutcome.missed > 0 && `，${markOutcome.missed} 条没对上原文`}
+          </span>
+          {markOutcome.createdIds.length > 0 && onUndoMark && (
+            <button
+              type="button"
+              onClick={() => onUndoMark(markOutcome.createdIds)}
+              className="shrink-0 px-2 py-0.5 rounded border border-amber-300 hover:bg-amber-100 font-medium inline-flex items-center gap-1"
+            >
+              <Undo2 className="w-3 h-3" />
+              撤销
+            </button>
+          )}
+          {onDismissMark && (
+            <button
+              type="button"
+              onClick={onDismissMark}
+              className="shrink-0 p-0.5 rounded hover:bg-amber-100"
+              aria-label="收起这条提示"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          )}
+        </div>
+      )}
       <div className="flex-1 min-h-0 overflow-y-auto scroll-area py-2 px-2">
         {tab === 'vocab' ? (
           filtered.length === 0 ? (

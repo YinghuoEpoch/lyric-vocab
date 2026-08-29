@@ -185,3 +185,20 @@ export function saveConfig(config: AiConfig): void {
     // 存不下就算了，这次会话内仍可使用
   }
 }
+
+/**
+ * 「数据会发给谁」显示什么名字。
+ *
+ * 自定义供应商说「自定义」等于没说 —— 显示实际的服务域名，
+ * 用户才看得出自己的正文和生词到底去了哪儿。
+ * 填充和划词两处都要说这句话，所以收在这里，不各写一遍。
+ */
+export function describeTarget(config: AiConfig): string {
+  const preset = findProvider(config.providerId)
+  if (!preset.editable) return preset.name
+  try {
+    return new URL(normalizeBaseUrl(config.baseUrl)).host
+  } catch {
+    return '你配置的 AI 服务'
+  }
+}

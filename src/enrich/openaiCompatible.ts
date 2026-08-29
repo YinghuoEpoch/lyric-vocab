@@ -159,13 +159,30 @@ function describeNetworkError(err: unknown, baseUrl: string): Error {
   return new Error(`连不上 ${baseUrl}，请检查网络和服务地址（${reason}）`)
 }
 
-export function createOpenAICompatibleEnricher(provider: ResolvedProvider): Enricher {
+/** 发一次请求、拿回解析好的 JSON。系统提示与载荷由调用方给 */
+export type ChatCaller = (
+  systemPrompt: string,
+  userPayload: unknown,
+  signal?: AbortSignal
+) => Promise<unknown>
+
+/**
+ * 造一个「发请求」的函数。
+ *
+ * 单独抽出来是因为不只填充要用 —— 「一键划词」（src/mark）走的是同一条路：
+ * 同样的地址与认证、同样的 JSON 模式兜底、同样的错误话术。
+ * 重试、报错翻译这些琐碎又容易写错的东西只此一份。
+ *
+ * 「对面不支持 JSON 模式」这件事记在闭包里，所以**同一个 caller 要留着复用**，
+ * 每批新造一个的话每批都要白试一次。
+ */
+export function createChatCaller(provider: ResolvedProvider): ChatCaller {
   const { name, baseUrl, model, apiKey } = provider
   const url = chatEndpoint(baseUrl)
   /** 试过一次发现对面不支持 JSON 模式，后面几批就不用再试了 */
   let jsonMode = true
 
-  async function call(
+  return async function call(
     systemPrompt: string,
     userPayload: unknown,
     signal?: AbortSignal
@@ -221,9 +238,13 @@ export function createOpenAICompatibleEnricher(provider: ResolvedProvider): Enri
       throw new Error('模型返回的内容不是有效的 JSON，可能是模型名填错了或该模型不擅长按格式输出')
     }
   }
+}
+
+export function createOpenAICompatibleEnricher(provider: ResolvedProvider): Enricher {
+  const call = createChatCaller(provider)
 
   return {
-    name,
+    name: provider.name,
 
     async fillWords(tasks, signal) {
       if (tasks.length === 0) return {}

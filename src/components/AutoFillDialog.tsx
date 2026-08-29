@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Sparkles, X, Check, Loader2, Eye, EyeOff } from 'lucide-react'
 import {
   PROVIDERS,
+  describeTarget,
   findProvider,
   loadConfig,
   missingField,
@@ -91,15 +92,7 @@ export function AutoFillDialog({
    * 「会发送给谁」显示什么名字。
    * 自定义时说「自定义」等于没说，显示实际的服务域名才看得出数据去了哪儿。
    */
-  const savedTarget = (() => {
-    const savedPreset = findProvider(saved.providerId)
-    if (!savedPreset.editable) return savedPreset.name
-    try {
-      return new URL(normalizeBaseUrl(saved.baseUrl)).host
-    } catch {
-      return '你配置的 AI 服务'
-    }
-  })()
+  const savedTarget = describeTarget(saved)
 
   useEffect(() => {
     if (open) {
