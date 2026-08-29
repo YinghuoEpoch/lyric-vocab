@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Sparkles, X, Check, Loader2 } from 'lucide-react'
+import { Sparkles, X, Check, Loader2, Eye, EyeOff } from 'lucide-react'
 import {
   PROVIDERS,
   findProvider,
@@ -77,6 +77,8 @@ export function AutoFillDialog({
   const [saved, setSaved] = useState<AiConfig>(loadConfig)
   const [editing, setEditing] = useState(false)
   const [test, setTest] = useState<TestState>({ phase: 'idle' })
+  /** Key 是否明文显示。默认明文 —— 理由见下面输入框那处注释 */
+  const [showKey, setShowKey] = useState(true)
 
   const ready = resolveConfig(saved) !== null
   const needSetup = !ready || editing
@@ -106,6 +108,7 @@ export function AutoFillDialog({
       setDraft(current)
       setEditing(false)
       setTest({ phase: 'idle' })
+      setShowKey(true)
     }
   }, [open])
 
@@ -223,13 +226,36 @@ export function AutoFillDialog({
               </div>
             )}
 
-            <input
-              type="password"
-              value={draftKey}
-              onChange={(e) => setKey(e.target.value)}
-              placeholder={preset.editable ? '粘贴 API Key' : `粘贴 ${preset.name} 的 API Key`}
-              className={inputClass}
-            />
+            {/*
+              Key 这一格默认**明文**，右边一枚眼睛可以遮起来。
+              两个原因：
+              - 安卓 WebView 对密码框常常不给「粘贴」菜单，而这格永远是靠粘贴填的
+              - Key 是一长串，粘成一串圆点的话粘错、粘漏都看不出来，
+                只能等填充跑起来报错才知道
+              自己的手机、自己的 Key，明文没什么可藏的；真要遮就点那枚眼睛。
+            */}
+            <div className="relative">
+              <input
+                type={showKey ? 'text' : 'password'}
+                autoCapitalize="off"
+                autoCorrect="off"
+                autoComplete="off"
+                spellCheck={false}
+                value={draftKey}
+                onChange={(e) => setKey(e.target.value)}
+                placeholder={preset.editable ? '粘贴 API Key' : `粘贴 ${preset.name} 的 API Key`}
+                className={`${inputClass} pr-9`}
+              />
+              <button
+                type="button"
+                onClick={() => setShowKey((v) => !v)}
+                className="absolute inset-y-0 right-0 w-9 flex items-center justify-center text-ink-muted rounded-lg hover:bg-stone-100"
+                aria-label={showKey ? '遮住 Key' : '显示 Key'}
+                title={showKey ? '遮住 Key' : '显示 Key'}
+              >
+                {showKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+              </button>
+            </div>
 
             {/* 提示与示例挨在一起，中间不留空行：它们是同一句话的两半 */}
             <div className="space-y-0.5 text-xs text-ink-muted leading-relaxed break-words">
