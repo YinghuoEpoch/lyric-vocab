@@ -308,12 +308,19 @@ function VocabularyDashboardInner({
               }`}
               title={
                 autoFillCount > 0
-                  ? `还有 ${autoFillCount} 条笔记没填全，用 AI 补全`
+                  ? `还有 ${autoFillCount} 条笔记没填全，让 AI 只补空着的格子`
                   : '笔记都填全了；点开可以改 AI 设置'
               }
             >
-              <Sparkles className="w-3.5 h-3.5" />
-              填充{autoFillCount > 0 ? ` ${autoFillCount}` : ''}
+              <Sparkles className="w-3.5 h-3.5 shrink-0" />
+              {/*
+                写「AI 填充」不写「填充」：和生词板那颗「AI 划词」凑成一对，
+                两个 AI 功能一眼看得出是同一类。（划词那颗见第二十二节 ——
+                它从前是个没有文字的图标，手机上等于哑谜。）
+                量过：375px 窄屏上这一排左右两组之间空着 123px，
+                多出来的「AI 」只占 17px，带上数字最坏也只多 39px，不会挤到第二行。
+              */}
+              AI 填充{autoFillCount > 0 ? ` ${autoFillCount}` : ''}
             </button>
           )}
           <button
