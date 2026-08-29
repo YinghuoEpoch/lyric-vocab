@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Wand2, X } from 'lucide-react'
+import { AiSettingsPanel } from './AiSettingsPanel'
 import {
   AMOUNT_HINT,
   AMOUNT_LABEL,
@@ -8,6 +9,7 @@ import {
   saveMarkOptions
 } from '../mark/options'
 import type { MarkAmount, MarkLevel, MarkOptions, MarkProgress } from '../mark'
+import { describeTarget, loadConfig, resolveConfig, type AiConfig } from '../enrich'
 import { useBackHandler, BackPriority } from '../hooks/useBackHandler'
 
 /**
@@ -30,16 +32,10 @@ interface AutoMarkDialogProps {
   open: boolean
   /** 当前文档名，写进「将通读《xxx》」那句话 */
   docName: string
-  /** AI 配置齐不齐。不齐就只能先去设置 */
-  ready: boolean
-  /** 数据会发给谁，如实告诉用户 */
-  targetName: string
   state: AutoMarkState
   onStart: (options: MarkOptions) => void
   onCancel: () => void
   onClose: () => void
-  /** 去「一键填充」那边设置 AI（Key 是同一份，没道理配两遍） */
-  onOpenAiSettings: () => void
 }
 
 const LEVELS: MarkLevel[] = ['cet4', 'cet6', 'kaoyan', 'ielts']
@@ -48,20 +44,30 @@ const AMOUNTS: MarkAmount[] = ['few', 'medium', 'many']
 export function AutoMarkDialog({
   open,
   docName,
-  ready,
-  targetName,
   state,
   onStart,
   onCancel,
-  onClose,
-  onOpenAiSettings
+  onClose
 }: AutoMarkDialogProps) {
   // 初值当场读出来，不留「先渲染一帧默认档再跳成上次那档」的闪烁
   const [options, setOptions] = useState<MarkOptions>(loadMarkOptions)
+  /**
+   * AI 配置。和「一键填充」是同一份 —— 设一次两边都能用。
+   * 从前这里没有设置面板，点「AI 设置」会把用户甩到填充弹窗去，
+   * 弹窗内容整个变成填充的，逻辑明显不对。现在两边共用同一个面板组件。
+   */
+  const [aiConfig, setAiConfig] = useState<AiConfig>(loadConfig)
+  const [editingAi, setEditingAi] = useState(false)
+  const ready = resolveConfig(aiConfig) !== null
+  const needSetup = !ready || editingAi
   const running = state.phase === 'running'
 
   useEffect(() => {
-    if (open) setOptions(loadMarkOptions())
+    if (open) {
+      setOptions(loadMarkOptions())
+      setAiConfig(loadConfig())
+      setEditingAi(false)
+    }
   }, [open])
 
   // 返回键：跑的时候先取消，闲着的时候直接关
@@ -86,7 +92,7 @@ export function AutoMarkDialog({
         <div className="flex items-center justify-between">
           <h2 className="text-base font-semibold text-ink flex items-center gap-2">
             <Wand2 className="w-4 h-4 text-amber-600" />
-            一键划词
+            {needSetup ? 'AI 设置' : '一键划词'}
           </h2>
           {!running && (
             <button
@@ -100,20 +106,14 @@ export function AutoMarkDialog({
           )}
         </div>
 
-        {!ready ? (
-          <>
-            <p className="text-sm text-ink leading-relaxed">
-              划词由 AI 完成，得先设好 API Key。用的是和「一键填充」同一份配置，
-              设一次两边都能用。
-            </p>
-            <button
-              type="button"
-              className="w-full h-9 rounded-lg bg-amber-600 hover:bg-amber-700 text-white text-sm font-medium"
-              onClick={onOpenAiSettings}
-            >
-              去设置 AI
-            </button>
-          </>
+        {needSetup ? (
+          <AiSettingsPanel
+            onSaved={(cfg) => {
+              setAiConfig(cfg)
+              setEditingAi(false)
+            }}
+            onCancel={ready ? () => setEditingAi(false) : undefined}
+          />
         ) : (
           <>
             <p className="text-xs text-ink-muted leading-relaxed">
@@ -203,7 +203,7 @@ export function AutoMarkDialog({
 
             <p className="text-xs text-ink-muted leading-relaxed">
               划出来的内容由 AI 生成，会标上「AI」记号，可能有错，建议复核。
-              这篇文档的英文正文会被发送给 <span className="break-all">{targetName}</span>。
+              这篇文档的英文正文会被发送给 <span className="break-all">{describeTarget(aiConfig)}</span>。
             </p>
 
             <div className="flex gap-2 pt-1">
@@ -220,7 +220,7 @@ export function AutoMarkDialog({
                   <button
                     type="button"
                     className="h-9 px-3 rounded-lg border border-stone-300 text-stone-600 text-sm hover:bg-stone-50"
-                    onClick={onOpenAiSettings}
+                    onClick={() => setEditingAi(true)}
                   >
                     AI 设置
                   </button>

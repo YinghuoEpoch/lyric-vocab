@@ -119,6 +119,7 @@ export function useAutoMark({ docId, docName, content, writeAnnotations }: UseAu
                   if (m.pick.phonetic) a.phonetic = m.pick.phonetic
                   if (m.pick.pos) a.pos = m.pick.pos
                   if (m.pick.definition) a.definition = m.pick.definition
+                  if (m.pick.lemma) a.lemma = m.pick.lemma
                 } else {
                   if (m.pick.definition) a.definition = m.pick.definition
                   if (m.pick.usage) a.grammar = m.pick.usage

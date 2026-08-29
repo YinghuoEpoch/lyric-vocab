@@ -35,8 +35,6 @@ import { useBackHandler, handleBackPress, BackPriority } from './hooks/useBackHa
 import { useAutoFill } from './hooks/useAutoFill'
 import { useAutoMark } from './hooks/useAutoMark'
 import { AutoMarkDialog } from './components/AutoMarkDialog'
-import { createMarker } from './mark'
-import { describeTarget, loadConfig as loadAiConfig } from './enrich'
 import { AutoFillDialog } from './components/AutoFillDialog'
 import {
   getAppData,
@@ -1330,17 +1328,10 @@ export default function App() {
       <AutoMarkDialog
         open={autoMark.open}
         docName={autoMark.docName}
-        ready={createMarker() !== null}
-        targetName={describeTarget(loadAiConfig())}
         state={autoMark.state}
         onStart={autoMark.start}
         onCancel={autoMark.cancel}
         onClose={autoMark.closeDialog}
-        onOpenAiSettings={() => {
-          // Key 是同一份，没道理配两遍 —— 直接借「一键填充」那张设置屏
-          autoMark.closeDialog()
-          autoFill.openDialog()
-        }}
       />
 
       {/* 「原文已删除」确认弹窗：沿用用户协议那张居中卡片的样式 */}

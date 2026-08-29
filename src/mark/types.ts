@@ -34,6 +34,8 @@ export interface MarkPick {
   phonetic?: string
   pos?: string
   definition?: string
+  /** 词的原形（stood -> stand）。和「一键填充」存的是同一个字段 */
+  lemma?: string
   /** 短语的用法 / 搭配 */
   usage?: string
 }

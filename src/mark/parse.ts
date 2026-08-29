@@ -49,10 +49,12 @@ export function collectPicks(parsed: unknown): MarkPick[] {
     const phonetic = toText(r.phonetic)
     const pos = toText(r.pos)
     const definition = toText(r.definition)
+    const lemma = toText(r.lemma)
     const usage = toText(r.usage)
     if (phonetic) pick.phonetic = phonetic
     if (pos) pick.pos = pos
     if (definition) pick.definition = definition
+    if (lemma) pick.lemma = lemma
     if (usage) pick.usage = usage
 
     out.push(pick)

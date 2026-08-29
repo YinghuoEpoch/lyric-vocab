@@ -27,6 +27,11 @@ describe('收 pick：正常情况', () => {
     expect(r[1].usage).toBe('后接衣物')
   })
 
+  it('原形（lemma）也收下来 —— 和「一键填充」存进同一个字段', () => {
+    const r = collectPicks({ picks: [{ line: 0, text: 'stood', lemma: 'stand' }] })
+    expect(r[0].lemma).toBe('stand')
+  })
+
   it('模型直接给一个数组，不包在 picks 里 —— 也认', () => {
     const r = collectPicks([{ line: 0, text: 'stood' }])
     expect(r).toHaveLength(1)

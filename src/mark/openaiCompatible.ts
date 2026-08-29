@@ -1,4 +1,12 @@
 import { createChatCaller } from '../enrich/openaiCompatible'
+import {
+  DEFINITION_SPEC,
+  LEMMA_SPEC,
+  PHONETIC_SPEC,
+  PHRASE_DEFINITION_SPEC,
+  PHRASE_USAGE_SPEC,
+  POS_SPEC
+} from '../enrich/fieldSpecs'
 import type { ResolvedProvider } from '../enrich'
 import { collectPicks } from './parse'
 import type { MarkLine, MarkOptions, Marker } from './types'
@@ -40,10 +48,16 @@ export function buildSystemPrompt(options: MarkOptions): string {
 - line：它所在的行号，必须是用户给你的那些行号之一
 - text：**原文里的确切写法**，一个字母都不能改
 - kind："word" 或 "phrase"
-- definition：中文释义，简短
-- phonetic：国际音标，两侧带斜杠，例如 /stʊd/（只有 kind 是 word 时才给）
-- pos：词性缩写，如 n. / v. / adj.（只有 kind 是 word 时才给）
-- usage：用法或搭配说明，简短（只有 kind 是 phrase 时才给）
+
+kind 是 word 时给这几项（写法要求和「一键填充」完全一致）：
+- phonetic：${PHONETIC_SPEC}
+- pos：${POS_SPEC}
+- definition：${DEFINITION_SPEC}
+- lemma：${LEMMA_SPEC}
+
+kind 是 phrase 时给这两项：
+- definition：${PHRASE_DEFINITION_SPEC}
+- usage：${PHRASE_USAGE_SPEC}
 
 **关于 text 这一条要格外当心**：必须是原文里逐字符照抄的样子，不要还原成原形。
 原文写的是 took off 就给 took off，不要给 take off；
@@ -51,7 +65,7 @@ export function buildSystemPrompt(options: MarkOptions): string {
 照抄不了的宁可不挑 —— 对不上的条目会被丢弃。
 
 只输出 JSON，形如：
-{"picks":[{"line":12,"text":"stumbled","kind":"word","phonetic":"/ˈstʌmbld/","pos":"v.","definition":"绊倒；跌跌撞撞"},{"line":14,"text":"took off","kind":"phrase","definition":"脱下；起飞","usage":"take off 的过去式，后接衣物或指飞机起飞"}]}
+{"picks":[{"line":12,"text":"stumbled","kind":"word","phonetic":"/ˈstʌmbld/","pos":"v.","definition":"绊倒；跌跌撞撞（stumble 过去式）","lemma":"stumble"},{"line":14,"text":"took off","kind":"phrase","definition":"脱下；起飞（take off 过去式）","usage":"后接衣物，或指飞机离地；take off 还有「事业腾飞」的引申义"}]}
 
 不要输出任何解释文字。`
 }

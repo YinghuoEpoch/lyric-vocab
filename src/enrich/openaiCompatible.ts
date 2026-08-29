@@ -1,5 +1,13 @@
 import type { Enricher, WordFill, SentenceFill, PhraseFill } from './types'
 import { chatEndpoint, type ResolvedProvider } from './config'
+import {
+  DEFINITION_SPEC,
+  LEMMA_SPEC,
+  PHONETIC_SPEC,
+  PHRASE_DEFINITION_SPEC,
+  PHRASE_USAGE_SPEC,
+  POS_SPEC
+} from './fieldSpecs'
 
 /**
  * 「OpenAI 兼容」实现 —— 一份代码接所有家。
@@ -17,18 +25,10 @@ const WORD_SYSTEM_PROMPT = `你是一个英语词典助手，为中文学习者�
 
 用户会给你一组单词，每个词带一个 id，多数还带有它在原文中所在的那一行（context）。
 请为每个词输出：
-- phonetic：国际音标，两侧带斜杠，例如 /stʊd/。按该词在 context 中的实际读音标注。
-- pos：词性缩写，用中文习惯写法，例如 n. / v. / adj. / adv. / prep. / conj.
-- definition：中文释义，简洁。**必须结合 context 选择该处真正的含义**，
-  不要罗列多个义项。例如 stood 在 "I never stood up very tall" 中是「站立」，
-  而在 "the offer stood" 中是「仍然有效」。
-  **如果这个词不是原形（是过去式、过去分词、现在分词、复数、比较级等变形），
-  就在释义末尾用括号补上原形和变形类型**，例如：
-  flying -> 飞行；飞翔（fly 现在分词）
-  stood -> 站立；挺立（stand 过去式）
-  children -> 孩子们（child 复数）
-  本身就是原形的词不要加括号，直接给释义即可。
-- lemma：该词的原形，例如 stood -> stand、bursting -> burst。本身就是原形则原样返回。
+- phonetic：${PHONETIC_SPEC}
+- pos：${POS_SPEC}
+- definition：${DEFINITION_SPEC}
+- lemma：${LEMMA_SPEC}
 
 严格返回 JSON，形如：
 {"results":[{"id":"...","phonetic":"...","pos":"...","definition":"...","lemma":"..."}]}
@@ -49,11 +49,8 @@ const PHRASE_SYSTEM_PROMPT = `你是一个英语词典助手，为中文学习�
 
 用户会给你一组英文短语，每条带一个 id，多数还带有它在原文中所在的那一行（context）。
 请为每条输出：
-- definition：中文释义，简洁。**必须结合 context 选择该处真正的含义**，不要罗列多个义项。
-  例如 take off 在 "the plane took off" 中是「起飞」，在 "he took off his coat" 中是「脱下」。
-- grammar：用法说明。写这个搭配怎么用 —— 后面接什么、常见于什么语境、有没有固定形式，
-  20 到 40 字，具体一点。不要重复释义。
-  例如 look forward to -> 「to 是介词，后面接名词或动名词，不接动词原形；多用于表达期待」
+- definition：${PHRASE_DEFINITION_SPEC}
+- grammar：${PHRASE_USAGE_SPEC}
 
 严格返回 JSON，形如：
 {"results":[{"id":"...","definition":"...","grammar":"..."}]}
