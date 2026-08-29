@@ -18,6 +18,7 @@ import { AutoMark } from './AutoMark'
 import { AutoTextarea } from './AutoTextarea'
 import { getFolderReviewData } from '../hooks/getFolderReviewData'
 import { useSpeak } from '../hooks/useSpeak'
+import { iconAlignFor } from '../utils/speakIconAlign'
 
 export type ReviewTarget =
   | { type: 'page'; id: string }
@@ -444,6 +445,16 @@ function SpeakButton({
 }) {
   if (!canSpeak) return <span className={`${className} text-amber-800`}>{children}</span>
 
+  /**
+   * 图标紧跟在最后一个字母后面，就按那个字母的中线摆：
+   * 结尾小写用 align-middle（CSS 定义就是「基线上方半个 x 高」，字体无关，天生准）；
+   * 结尾大写则要落在大写高度的正中 —— CSS 没有现成关键字，自己算：
+   * `vertical-align: <长度>` 是把图标底边**抬高**这么多，抬高即图标中心上移，
+   * 所以要让「中心 = 基线 - 大写高一半」，得抬 (大写高一半 - 图标半高)，是个负数。
+   * 这个字体（Playfair Display）实测大写高约 0.72em，取一半即 0.36em。
+   */
+  const capAligned = iconAlignFor(typeof children === 'string' ? children : '') === 'cap'
+
   return (
     <button
       type="button"
@@ -453,17 +464,19 @@ function SpeakButton({
       className={`${className} transition-colors ${speaking ? 'text-amber-500' : 'text-amber-800'}`}
     >
       {children}
-      {/* align-middle 是按「小写字母那一段」的中线对齐（基线上方半个 x 高）。
-          原来用 align-baseline，图标正好落在大写高度的正中 ——
-          可卡片上的词多是小写，眼睛看的是小写那一段，于是显得高了 2px。 */}
       <Volume2
-        className={`inline-block w-3.5 h-3.5 ml-1 align-middle ${
+        className={`inline-block ml-1 ${SPEAK_ICON_CLASS} ${capAligned ? '' : 'align-middle'} ${
           speaking ? 'opacity-100' : 'opacity-40'
         }`}
+        style={capAligned ? { verticalAlign: `calc(0.36em - ${SPEAK_ICON_PX / 2}px)` } : undefined}
       />
     </button>
   )
 }
+
+/** 喇叭图标的尺寸。两处必须一致：类名负责画，像素值参与上面的对齐计算 */
+const SPEAK_ICON_PX = 14
+const SPEAK_ICON_CLASS = 'w-3.5 h-3.5'
 
 const GRID_CLASS = 'grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4'
 
