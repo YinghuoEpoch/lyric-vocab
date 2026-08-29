@@ -639,8 +639,8 @@ function VocabCard({
                 className="font-lyric-en font-serif font-bold text-lg text-left"
               >
                 {item.word}
+                {item.auto && <AutoMark />}
               </SpeakButton>
-              {item.auto && <AutoMark />}
             </span>
           ) : (
             <span className="text-ink-muted/70 text-sm">
@@ -806,6 +806,8 @@ function SentenceCard({
         {dragHandle}
         {showEnglish ? (
           <p className="flex-1">
+            {/* 角标放在按钮**里面** —— 放外面的话，句子一换行按钮就占满整行宽，
+                角标没位置只好掉到下一行独占一行。缘由见 AutoMark 的注释 */}
             <SpeakButton
               canSpeak={canSpeak}
               speaking={speaking}
@@ -814,8 +816,8 @@ function SentenceCard({
               className="font-lyric-en font-serif text-base leading-snug text-left"
             >
               {item.text}
+              {item.auto && <AutoMark />}
             </SpeakButton>
-            {item.auto && <AutoMark />}
           </p>
         ) : (
           <span className="text-ink-muted/70 text-sm">
