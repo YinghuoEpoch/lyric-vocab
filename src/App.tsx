@@ -31,6 +31,7 @@ import {
 } from './utils/annotationViews'
 import { migratePage } from './utils/migrateTokenizer'
 import { importFile } from './importers'
+import { AGREEMENT_CLAUSES, AGREEMENT_TITLE } from './agreement'
 import { useBackHandler, handleBackPress, BackPriority } from './hooks/useBackHandler'
 import { useAutoFill } from './hooks/useAutoFill'
 import { useAutoMark } from './hooks/useAutoMark'
@@ -1402,13 +1403,12 @@ export default function App() {
       {agreementChecked && !userAgreementAccepted && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 p-4">
           <div className="max-w-sm w-[90%] max-h-[85vh] overflow-y-auto bg-white rounded-2xl shadow-xl border border-paper-border p-4 space-y-3 text-sm leading-relaxed">
-            <h2 className="text-base font-semibold text-ink text-center mb-1">用户协议与版权声明</h2>
+            <h2 className="text-base font-semibold text-ink text-center mb-1">{AGREEMENT_TITLE}</h2>
+            {/* 正文收在 agreement.ts 里，和设置页「关于」里那份是同一份 */}
             <div className="space-y-2 text-ink-muted text-xs">
-              <p>1. 本软件由 荧惑纪 独立开发，版权所有 © 2026。</p>
-              <p>2. 本软件仅供个人非商业用途（学习、交流、研究）使用。</p>
-              <p>3. 未经作者书面授权，严禁任何形式的商业使用，包括但不限于：打包售卖、植入广告、会员收费、或将其作为其他商业产品的一部分。</p>
-              <p>4. 严禁对本软件进行反向工程、反编译、反汇编，或试图通过任何方式获取源代码。</p>
-              <p>5. 点击“同意”即表示您已阅读并接受上述条款。如不同意，请立即退出并卸载本软件。</p>
+              {AGREEMENT_CLAUSES.map((line) => (
+                <p key={line}>{line}</p>
+              ))}
             </div>
             <div className="flex gap-2 pt-2">
               <button

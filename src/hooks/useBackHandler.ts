@@ -23,6 +23,8 @@ export const BackPriority = {
   confirmDelete: 90,
   /** 回收站面板 */
   recycleBin: 80,
+  /** 设置页（和回收站同一层，都是从底栏开出来的一屏，不会同时开着） */
+  settings: 80,
   /** 长按单词后的抽屉与选区 */
   wordDrawer: 70,
   /** 左右侧栏 */
