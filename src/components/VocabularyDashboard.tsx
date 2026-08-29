@@ -1,5 +1,5 @@
 import { memo, useCallback, useEffect, useState } from 'react'
-import { BookOpen, FileText, Eye, EyeOff, Sparkles, GripVertical } from 'lucide-react'
+import { BookOpen, FileText, Eye, EyeOff, Sparkles, GripVertical, Volume2, X } from 'lucide-react'
 import {
   DndContext,
   closestCenter,
@@ -17,6 +17,7 @@ import { annotationToSentence } from '../utils/annotationViews'
 import { AutoMark } from './AutoMark'
 import { AutoTextarea } from './AutoTextarea'
 import { getFolderReviewData } from '../hooks/getFolderReviewData'
+import { useSpeak } from '../hooks/useSpeak'
 
 export type ReviewTarget =
   | { type: 'page'; id: string }
@@ -81,6 +82,12 @@ function VocabularyDashboardInner({
   const [hideEnglish, setHideEnglish] = useState(false)
   const [hideChinese, setHideChinese] = useState(false)
   const [reviewMode, setReviewMode] = useState<'vocab' | 'sentence'>('vocab')
+
+  /**
+   * 点词 / 点句读出来。这台手机不支持朗读时 canSpeak 为 false，喇叭就不画。
+   * 必须放在所有提前 return 之前 —— 钩子数量一旦忽多忽少，React 直接报错白屏。
+   */
+  const { canSpeak, speakingId, speak, error: speechError, dismissError } = useSpeak()
 
   const getPageTitle = (pageId: string) =>
     pages.find((p) => p.id === pageId)?.title || '未命名'
@@ -305,6 +312,20 @@ function VocabularyDashboardInner({
         </div>
       </div>
 
+      {speechError && (
+        <div className="shrink-0 flex items-start gap-2 px-4 py-2 bg-amber-50 border-b border-amber-200 text-xs text-amber-900 leading-relaxed">
+          <span className="flex-1">{speechError}</span>
+          <button
+            type="button"
+            onClick={dismissError}
+            aria-label="知道了"
+            className="p-0.5 rounded hover:bg-amber-100"
+          >
+            <X className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      )}
+
       <div className="flex-1 min-h-0 overflow-y-auto scroll-area p-6">
         {displayCount === 0 ? (
           <div className="flex flex-col items-center justify-center py-16 text-ink-muted">
@@ -338,6 +359,9 @@ function VocabularyDashboardInner({
                           isEditMode={isEditMode}
                           onUpdateWord={onUpdateWord}
                           dragHandle={handle}
+                          canSpeak={canSpeak}
+                          speaking={speakingId === item.id}
+                          onSpeak={() => speak(item.id, item.word)}
                         />
                       )}
                     </SortableCard>
@@ -371,6 +395,9 @@ function VocabularyDashboardInner({
                           isEditMode={isEditMode}
                           onUpdateSentence={onUpdateSentence}
                           dragHandle={handle}
+                          canSpeak={canSpeak}
+                          speaking={speakingId === item.id}
+                          onSpeak={() => speak(item.id, item.text)}
                         />
                       )}
                     </SortableCard>
@@ -382,6 +409,47 @@ function VocabularyDashboardInner({
         )}
       </div>
     </div>
+  )
+}
+
+/**
+ * 可朗读的那段英文。
+ *
+ * 文字本身就是按钮 —— 手机上没有 hover，只能靠一枚小喇叭点明它可以点。
+ * 读不了的手机（没装朗读引擎）直接退回普通文字，不摆一个按了没反应的按钮。
+ */
+function SpeakButton({
+  canSpeak,
+  speaking,
+  onSpeak,
+  label,
+  className,
+  children
+}: {
+  canSpeak: boolean
+  speaking: boolean
+  onSpeak: () => void
+  label: string
+  className: string
+  children: React.ReactNode
+}) {
+  if (!canSpeak) return <span className={`${className} text-amber-800`}>{children}</span>
+
+  return (
+    <button
+      type="button"
+      onClick={onSpeak}
+      aria-label={label}
+      title={label}
+      className={`${className} transition-colors ${speaking ? 'text-amber-500' : 'text-amber-800'}`}
+    >
+      {children}
+      <Volume2
+        className={`inline-block w-3.5 h-3.5 ml-1 align-baseline ${
+          speaking ? 'opacity-100' : 'opacity-40'
+        }`}
+      />
+    </button>
   )
 }
 
@@ -478,7 +546,10 @@ function VocabCard({
   hideChinese,
   isEditMode,
   onUpdateWord,
-  dragHandle
+  dragHandle,
+  canSpeak,
+  speaking,
+  onSpeak
 }: {
   item: VocabCardItem
   hideEnglish: boolean
@@ -486,6 +557,9 @@ function VocabCard({
   isEditMode: boolean
   onUpdateWord: (word: string, updates: Partial<WordNote>) => void
   dragHandle?: React.ReactNode
+  canSpeak: boolean
+  speaking: boolean
+  onSpeak: () => void
 }) {
   // 遮住答案时，点一下卡片翻开 / 再点一下盖回去（触摸屏没有 hover，只能靠点）
   const [revealed, setRevealed] = useState(false)
@@ -528,8 +602,18 @@ function VocabCard({
         {dragHandle}
         <div className="min-w-0 flex-1 min-h-[28px]">
           {showEnglish ? (
-            <span className="font-lyric-en font-serif text-amber-800 font-bold text-lg block">
-              {item.word}
+            /* 点单词 = 读出来；卡片别处照旧是「翻开答案」。
+               外层那个 onClick 本来就跳过 button，两件事不会打架 */
+            <span className="block">
+              <SpeakButton
+                canSpeak={canSpeak}
+                speaking={speaking}
+                onSpeak={onSpeak}
+                label={`朗读 ${item.word}`}
+                className="font-lyric-en font-serif font-bold text-lg text-left"
+              >
+                {item.word}
+              </SpeakButton>
               {item.auto && <AutoMark />}
             </span>
           ) : (
@@ -626,7 +710,10 @@ function SentenceCard({
   hideChinese,
   isEditMode,
   onUpdateSentence,
-  dragHandle
+  dragHandle,
+  canSpeak,
+  speaking,
+  onSpeak
 }: {
   item: Sentence
   hideEnglish: boolean
@@ -634,6 +721,9 @@ function SentenceCard({
   isEditMode: boolean
   onUpdateSentence?: (id: string, updates: Partial<Pick<Sentence, 'grammar' | 'meaning'>>) => void
   dragHandle?: React.ReactNode
+  canSpeak: boolean
+  speaking: boolean
+  onSpeak: () => void
 }) {
   // 遮住答案时，点一下卡片翻开 / 再点一下盖回去（触摸屏没有 hover，只能靠点）
   const [revealed, setRevealed] = useState(false)
@@ -666,8 +756,16 @@ function SentenceCard({
       <div className="min-h-[28px] flex items-start gap-1">
         {dragHandle}
         {showEnglish ? (
-          <p className="font-lyric-en font-serif text-amber-800 text-base leading-snug flex-1">
-            {item.text}
+          <p className="flex-1">
+            <SpeakButton
+              canSpeak={canSpeak}
+              speaking={speaking}
+              onSpeak={onSpeak}
+              label="朗读这句"
+              className="font-lyric-en font-serif text-base leading-snug text-left"
+            >
+              {item.text}
+            </SpeakButton>
             {item.auto && <AutoMark />}
           </p>
         ) : (
