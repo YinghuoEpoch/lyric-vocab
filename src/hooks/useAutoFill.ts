@@ -120,7 +120,7 @@ export function useAutoFill({ appData, reviewTarget, writeAnnotation }: UseAutoF
   const start = useCallback(() => {
     const enricher = createEnricher()
     if (!enricher) {
-      setState((s) => ({ ...s, phase: 'error', message: '还没有填写 API Key' }))
+      setState((s) => ({ ...s, phase: 'error', message: '还没设好 AI —— 打开「AI 设置」填好 Key（自定义供应商还要填地址和模型名）' }))
       return
     }
 

@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest'
 import { chunk, runBatches, isWordNoteEmpty, isSentenceEmpty } from './runner'
-import { extractJson, collectResults } from './deepseek'
+import { extractJson, collectResults } from './openaiCompatible'
 
 /**
  * 「一键填充」的调度与解析测试。
