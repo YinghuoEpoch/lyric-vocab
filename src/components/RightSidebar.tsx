@@ -339,17 +339,29 @@ function RightSidebarInner({
             删了就再没有关掉它的办法。
           */}
           <div className="flex items-center gap-0.5">
-            {/* 一键划词：入口放在这儿，因为它做的是「对着这一篇正文挑词」，
-                而生词板正是这一篇笔记的所在 —— 划完新词就出现在下面这张清单里 */}
+            {/*
+              一键划词：入口放在这儿，因为它做的是「对着这一篇正文挑词」，
+              而生词板正是这一篇笔记的所在 —— 划完新词就出现在下面这张清单里。
+
+              **带文字，不能只留图标。** 从前这里是一枚光秃秃的魔杖，
+              说明全在 title 里 —— 而 title 是鼠标悬停才出现的东西，
+              手机上根本不存在，于是这个按钮在手机上等于一个没人认识的图案。
+              （左侧栏底部那五个图标栽的是同一件事，见 后续规划.md 第十九节。）
+
+              写「AI 划词」而不是「划词」：正文里长按取词本来就是在划词，
+              光写「划词」分不出这颗按钮特别在哪；「AI」两个字才是它的卖点。
+              标题行量过：260px 窄屏上这一行原本空着 130px，放得下。
+            */}
             {onAutoMark && (
               <button
                 type="button"
                 onClick={onAutoMark}
-                className="p-1.5 rounded-lg hover:bg-stone-100 text-ink-muted hover:text-amber-700"
+                className="flex items-center gap-1 px-2 py-[5px] rounded-lg text-sm font-medium text-ink-muted hover:bg-stone-100 hover:text-amber-700 transition-colors"
                 title="一键划词：让 AI 通读全文挑出重点词"
                 aria-label="一键划词"
               >
-                <Wand2 className="w-4 h-4" />
+                <Wand2 className="w-3.5 h-3.5 shrink-0" />
+                AI 划词
               </button>
             )}
             <button
