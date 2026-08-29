@@ -252,3 +252,107 @@ describe('新模型消掉的那些事故', () => {
     expect(back.annotations[0].start).toBe('L0W2')
   })
 })
+
+describe('句摘被改短：原句要留住，且改回来能自愈', () => {
+  /** 「Is to wish my life away」那种六个词的句摘，删掉不同位置的词 */
+  const SENT = `Is to wish my life away
+只是在虚度光阴`
+  const sent = (over: Partial<Annotation> = {}): Annotation => ({
+    id: 's1',
+    docId: 'p1',
+    type: 'sentence',
+    start: 'L0W0',
+    end: 'L0W5',
+    text: 'Is to wish my life away',
+    order: 0,
+    createdAt: 1,
+    ...over
+  })
+
+  it('删掉句尾的词：范围往里收，但当初那一句记在 sourceText 里没丢', () => {
+    const CUT = SENT.replace('my life away', 'my life')
+    const r = reconcileAnnotations(SENT, CUT, [sent()])
+    const a = r.annotations[0]
+
+    expect(a.text).toBe('Is to wish my life') // 卡片上显示的跟着正文走
+    expect(a.sourceText).toBe('Is to wish my life away') // 原句留着
+    expect(a.end).toBe('L0W4')
+  })
+
+  it('把句尾的词打回正文：整条还原，记号清掉', () => {
+    const CUT = SENT.replace('my life away', 'my life')
+    const shrunk = reconcileAnnotations(SENT, CUT, [sent()]).annotations[0]
+
+    const r = reconcileAnnotations(CUT, SENT, [shrunk])
+    const a = r.annotations[0]
+
+    expect(a.text).toBe('Is to wish my life away')
+    expect(a.start).toBe('L0W0')
+    expect(a.end).toBe('L0W5')
+    expect(a.sourceText).toBeUndefined()
+  })
+
+  it('删句首的词也一样能还原（从前这里和句尾一样是死路）', () => {
+    const CUT = SENT.replace('Is to wish', 'to wish')
+    const shrunk = reconcileAnnotations(SENT, CUT, [sent()]).annotations[0]
+    expect(shrunk.sourceText).toBe('Is to wish my life away')
+
+    const back = reconcileAnnotations(CUT, SENT, [shrunk]).annotations[0]
+    expect(back.text).toBe('Is to wish my life away')
+    expect(back.sourceText).toBeUndefined()
+  })
+
+  it('删中间的词同样记号、同样能还原', () => {
+    const CUT = SENT.replace('wish my life', 'wish life')
+    const shrunk = reconcileAnnotations(SENT, CUT, [sent()]).annotations[0]
+    expect(shrunk.text).toBe('Is to wish life away')
+    expect(shrunk.sourceText).toBe('Is to wish my life away')
+
+    const back = reconcileAnnotations(CUT, SENT, [shrunk]).annotations[0]
+    expect(back.text).toBe('Is to wish my life away')
+    expect(back.sourceText).toBeUndefined()
+  })
+
+  it('连缩两次，sourceText 始终是最初那一句，不是上一次缩完的样子', () => {
+    const CUT1 = SENT.replace('my life away', 'my life')
+    const once = reconcileAnnotations(SENT, CUT1, [sent()]).annotations[0]
+
+    const CUT2 = CUT1.replace('Is to wish', 'to wish')
+    const twice = reconcileAnnotations(CUT1, CUT2, [once]).annotations[0]
+
+    expect(twice.text).toBe('to wish my life')
+    expect(twice.sourceText).toBe('Is to wish my life away') // 不是 'Is to wish my life'
+  })
+
+  it('缩过之后整条都没了，用户选保留；原句回来时按原句还原', () => {
+    const CUT = SENT.replace('my life away', 'my life')
+    const shrunk = reconcileAnnotations(SENT, CUT, [sent()]).annotations[0]
+
+    // 整行删光 -> 变孤儿
+    const GONE = '只是在虚度光阴'
+    const r = reconcileAnnotations(CUT, GONE, [shrunk])
+    expect(r.newOrphans).toHaveLength(1)
+    const orphan = markAnnotationOrphaned(r.newOrphans[0])
+    expect(orphan.sourceText).toBe('Is to wish my life away') // 保留时原句还在
+
+    // 原句整句回来
+    const back = reconcileAnnotations(GONE, SENT, [orphan]).annotations[0]
+    expect(back.text).toBe('Is to wish my life away')
+    expect(back.start).toBe('L0W0')
+    expect(back.sourceText).toBeUndefined()
+  })
+
+  it('正文没动过的句摘不会平白多出 sourceText', () => {
+    const r = reconcileAnnotations(SENT, SENT, [sent()])
+    expect(r.changed).toBe(false)
+    expect(r.annotations[0].sourceText).toBeUndefined()
+  })
+
+  it('整条只是位移（前面插一行），不算改过，不加记号', () => {
+    const MOVED = 'A brand new line\n' + SENT
+    const a = reconcileAnnotations(SENT, MOVED, [sent()]).annotations[0]
+    expect(a.text).toBe('Is to wish my life away')
+    expect(a.start).toBe('L1W0')
+    expect(a.sourceText).toBeUndefined()
+  })
+})
