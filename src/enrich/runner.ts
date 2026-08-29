@@ -69,18 +69,66 @@ export async function runBatches<Task, Fill>({
   return progress
 }
 
-/** 一条单词笔记是否还是空白的（没有音标、词性、释义） */
-export function isWordNoteEmpty(note: {
-  phonetic?: string
-  pos?: string
-  definition?: string
-}): boolean {
-  return !note.phonetic?.trim() && !note.pos?.trim() && !note.definition?.trim()
+/**
+ * 「还差什么」的判定与合并。
+ *
+ * 从前的规矩是「三格全空才算待填充」，代价是**写了一半的卡片没人管**：
+ * 句摘写了句型没写翻译，既不计数也填不上，只能手工补。
+ * 现在改成「**缺哪格补哪格**」—— 有一格空着就算待填充，填充时只往空格里写。
+ *
+ * 「绝不覆盖用户写过的内容」这条底线收在 mergeWordFill / mergeSentenceFill 里，
+ * 只此一处；别处不要再各自判一遍，那种重复迟早会走样。
+ */
+
+type WordNoteFields = { phonetic?: string; pos?: string; definition?: string; lemma?: string }
+type SentenceFields = { grammar?: string; meaning?: string }
+
+const blank = (v?: string): boolean => !v?.trim()
+
+/** 一条单词笔记还有格子空着吗（音标 / 词性 / 释义） */
+export function isWordNoteIncomplete(note: WordNoteFields): boolean {
+  return blank(note.phonetic) || blank(note.pos) || blank(note.definition)
 }
 
-/** 一条句摘是否还是空白的（没有句型说明、也没有翻译） */
-export function isSentenceEmpty(s: { grammar?: string; meaning?: string }): boolean {
-  return !s.grammar?.trim() && !s.meaning?.trim()
+/** 一条句摘还有格子空着吗（句型说明 / 翻译） */
+export function isSentenceIncomplete(s: SentenceFields): boolean {
+  return blank(s.grammar) || blank(s.meaning)
+}
+
+/**
+ * 单词：把 AI 给的内容并进空格，返回要写回去的那几项；没有可补的返回 null。
+ *
+ * lemma（原形）不在「格子」之列 —— 它不显示在卡片上，不该左右「填没填全」的判断，
+ * 但既然模型顺带给了，空着就补上。
+ */
+export function mergeWordFill(note: WordNoteFields, fill: WordFill): Partial<WordFill> | null {
+  const patch: Partial<WordFill> = {}
+  let any = false
+  for (const field of ['phonetic', 'pos', 'definition', 'lemma'] as const) {
+    if (!blank(note[field])) continue // 用户写过的，一个字都不动
+    const value = fill[field]
+    if (blank(value)) continue
+    patch[field] = value!.trim()
+    any = true
+  }
+  return any ? patch : null
+}
+
+/** 句摘：同上 */
+export function mergeSentenceFill(
+  s: SentenceFields,
+  fill: SentenceFill
+): Partial<SentenceFill> | null {
+  const patch: Partial<SentenceFill> = {}
+  let any = false
+  for (const field of ['grammar', 'meaning'] as const) {
+    if (!blank(s[field])) continue
+    const value = fill[field]
+    if (blank(value)) continue
+    patch[field] = value!.trim()
+    any = true
+  }
+  return any ? patch : null
 }
 
 export interface FillWordsArgs {

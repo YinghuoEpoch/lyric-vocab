@@ -7,8 +7,10 @@ import {
   createEnricher,
   fillWords,
   fillSentences,
-  isWordNoteEmpty,
-  isSentenceEmpty,
+  isWordNoteIncomplete,
+  isSentenceIncomplete,
+  mergeWordFill,
+  mergeSentenceFill,
   type FillProgress,
   type WordTask,
   type SentenceTask
@@ -63,7 +65,7 @@ export function useAutoFill({ appData, reviewTarget, writeAnnotation }: UseAutoF
 
   const annotations = useMemo(() => appData.annotations ?? [], [appData.annotations])
 
-  /** 范围内所有还是空白的单词笔记，附上它所在那一行作为上下文 */
+  /** 范围内所有还有格子没填的单词笔记，附上它所在那一行作为上下文 */
   const wordTasks = useMemo<WordTask[]>(() => {
     const inScope = new Set(scopePageIds)
     const linesOf = new Map<string, string[]>()
@@ -72,7 +74,7 @@ export function useAutoFill({ appData, reviewTarget, writeAnnotation }: UseAutoF
     const tasks: WordTask[] = []
     for (const a of annotations) {
       if (a.type === 'sentence' || !inScope.has(a.docId)) continue
-      if (!a.text || !isWordNoteEmpty(annotationToWordNote(a))) continue
+      if (!a.text || !isWordNoteIncomplete(annotationToWordNote(a))) continue
 
       if (!linesOf.has(a.docId)) {
         const content = appData.pages.find((p) => p.id === a.docId)?.content ?? ''
@@ -97,7 +99,7 @@ export function useAutoFill({ appData, reviewTarget, writeAnnotation }: UseAutoF
           a.type === 'sentence' &&
           inScope.has(a.docId) &&
           a.text.trim() &&
-          isSentenceEmpty(annotationToSentence(a))
+          isSentenceIncomplete(annotationToSentence(a))
       )
       .map((a) => ({ id: a.id, text: a.text }))
   }, [scopePageIds, annotations])
@@ -148,9 +150,11 @@ export function useAutoFill({ appData, reviewTarget, writeAnnotation }: UseAutoF
 
             for (const [id, fill] of Object.entries(results)) {
               const target = byId.get(id)
-              // 期间用户可能自己写了内容，或者把这条删了，那就跳过
-              if (!target || !isWordNoteEmpty(annotationToWordNote(target))) continue
-              await writeAnnotation({ ...target, ...fill, auto: true })
+              if (!target) continue // 期间被删了
+              // 只往还空着的格子里写：这中间用户可能自己补了几格，不能盖掉
+              const patch = mergeWordFill(annotationToWordNote(target), fill)
+              if (!patch) continue
+              await writeAnnotation({ ...target, ...patch, auto: true })
             }
           }
         })
@@ -175,8 +179,10 @@ export function useAutoFill({ appData, reviewTarget, writeAnnotation }: UseAutoF
 
             for (const [id, fill] of Object.entries(results)) {
               const target = byId.get(id)
-              if (!target || !isSentenceEmpty(annotationToSentence(target))) continue
-              await writeAnnotation({ ...target, ...fill, auto: true })
+              if (!target) continue
+              const patch = mergeSentenceFill(annotationToSentence(target), fill)
+              if (!patch) continue
+              await writeAnnotation({ ...target, ...patch, auto: true })
             }
           }
         })
@@ -203,8 +209,8 @@ export function useAutoFill({ appData, reviewTarget, writeAnnotation }: UseAutoF
     open,
     state,
     scopeName,
-    emptyWords: wordTasks.length,
-    emptySentences: sentenceTasks.length,
+    pendingWords: wordTasks.length,
+    pendingSentences: sentenceTasks.length,
     openDialog,
     closeDialog,
     start,

@@ -1,5 +1,12 @@
 import { describe, it, expect, vi } from 'vitest'
-import { chunk, runBatches, isWordNoteEmpty, isSentenceEmpty } from './runner'
+import {
+  chunk,
+  runBatches,
+  isWordNoteIncomplete,
+  isSentenceIncomplete,
+  mergeWordFill,
+  mergeSentenceFill
+} from './runner'
 import { extractJson, collectResults } from './openaiCompatible'
 
 /**
@@ -84,17 +91,60 @@ describe('执行与进度', () => {
   })
 })
 
-describe('判断哪些是空白笔记', () => {
-  it('三个字段都空才算空', () => {
-    expect(isWordNoteEmpty({})).toBe(true)
-    expect(isWordNoteEmpty({ phonetic: '  ' })).toBe(true)
-    expect(isWordNoteEmpty({ definition: '站立' })).toBe(false)
-    expect(isWordNoteEmpty({ pos: 'v.' })).toBe(false)
+describe('判断哪些笔记还没填全', () => {
+  it('有一格空着就算待填充，不必整条空白', () => {
+    expect(isWordNoteIncomplete({})).toBe(true)
+    expect(isWordNoteIncomplete({ phonetic: '  ' })).toBe(true)
+    // 从前这一条是「不算空白」，于是写了一半的卡片没人管
+    expect(isWordNoteIncomplete({ definition: '站立' })).toBe(true)
+    expect(isWordNoteIncomplete({ phonetic: '/stʊd/', pos: 'v.', definition: '站立' })).toBe(false)
   })
 
-  it('句摘同理', () => {
-    expect(isSentenceEmpty({ grammar: '', meaning: '' })).toBe(true)
-    expect(isSentenceEmpty({ meaning: '译文' })).toBe(false)
+  it('lemma 不算格子：卡片上看不见它，不该左右判断', () => {
+    expect(
+      isWordNoteIncomplete({ phonetic: '/stʊd/', pos: 'v.', definition: '站立' })
+    ).toBe(false)
+  })
+
+  it('句摘同理：写了句型没写翻译，仍要补', () => {
+    expect(isSentenceIncomplete({ grammar: '', meaning: '' })).toBe(true)
+    expect(isSentenceIncomplete({ grammar: '倒装句' })).toBe(true)
+    expect(isSentenceIncomplete({ grammar: '倒装句', meaning: '译文' })).toBe(false)
+  })
+})
+
+describe('只补空格，不动用户写过的', () => {
+  const fill = { phonetic: '/stʊd/', pos: 'v.', definition: '站立', lemma: 'stand' }
+
+  it('全空时四项都补上', () => {
+    expect(mergeWordFill({}, fill)).toEqual(fill)
+  })
+
+  it('用户写过的那格原样保留，不出现在要写回的内容里', () => {
+    expect(mergeWordFill({ definition: '我自己写的' }, fill)).toEqual({
+      phonetic: '/stʊd/',
+      pos: 'v.',
+      lemma: 'stand'
+    })
+  })
+
+  it('全都写过就没什么可补的，返回 null（上层据此跳过，不做无谓的写库）', () => {
+    expect(mergeWordFill({ phonetic: 'a', pos: 'b', definition: 'c', lemma: 'd' }, fill)).toBeNull()
+  })
+
+  it('模型漏了某一项就补不上那一项，不会写进空字符串', () => {
+    expect(mergeWordFill({}, { definition: '站立' })).toEqual({ definition: '站立' })
+    expect(mergeWordFill({}, { definition: '   ' })).toBeNull()
+  })
+
+  it('顺手去掉模型返回的多余空白', () => {
+    expect(mergeWordFill({}, { definition: '  站立  ' })).toEqual({ definition: '站立' })
+  })
+
+  it('句摘：只差翻译就只补翻译', () => {
+    expect(
+      mergeSentenceFill({ grammar: '我写的句型' }, { grammar: 'AI 的句型', meaning: '译文' })
+    ).toEqual({ meaning: '译文' })
   })
 })
 

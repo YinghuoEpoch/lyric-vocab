@@ -1195,7 +1195,7 @@ export default function App() {
             onReorder={handleReorderCards}
             onVocabCountChange={setReviewVocabCount}
             onOpenAutoFill={autoFill.openDialog}
-            autoFillCount={autoFill.emptyWords + autoFill.emptySentences}
+            autoFillCount={autoFill.pendingWords + autoFill.pendingSentences}
           />
         )}
       </main>
@@ -1227,8 +1227,8 @@ export default function App() {
       {/* 用户协议与版权声明：首次启动未同意时全屏弹窗 */}
       <AutoFillDialog
         open={autoFill.open}
-        emptyWords={autoFill.emptyWords}
-        emptySentences={autoFill.emptySentences}
+        pendingWords={autoFill.pendingWords}
+        pendingSentences={autoFill.pendingSentences}
         scopeName={autoFill.scopeName}
         state={autoFill.state}
         onStart={autoFill.start}

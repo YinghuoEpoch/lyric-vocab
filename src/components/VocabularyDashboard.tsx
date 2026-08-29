@@ -268,7 +268,8 @@ function VocabularyDashboardInner({
           </button>
         </div>
         <div className="flex items-center gap-2">
-          {/* 全填完之后这个按钮就没用了，直接不显示；显示时顺便报个数 */}
+          {/* 全填完之后这个按钮就没用了，直接不显示；显示时顺便报个数
+              （数的是「还有格子空着」的笔记，单词和句子一起算） */}
           {onOpenAutoFill && autoFillCount > 0 && (
             <button
               type="button"
@@ -277,7 +278,7 @@ function VocabularyDashboardInner({
                  但实心底色让它读起来像一个「物体」，另外三个只是「文字」，
                  于是显得更大更重。把盒子和图标各收一点，找回平衡。 */
               className="flex items-center gap-1 px-2 py-[5px] rounded-lg text-sm font-medium bg-amber-600 hover:bg-amber-700 text-white transition-colors"
-              title={`还有 ${autoFillCount} 条空白笔记，用 AI 补全`}
+              title={`还有 ${autoFillCount} 条笔记没填全，用 AI 补全`}
             >
               <Sparkles className="w-3.5 h-3.5" />
               填充 {autoFillCount}
