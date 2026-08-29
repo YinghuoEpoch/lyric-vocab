@@ -301,32 +301,13 @@ function RightSidebarInner({
                     index % 2 === 0 ? 'bg-white' : 'bg-gray-50/70'
                   }`}
                 >
-                  {/*
-                    顶部栏：单词 + 音标 | 词性胶囊。
-
-                    短语（多个词）走单独一行，把整个宽度让给它 ——
-                    和音标、标签挤在一行只剩 173px，短语根本放不下。
-                    单词照旧和音标同行（单词短，挤得下，也更紧凑）。
-                  */}
+                  {/* 顶部栏：单词 + 音标 | 词性胶囊 */}
                   <div className="flex items-center justify-between gap-2 flex-wrap">
-                    <div
-                      className={`flex items-baseline gap-2 min-w-0 ${
-                        item.isPhrase ? 'w-full' : 'flex-1'
-                      }`}
-                    >
+                    <div className="flex items-baseline gap-2 min-w-0 flex-1">
                       <button
                         type="button"
                         onClick={() => onScrollToWord(item.pageId, item.anchorId)}
-                        className={`font-lyric-en font-serif text-amber-800 font-bold text-base text-left hover:underline decoration-amber-600 decoration-2 underline-offset-2 rounded focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-400 ${
-                          item.isPhrase
-                            ? // 长短语换行，但最多两行、超出打省略号：
-                              // 卡片高度只在一行和两行之间变，不会被 AI 划出来的长短语顶得没边。
-                              // 看不全的点它跳到正文，在原句里看更清楚。
-                              'min-w-0 break-words line-clamp-2'
-                            : // 单个词不收缩，免得旁边的音标把它挤扁 ——
-                              // 从前短语也套着这一条，于是宁可撑破卡片也不换行，这正是那个 bug
-                              'shrink-0'
-                        }`}
+                        className="font-lyric-en font-serif text-amber-800 font-bold text-base shrink-0 text-left hover:underline decoration-amber-600 decoration-2 underline-offset-2 rounded focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-400"
                         title={`跳到「${item.word}」在文中的位置`}
                       >
                         {item.word}
