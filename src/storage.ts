@@ -7,8 +7,7 @@ import type {
   LyricBook,
   LyricPage,
   NotesMap,
-  Sentence,
-  WordNote
+  Sentence
 } from './types'
 import { annotationGroupOf } from './types'
 import { migrateToAnnotations, type MigrationReport } from './utils/migrateAnnotations'
@@ -301,32 +300,23 @@ export async function savePage(page: LyricPage): Promise<AppData> {
 
 /*
  * ============================================================
- * 旧模型（notes）的写入接口 —— App 里已经没人调用了。
+ * 旧模型（notes）唯一还留着的写入口。
  *
- * 界面已全部改走标注表。这几个函数连同 data.notes 一起留着，
- * 是「跑稳之前不删旧数据」这条安全网的一部分：
- * 万一新模型出问题，旧数据和读写它的代码都还在。
- * 等新版本在真机上用一阵子、确认无误，再连同 data.notes 一起清掉。
+ * 界面早就全部改走标注表了，2026-08-30 把另外三个没人调用的
+ * （saveNoteForPage / deleteNoteForPage / updateWordEverywhere）删掉了。
  *
- * 例外：replacePageNotes 还在用 —— 分词迁移（migrateTokenizer）
- * 修的是旧形状的数据，得靠它写回去。
+ * 这一个留着是因为**分词迁移还要用**：migrateTokenizer 修的是旧形状的
+ * 数据（`she's`、`COVID-19` 那次规则修正），修完得靠它写回去。
+ *
+ * 同理，`data.notes` 这个字段本身也删不掉 —— 恢复一份换代之前导出的
+ * 老备份时，里面只有旧的 notes，得留着这条路才能再转成标注表。
  * ============================================================
  */
 
-export async function saveNoteForPage(
-  pageId: string,
-  anchorId: string,
-  note: WordNote
-): Promise<AppData> {
-  const data = await ensureLoaded()
-  data.notes = { ...data.notes, [pageId]: { ...(data.notes[pageId] ?? {}), [anchorId]: note } }
-  return commit(data)
-}
-
 /**
  * 整体替换某篇文档的全部单词笔记。
- * 用于正文编辑后的「对账」：一次性把所有笔记搬到新坐标上，
- * 逐条改的话中间状态会出现两条笔记抢同一个坐标。
+ * 旧模型里坐标就是身份，所以必须整体换：逐条改的话，
+ * 中间状态会出现两条笔记抢同一个坐标。
  */
 export async function replacePageNotes(pageId: string, nextNotes: NotesMap): Promise<AppData> {
   const data = await ensureLoaded()
@@ -336,66 +326,6 @@ export async function replacePageNotes(pageId: string, nextNotes: NotesMap): Pro
   } else {
     data.notes = { ...data.notes, [pageId]: nextNotes }
   }
-  return commit(data)
-}
-
-export async function deleteNoteForPage(pageId: string, anchorId: string): Promise<AppData> {
-  const data = await ensureLoaded()
-  const pageNotes = data.notes[pageId]
-  if (!pageNotes || !(anchorId in pageNotes)) return snapshot(data)
-
-  const { [anchorId]: _removed, ...restNotes } = pageNotes
-  if (Object.keys(restNotes).length === 0) {
-    const { [pageId]: _emptied, ...restPages } = data.notes
-    data.notes = restPages
-  } else {
-    data.notes = { ...data.notes, [pageId]: restNotes }
-  }
-  return commit(data)
-}
-
-/**
- * 按单词拼写（不区分大小写）更新所有文档中的对应生词。
- * 不修改 word 本身，只更新传入的字段（如 pos / definition 等）。
- * 这是用户的手动编辑，因此会清掉「AI 填充」标记。
- */
-export async function updateWordEverywhere(
-  spelling: string,
-  updates: Partial<WordNote>
-): Promise<AppData> {
-  const data = await ensureLoaded()
-  const target = spelling.trim().toLowerCase()
-  if (!target) return snapshot(data)
-
-  const { word: _ignored, ...rest } = updates
-  if (Object.keys(rest).length === 0) return snapshot(data)
-
-  const nextNotes: AppData['notes'] = {}
-  let changed = false
-
-  for (const pageId of Object.keys(data.notes)) {
-    const map = data.notes[pageId]
-    let pageChanged = false
-    const nextMap: NotesMap = {}
-
-    for (const anchorId of Object.keys(map)) {
-      const note = map[anchorId]
-      if (note?.word && note.word.trim().toLowerCase() === target) {
-        // 这个函数只在用户手动编辑生词卡时调用，所以顺带清掉「AI 填充」标记
-        const { auto: _wasAuto, ...kept } = note
-        nextMap[anchorId] = { ...kept, ...rest }
-        pageChanged = true
-      } else {
-        nextMap[anchorId] = note
-      }
-    }
-
-    nextNotes[pageId] = pageChanged ? nextMap : map
-    if (pageChanged) changed = true
-  }
-
-  if (!changed) return snapshot(data)
-  data.notes = nextNotes
   return commit(data)
 }
 
@@ -598,8 +528,7 @@ export async function replaceDocAnnotations(
 /**
  * 按拼写（不区分大小写）更新所有文档里的同一个词。
  *
- * 对应旧的 updateWordEverywhere：你在生词卡上改了「stood」的释义，
- * 全库其它文档里的 stood 一起跟着改。
+ * 你在生词卡上改了「stood」的释义，全库其它文档里的 stood 一起跟着改。
  * 这是用户的手动编辑，所以顺手清掉「AI 填充」标记。
  */
 export async function updateVocabByText(

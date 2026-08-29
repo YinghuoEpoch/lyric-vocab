@@ -1,5 +1,5 @@
 import { tokenizeLine } from './tokenize'
-import type { Annotation, NotesMap, Sentence } from '../types'
+import type { Annotation } from '../types'
 
 /**
  * 笔记「对账」：正文被编辑之后，把笔记重新挂到正确的位置上。
@@ -18,28 +18,6 @@ import type { Annotation, NotesMap, Sentence } from '../types'
 
 /** LCS 的计算量上限；超过就退回快速近似算法，避免超长文档卡住 */
 const LCS_CELL_CAP = 1_000_000
-
-/**
- * 孤儿笔记的键前缀。
- *
- * 孤儿按定义就是「正文里已经没有对应内容」的笔记，也就是没有位置。
- * 但笔记表是以坐标为键的，如果继续把孤儿留在它的老坐标上，会出两种事故：
- * 1. 那个坐标并没消失，只是换了别的词站上去 —— 于是给错误的词画了下划线
- * 2. 若该坐标已被另一条正常笔记占用，两者互相覆盖 —— 用户选了「保留」，笔记却没了
- * 所以孤儿一律改用这个前缀开头的键，永远不可能和真实坐标撞车，
- * 正文里也不会有任何词能匹配上它。
- */
-const ORPHAN_PREFIX = 'orphan:'
-
-/** 这个键是不是孤儿键（而非真实坐标） */
-export function isOrphanKey(key: string): boolean {
-  return key.startsWith(ORPHAN_PREFIX)
-}
-
-/** 生成一个新的孤儿键 */
-export function makeOrphanKey(): string {
-  return ORPHAN_PREFIX + Date.now().toString(36) + Math.random().toString(36).slice(2, 8)
-}
 
 export interface WordRef {
   anchorId: string
@@ -273,232 +251,20 @@ function greedyPairs(a: string[], b: string[]): Array<[number, number]> {
 }
 
 
-/*
- * ============================================================
- * 以下是旧模型（notes + 句摘两套并行）的对账实现，App 里已经不再调用。
- *
- * 留着有一个明确的用处：它那 279 行测试是「对账应该怎么表现」的说明书，
- * 新实现（本文件下半部分的 reconcileAnnotations）必须满足同样的行为。
- * 两边一起跑，任何一边坏了都会立刻暴露。
- *
- * 等新模型在真机上跑稳，这一段连同它的测试一并删掉。
- * ============================================================
- */
-
-export interface ReconcileResult {
-  /**
-   * 处理完毕的笔记：含跟随移动的、被救回的、以及仍然找不到原文但用户此前已选择保留的。
-   * 不含本次新产生的孤儿 —— 那些要先问过用户才决定去留。
-   */
-  notes: NotesMap
-  sentences: Sentence[]
-  /** 本次新变成孤儿的单词笔记，需要询问用户 */
-  newOrphanNotes: Array<{ anchorId: string; word: string }>
-  /** 本次新变成孤儿的句摘，需要询问用户 */
-  newOrphanSentences: Sentence[]
-  /** 是否真的有变化，没变化就不必惊动上层 */
-  changed: boolean
-}
-
-/** 去掉「原文已删除」标记 */
-function unmark<T extends { orphaned?: boolean }>(item: T): T {
-  if (!item.orphaned) return item
-  const { orphaned: _removed, ...rest } = item
-  return rest as T
-}
-
-/**
- * 对账一篇文档。
- *
- * @param oldContent 编辑前的正文快照
- * @param newContent 编辑后的正文
- * @param notes      该文档的全部单词笔记
- * @param sentences  该文档的全部句摘
- */
-export function reconcilePage(
-  oldContent: string,
-  newContent: string,
-  notes: NotesMap,
-  sentences: Sentence[]
-): ReconcileResult {
-  const oldList = buildWordList(oldContent)
-  const newList = buildWordList(newContent)
-  const mapping = alignWords(
-    oldList.map((w) => w.word),
-    newList.map((w) => w.word)
-  )
-
-  const oldIndexOf = new Map<string, number>()
-  oldList.forEach((w, i) => oldIndexOf.set(w.anchorId, i))
-
-  /** 旧坐标 -> 新坐标；null 表示这个词在新正文里没了 */
-  const remap = (anchorId: string): string | null => {
-    const i = oldIndexOf.get(anchorId)
-    if (i === undefined) return null
-    const j = mapping[i]
-    return j === null || j === undefined ? null : newList[j].anchorId
-  }
-
-  const nextNotes: NotesMap = {}
-  const newOrphanNotes: Array<{ anchorId: string; word: string }> = []
-  const claimed = new Set<string>()
-  let changed = false
-
-  // 第一遍：正常跟随。先把位置占掉，第二遍救人时才知道哪些位置还空着。
-  const pendingRescue: Array<[string, NotesMap[string]]> = []
-  for (const anchorId of Object.keys(notes)) {
-    const note = notes[anchorId]
-
-    // 已标记「原文已删除」的：它的坐标早就失效了，哪怕这个坐标碰巧还存在，
-    // 上面站着的也是别的词。所以完全不看坐标，留到第二遍按拼写重新找。
-    if (note?.orphaned) {
-      pendingRescue.push([anchorId, note])
-      continue
-    }
-
-    const target = remap(anchorId)
-    if (target !== null) {
-      nextNotes[target] = note
-      claimed.add(target)
-      if (target !== anchorId) changed = true
-      continue
-    }
-
-    newOrphanNotes.push({ anchorId, word: note?.word ?? '' })
-    changed = true
-  }
-
-  // 第二遍：已标记的孤儿，如果原文里又出现了这个词（比如用户把拼错的词改回来了），
-  // 就重新挂上去并清掉标记；否则原样留在老坐标上，继续带着标记。
-  for (const [anchorId, note] of pendingRescue) {
-    const target = note.word
-      ? newList.find(
-          (w) => !claimed.has(w.anchorId) && w.word.toLowerCase() === note.word.trim().toLowerCase()
-        )
-      : undefined
-
-    if (target) {
-      nextNotes[target.anchorId] = unmark(note)
-      claimed.add(target.anchorId)
-      changed = true
-    } else {
-      // 仍然找不到：留在孤儿键下。老版本可能把孤儿存在真实坐标上，这里顺手迁移过去。
-      const key = isOrphanKey(anchorId) ? anchorId : makeOrphanKey()
-      nextNotes[key] = note
-      if (key !== anchorId) changed = true
-    }
-  }
-
-  const nextSentences: Sentence[] = []
-  const newOrphanSentences: Sentence[] = []
-
-  /**
-   * 一条句摘在新正文里还剩下哪一段，返回 [起, 止] 在 newList 中的下标。
-   *
-   * 逐个检查旧范围内的每个词，把还活着的挑出来，用其中最靠前和最靠后的两个
-   * 当作新的起止 —— 也就是「范围往里收缩」。
-   * 剩下不足两个词就判定为没了：一个词的「句摘」已经不是句子。
-   */
-  const survivingRange = (sentence: Sentence): [number, number] | null => {
-    const from = oldIndexOf.get(sentence.startAnchorId)
-    const to = oldIndexOf.get(sentence.endAnchorId)
-    // 起止坐标在旧正文里就已经失效（历史遗留的坏数据）：无从判断，按没了处理
-    if (from === undefined || to === undefined) return null
-
-    const [lo, hi] = from <= to ? [from, to] : [to, from]
-    let first: number | null = null
-    let last: number | null = null
-
-    for (let i = lo; i <= hi; i++) {
-      const j = mapping[i]
-      if (j === null || j === undefined) continue
-      if (first === null) first = j
-      last = j
-    }
-
-    if (first === null || last === null || last - first < 1) return null
-    return [first, last]
-  }
-
-  for (const sentence of sentences) {
-    // 同上：已标记的孤儿不看坐标，直接拿存下来的原文去全文找。
-    if (sentence.orphaned) {
-      const revived = locateSequence(newList, sentence.text)
-      if (revived) {
-        nextSentences.push(unmark({ ...sentence, ...revived }))
-        changed = true
-      } else {
-        nextSentences.push(sentence)
-      }
-      continue
-    }
-
-    // 看整个范围里还剩下哪些词，而不是只看头尾两个。
-    // 只看头尾的话，删掉句子的第一个词就会让整条句摘报废 —— 可其余部分明明还好好的。
-    const survivors = survivingRange(sentence)
-
-    if (survivors === null) {
-      newOrphanSentences.push(sentence)
-      changed = true
-      continue
-    }
-
-    const [lo, hi] = survivors
-    const nextStart = newList[lo].anchorId
-    const nextEnd = newList[hi].anchorId
-
-    if (nextStart === sentence.startAnchorId && nextEnd === sentence.endAnchorId) {
-      nextSentences.push(sentence)
-      continue
-    }
-
-    // 范围缩了或挪了：连原文一起按新位置重新取一遍，保证列表里显示的文字是准的
-    const text = getRangeText(newContent, newList, nextStart, nextEnd)
-
-    nextSentences.push(unmark({ ...sentence, startAnchorId: nextStart, endAnchorId: nextEnd, text }))
-    changed = true
-  }
-
-  return { notes: nextNotes, sentences: nextSentences, newOrphanNotes, newOrphanSentences, changed }
-}
-
-/** 在词表里找出与给定原文完全一致的一段连续词，返回它的起止坐标 */
-function locateSequence(
-  list: WordRef[],
-  text: string
-): { startAnchorId: string; endAnchorId: string } | null {
-  // 把存下来的原文也过一遍同一个分词器，两边口径才一致 ——
-  // 否则原文里的数字、标点会让逐词比对错位
-  const target = buildWordList(text).map((w) => wordWithSuffix(w).toLowerCase())
-  if (target.length === 0) return null
-
-  for (let i = 0; i + target.length <= list.length; i++) {
-    let hit = true
-    for (let k = 0; k < target.length; k++) {
-      if (wordWithSuffix(list[i + k]).toLowerCase() !== target[k]) {
-        hit = false
-        break
-      }
-    }
-    if (hit) {
-      return { startAnchorId: list[i].anchorId, endAnchorId: list[i + target.length - 1].anchorId }
-    }
-  }
-  return null
-}
-
-
 // ============================================================
-// 标注模型下的对账（新）
+// 对账：正文改了以后，把标注重新挂回它该在的位置
 //
-// 和上面那套做的是同一件事，区别在于「怎么记住谁是谁」：
-// 旧的是把笔记从一个格子搬到另一个格子（键就是坐标，搬家 = 换键）；
-// 新的是每条标注有自己的 id，对账只是**更新它身上的位置属性**。
+// 关键在于「怎么记住谁是谁」：每条标注有自己的 id，
+// 对账只是**更新它身上的位置属性**，不是把它搬到别的格子里去。
 //
-// 于是三件事一起消失了：
+// 换代之前那一版是拿坐标当身份的（键就是「第几行第几个词」，
+// 搬家 = 换键），于是有三件事必须操心，现在都不存在了：
 // - 孤儿不必再编造假坐标 orphan:xxx，位置记成 null 就行
 // - 不会有「两条笔记抢同一个坐标」这种事故，因为坐标不再是身份
 // - 单词和句子不必分两套写，只差「点」和「范围」
+//
+// 旧那一版（reconcilePage）已于 2026-08-30 连同它的测试一起删掉，
+// 需要考古的话在 git 历史里。
 // ============================================================
 
 export interface AnnotationReconcileResult {
