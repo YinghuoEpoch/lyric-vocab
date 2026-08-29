@@ -56,6 +56,13 @@ export function getFolderReviewData(
         pos: a.pos,
         definition: a.definition,
         usage: a.grammar,
+        /*
+         * 这里**不带** sourceText（「正文已改」的记号）。
+         * 文库复习是按拼写把同一个词/短语合并成一条的，同一条底下可能压着
+         * 三篇文档里的三处标注 —— 改过的也许只有其中一处。挂一个记号、
+         * 再显示「原句：xxx」，用户没法知道说的是哪一处，只会更糊涂。
+         * 想看是哪一处改了，进那篇文档的单篇复习。
+         */
         orphaned: isOrphanAnnotation(a) || undefined,
         auto: a.auto,
         frequency: 1

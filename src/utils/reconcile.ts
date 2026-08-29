@@ -286,6 +286,13 @@ export interface AnnotationReconcileResult {
  * @param newContent 编辑后的正文
  * @param annotations 该文档的全部标注
  */
+/** 去掉「正文已改」的记号：这条标注又和当初划的那一句对上了 */
+function stripSource(a: Annotation): Annotation {
+  if (a.sourceText === undefined) return a
+  const { sourceText: _healed, ...rest } = a
+  return rest
+}
+
 export function reconcileAnnotations(
   oldContent: string,
   newContent: string,
@@ -374,6 +381,25 @@ export function reconcileAnnotations(
       continue
     }
 
+    /*
+     * 自愈：这条范围之前被编辑改短过（存着 sourceText），
+     * 先看看当初那一句是不是又完整回来了 —— 是就整条还原、记号清掉。
+     *
+     * 必须放在收缩逻辑**前面**：走完收缩，范围两头就已经按缩短后的位置钉死了，
+     * 加回边缘的词落在范围外面，永远框不回来。这正是从前删句首/句尾的词
+     * 之后再打回去也恢复不了的原因（删中间的词能好纯属侥幸 ——
+     * 加回来的词正好落在没动过的两头之间）。
+     */
+    if (a.sourceText) {
+      const revived = locateText(newList, a.sourceText, claimedWords)
+      if (revived && revived.start !== revived.end) {
+        const text = getRangeText(newContent, newList, revived.start, revived.end)
+        kept.push({ ...stripSource(a), start: revived.start, end: revived.end, text })
+        changed = true
+        continue
+      }
+    }
+
     const survivors = survivingRange(a.start, a.end)
     if (survivors === null) {
       newOrphans.push(a)
@@ -389,27 +415,47 @@ export function reconcileAnnotations(
       continue
     }
 
-    // 范围缩了或挪了：连原文一起按新位置重新取一遍，保证卡片上显示的文字是准的
+    /*
+     * 范围缩了或挪了：文字按新位置重新取一遍，保证卡片上显示的和正文一致。
+     *
+     * 关键是**当初划的那一句要留住**。从前这里直接拿新文字覆盖 text，
+     * 原句就此从数据里消失 —— 于是「把删掉的词打回正文」也救不回来了，
+     * 因为已经没有东西可以拿去比对。现在把它存进 sourceText。
+     *
+     * `a.sourceText ?? a.text`：只有第一次缩的时候才记，之后再怎么改都不动 ——
+     * 记的必须是最初那一句，不是上一次缩完的样子。
+     */
     const text = getRangeText(newContent, newList, nextStart, nextEnd)
-    kept.push({ ...a, start: nextStart, end: nextEnd, text })
+    const source = a.sourceText ?? a.text
+    // 缩完又正好和原句一致（比如删了又加回来）：那就不是「改过」了，记号去掉
+    kept.push(text === source ? { ...stripSource(a), start: nextStart, end: nextEnd, text }
+                              : { ...a, start: nextStart, end: nextEnd, text, sourceText: source })
     changed = true
   }
 
   // 第二遍：已经是孤儿的，如果原文里又出现了（比如把删掉的词打回去了），
   // 就重新挂上；否则原样留着，继续当孤儿。
   for (const a of pendingRescue) {
-    const found = locateAnnotation(newList, a, claimedWords)
+    /*
+     * 先按「当初划的那一句」找，找不到再按「变成孤儿时的样子」找。
+     * 顺序不能反：一条句摘可能先被改短、后来整条没了，
+     * 这时 text 是缩短版、sourceText 才是原句。能还原成原句当然更好。
+     */
+    const healed = a.sourceText ? locateText(newList, a.sourceText, claimedWords) : null
+    const found = healed ?? locateText(newList, a.text, claimedWords)
     if (!found) {
       kept.push(a)
       continue
     }
+    // 按原句救回来的，就不再是「改过」了；按缩短版救回来的，记号继续留着
+    const base = healed ? stripSource(a) : a
 
     if (found.start === found.end) {
       claimedWords.add(found.start)
-      kept.push({ ...a, start: found.start, end: found.end })
+      kept.push({ ...base, start: found.start, end: found.end })
     } else {
       const text = getRangeText(newContent, newList, found.start, found.end)
-      kept.push({ ...a, start: found.start, end: found.end, text })
+      kept.push({ ...base, start: found.start, end: found.end, text })
     }
     changed = true
   }
@@ -418,20 +464,23 @@ export function reconcileAnnotations(
 }
 
 /**
- * 拿标注存着的原文，在词表里找回它的位置。
+ * 拿一段原文，在词表里找回它的位置。
+ *
+ * 传进来的可能是标注当前的 text，也可能是它的 sourceText（当初划的那一句）——
+ * 救援时优先拿后者去找，找到了就等于把这条标注还原成了本来的样子。
  *
  * 单个词和一整段的找法不同，这是刻意保留旧行为：
  * - 单个词只比对词本身，所以正文里的 `she's` 能救回一条 `she` 的笔记
  * - 一整段连撇号一起比对，避免把 "I don't know" 错配到 "I do know"
  */
-function locateAnnotation(
+function locateText(
   list: WordRef[],
-  annotation: Annotation,
+  text: string,
   claimedWords: Set<string>
 ): { start: string; end: string } | null {
   // 存下来的原文也过一遍同一个分词器，两边口径才一致 ——
   // 否则原文里的数字、标点会让逐词比对错位
-  const target = buildWordList(annotation.text)
+  const target = buildWordList(text)
   if (target.length === 0) return null
 
   if (target.length === 1) {

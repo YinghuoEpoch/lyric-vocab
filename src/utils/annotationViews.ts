@@ -44,6 +44,7 @@ export function annotationToSentence(a: Annotation): Sentence {
     endAnchorId: a.end ?? '',
     date: a.createdAt
   }
+  if (a.sourceText !== undefined) s.sourceText = a.sourceText
   if (a.auto) s.auto = true
   if (isOrphanAnnotation(a)) s.orphaned = true
   return s
@@ -115,6 +116,8 @@ export interface PhraseView {
   docId: string
   startAnchorId: string
   endAnchorId: string
+  /** 当初划下这条短语时的原文；正文改过、它因此变短或错位时才有 */
+  sourceText?: string
   orphaned?: boolean
   auto?: boolean
 }
@@ -129,6 +132,7 @@ export function annotationToPhrase(a: Annotation): PhraseView {
     startAnchorId: a.start ?? '',
     endAnchorId: a.end ?? ''
   }
+  if (a.sourceText !== undefined) p.sourceText = a.sourceText
   if (a.auto) p.auto = true
   if (isOrphanAnnotation(a)) p.orphaned = true
   return p

@@ -15,6 +15,7 @@ import type { Annotation, AnnotationGroup, LyricPage, Sentence, WordNote } from 
 import { isOrphanAnnotation } from '../types'
 import { annotationToSentence } from '../utils/annotationViews'
 import { AutoMark } from './AutoMark'
+import { EditedMark } from './EditedMark'
 import { AutoTextarea } from './AutoTextarea'
 import { getFolderReviewData } from '../hooks/getFolderReviewData'
 import { useSpeak } from '../hooks/useSpeak'
@@ -42,6 +43,8 @@ interface VocabCardItem {
   usage?: string
   /** 原文已删除：正文里已经没有这个词了，但笔记被保留下来 */
   orphaned?: boolean
+  /** 短语才会有：正文改过、它跟着变短或错位了，这里是当初划的那一段 */
+  sourceText?: string
   /** 由 AI 自动填充，需要复核 */
   auto?: boolean
    // 仅用于文件夹复习模式下的词频统计
@@ -111,6 +114,7 @@ function VocabularyDashboardInner({
         pos: a.pos,
         definition: a.definition,
         usage: a.grammar,
+        sourceText: a.sourceText,
         orphaned: isOrphanAnnotation(a) || undefined,
         auto: a.auto
       }))
@@ -671,6 +675,12 @@ function VocabCard({
               原文已删除
             </span>
           )}
+          {/* 只有短语会「变短」—— 单词标注就一个词，要么在要么没了 */}
+          {item.sourceText && !item.orphaned && showEnglish && (
+            <span className="mt-1 flex flex-wrap items-center gap-1.5">
+              <EditedMark sourceText={item.sourceText} expanded={revealed || !hideEnglish} />
+            </span>
+          )}
         </div>
         <div className="flex flex-col items-end gap-1">
           {isPhrase ? (
@@ -842,6 +852,12 @@ function SentenceCard({
               {item.text}
               {item.auto && <AutoMark />}
             </SpeakButton>
+            {/* 正文改过、这条跟着变了。遮着答案时不显示，否则等于剧透 */}
+            {item.sourceText && !item.orphaned && (
+              <span className="mt-1 flex flex-wrap items-center gap-1.5">
+                <EditedMark sourceText={item.sourceText} expanded={revealed || !hideEnglish} />
+              </span>
+            )}
           </p>
         ) : (
           <span className="text-ink-muted/70 text-sm">

@@ -3,6 +3,7 @@ import { PanelRightClose, BookOpen, ChevronRight, Trash2, Wand2, Undo2, X } from
 import type { Sentence } from '../types'
 import { AutoMark } from './AutoMark'
 import { useIsClamped } from '../hooks/useIsClamped'
+import { EditedMark } from './EditedMark'
 
 interface VocabItem {
   word: string
@@ -96,6 +97,13 @@ function SentenceCard({
             >
               <Trash2 className="w-3.5 h-3.5" />
             </button>
+          </div>
+        )}
+
+        {/* 正文改过、这条跟着变短或错位了。孤儿那枚已经把话说全了，就不再叠一个 */}
+        {sentence.sourceText && !sentence.orphaned && (
+          <div className="flex flex-wrap items-center gap-1.5">
+            <EditedMark sourceText={sentence.sourceText} expanded={isActive} />
           </div>
         )}
 
