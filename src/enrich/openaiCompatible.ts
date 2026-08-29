@@ -1,4 +1,4 @@
-import type { Enricher, WordFill, SentenceFill } from './types'
+import type { Enricher, WordFill, SentenceFill, PhraseFill } from './types'
 import { chatEndpoint, type ResolvedProvider } from './config'
 
 /**
@@ -43,6 +43,20 @@ const SENTENCE_SYSTEM_PROMPT = `你是一个英语语法老师，为中文学习
 
 严格返回 JSON，形如：
 {"results":[{"id":"...","grammar":"...","meaning":"..."}]}
+不要输出 JSON 以外的任何内容。每个传入的 id 都要有一条对应结果。`
+
+const PHRASE_SYSTEM_PROMPT = `你是一个英语词典助手，为中文学习者讲解短语和固定搭配。
+
+用户会给你一组英文短语，每条带一个 id，多数还带有它在原文中所在的那一行（context）。
+请为每条输出：
+- definition：中文释义，简洁。**必须结合 context 选择该处真正的含义**，不要罗列多个义项。
+  例如 take off 在 "the plane took off" 中是「起飞」，在 "he took off his coat" 中是「脱下」。
+- grammar：用法说明。写这个搭配怎么用 —— 后面接什么、常见于什么语境、有没有固定形式，
+  20 到 40 字，具体一点。不要重复释义。
+  例如 look forward to -> 「to 是介词，后面接名词或动名词，不接动词原形；多用于表达期待」
+
+严格返回 JSON，形如：
+{"results":[{"id":"...","definition":"...","grammar":"..."}]}
 不要输出 JSON 以外的任何内容。每个传入的 id 都要有一条对应结果。`
 
 interface ChatResponse {
@@ -230,6 +244,15 @@ export function createOpenAICompatibleEnricher(provider: ResolvedProvider): Enri
       const payload = { sentences: tasks.map((t) => ({ id: t.id, text: t.text })) }
       const parsed = await call(SENTENCE_SYSTEM_PROMPT, payload, signal)
       return collectResults<SentenceFill & Record<string, unknown>>(parsed, ['grammar', 'meaning'])
+    },
+
+    async fillPhrases(tasks, signal) {
+      if (tasks.length === 0) return {}
+      const payload = {
+        phrases: tasks.map((t) => ({ id: t.id, phrase: t.text, context: t.context ?? '' }))
+      }
+      const parsed = await call(PHRASE_SYSTEM_PROMPT, payload, signal)
+      return collectResults<PhraseFill & Record<string, unknown>>(parsed, ['definition', 'grammar'])
     }
   }
 }

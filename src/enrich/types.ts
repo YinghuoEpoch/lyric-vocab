@@ -19,6 +19,13 @@ export interface SentenceTask {
   text: string
 }
 
+/** 待填充的短语。context 是它所在的那一行，用来判断这里取哪个义项 */
+export interface PhraseTask {
+  id: string
+  text: string
+  context?: string
+}
+
 export interface WordFill {
   phonetic?: string
   pos?: string
@@ -32,6 +39,13 @@ export interface SentenceFill {
   meaning?: string
 }
 
+export interface PhraseFill {
+  /** 中文释义 */
+  definition?: string
+  /** 用法 / 搭配说明。存进标注的 grammar 字段 */
+  grammar?: string
+}
+
 export interface Enricher {
   /** 供界面显示的名称 */
   name: string
@@ -41,4 +55,5 @@ export interface Enricher {
    */
   fillWords(tasks: WordTask[], signal?: AbortSignal): Promise<Record<string, WordFill>>
   fillSentences(tasks: SentenceTask[], signal?: AbortSignal): Promise<Record<string, SentenceFill>>
+  fillPhrases(tasks: PhraseTask[], signal?: AbortSignal): Promise<Record<string, PhraseFill>>
 }

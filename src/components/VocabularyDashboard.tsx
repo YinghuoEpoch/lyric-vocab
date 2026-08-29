@@ -11,7 +11,7 @@ import {
 import { restrictToWindowEdges } from '@dnd-kit/modifiers'
 import { SortableContext, rectSortingStrategy, useSortable, arrayMove } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
-import type { Annotation, AnnotationType, LyricPage, Sentence, WordNote } from '../types'
+import type { Annotation, AnnotationGroup, LyricPage, Sentence, WordNote } from '../types'
 import { isOrphanAnnotation } from '../types'
 import { annotationToSentence } from '../utils/annotationViews'
 import { AutoMark } from './AutoMark'
@@ -25,6 +25,8 @@ export type ReviewTarget =
   | null
 
 interface VocabCardItem {
+  /** 单词还是短语。短语的卡片不显示音标/词性，改显示「用法」 */
+  kind: 'word' | 'phrase'
   /**
    * 单篇复习时是标注自己的 id，可以直接拿去排序。
    * 文库复习时是「文档+拼写」拼出来的合并键 —— 那是合并出来的条目，不能排序。
@@ -36,6 +38,8 @@ interface VocabCardItem {
   phonetic?: string
   pos?: string
   definition?: string
+  /** 短语的用法 / 搭配说明。存在标注的 grammar 字段里 */
+  usage?: string
   /** 原文已删除：正文里已经没有这个词了，但笔记被保留下来 */
   orphaned?: boolean
   /** 由 AI 自动填充，需要复核 */
@@ -51,7 +55,7 @@ export interface VocabularyDashboardProps {
   /** 标注表（全部）。组件自己按当前复习范围筛 */
   annotations: Annotation[]
   isEditMode: boolean
-  onUpdateWord: (word: string, updates: Partial<WordNote>) => void
+  onUpdateWord: (word: string, updates: Partial<WordNote> & { grammar?: string }) => void
   /** 复习模式下编辑句摘（句型/翻译） */
   onUpdateSentence?: (id: string, updates: Partial<Pick<Sentence, 'grammar' | 'meaning'>>) => void
   onVocabCountChange?: (count: number) => void
@@ -59,7 +63,7 @@ export interface VocabularyDashboardProps {
    * 调整卡片顺序。只有单篇文档的复习会调用 ——
    * 文库复习的条目是合并出来的，没有对应的标注可写回。
    */
-  onReorder?: (docId: string, type: AnnotationType, ids: string[]) => void
+  onReorder?: (docId: string, group: AnnotationGroup, ids: string[]) => void
   /** 打开「一键填充」对话框；范围就是当前复习的文档或文库 */
   onOpenAutoFill?: () => void
   /** 当前范围内还有多少条空白笔记；为 0 时不显示填充按钮（没什么可填的） */
@@ -99,12 +103,14 @@ function VocabularyDashboardInner({
       .sort((a, b) => a.order - b.order)
       .map((a) => ({
         id: a.id,
+        kind: a.type === 'phrase' ? ('phrase' as const) : ('word' as const),
         pageId,
         pageTitle,
         word: a.text,
         phonetic: a.phonetic,
         pos: a.pos,
         definition: a.definition,
+        usage: a.grammar,
         orphaned: isOrphanAnnotation(a) || undefined,
         auto: a.auto
       }))
@@ -128,6 +134,7 @@ function VocabularyDashboardInner({
         title: '高频 / 重点生词',
         pageId: `${reviewTarget.id}-high`,
         items: high.map((i) => ({
+          kind: i.kind,
           pageId: i.pageId,
           pageTitle: i.pageTitle,
           id: i.id,
@@ -135,6 +142,7 @@ function VocabularyDashboardInner({
           phonetic: i.phonetic,
           pos: i.pos,
           definition: i.definition,
+          usage: i.usage,
           orphaned: i.orphaned,
           auto: i.auto,
           frequency: i.frequency
@@ -147,6 +155,7 @@ function VocabularyDashboardInner({
         title: '新词 / 普通生词',
         pageId: `${reviewTarget.id}-normal`,
         items: normal.map((i) => ({
+          kind: i.kind,
           pageId: i.pageId,
           pageTitle: i.pageTitle,
           id: i.id,
@@ -154,6 +163,7 @@ function VocabularyDashboardInner({
           phonetic: i.phonetic,
           pos: i.pos,
           definition: i.definition,
+          usage: i.usage,
           orphaned: i.orphaned,
           auto: i.auto,
           frequency: i.frequency
@@ -214,14 +224,14 @@ function VocabularyDashboardInner({
   )
 
   const handleDragEnd = useCallback(
-    (event: DragEndEvent, type: AnnotationType, ids: string[]) => {
+    (event: DragEndEvent, group: AnnotationGroup, ids: string[]) => {
       const { active, over } = event
       if (!over || active.id === over.id) return
       const from = ids.indexOf(String(active.id))
       const to = ids.indexOf(String(over.id))
       if (from === -1 || to === -1) return
       if (reviewTarget?.type !== 'page') return
-      onReorder?.(reviewTarget.id, type, arrayMove(ids, from, to))
+      onReorder?.(reviewTarget.id, group, arrayMove(ids, from, to))
     },
     [onReorder, reviewTarget]
   )
@@ -356,7 +366,7 @@ function VocabularyDashboardInner({
                   sortable={sortable}
                   sensors={sensors}
                   ids={group.items.map((i) => i.id)}
-                  onDragEnd={(e) => handleDragEnd(e, 'word', group.items.map((i) => i.id))}
+                  onDragEnd={(e) => handleDragEnd(e, 'vocab', group.items.map((i) => i.id))}
                 >
                   {group.items.map((item) => (
                     <SortableCard key={item.id} id={item.id} sortable={sortable}>
@@ -560,7 +570,7 @@ function VocabCard({
   hideEnglish: boolean
   hideChinese: boolean
   isEditMode: boolean
-  onUpdateWord: (word: string, updates: Partial<WordNote>) => void
+  onUpdateWord: (word: string, updates: Partial<WordNote> & { grammar?: string }) => void
   dragHandle?: React.ReactNode
   canSpeak: boolean
   speaking: boolean
@@ -570,20 +580,31 @@ function VocabCard({
   const [revealed, setRevealed] = useState(false)
   const showEnglish = !hideEnglish || revealed
   const showChinese = !hideChinese || revealed
+  const isPhrase = item.kind === 'phrase'
   const [localPos, setLocalPos] = useState(item.pos ?? '')
   const [localPhonetic, setLocalPhonetic] = useState(item.phonetic ?? '')
   const [localDefinition, setLocalDefinition] = useState(item.definition ?? '')
+  const [localUsage, setLocalUsage] = useState(item.usage ?? '')
 
   useEffect(() => {
     setLocalPos(item.pos ?? '')
     setLocalPhonetic(item.phonetic ?? '')
     setLocalDefinition(item.definition ?? '')
-  }, [item.word, item.pos, item.phonetic, item.definition])
+    setLocalUsage(item.usage ?? '')
+  }, [item.word, item.pos, item.phonetic, item.definition, item.usage])
 
   const handleSave = () => {
     const nextPos = localPos.trim() || undefined
     const nextPhonetic = localPhonetic.trim() || undefined
     const nextDef = localDefinition.trim() || undefined
+    const nextUsage = localUsage.trim() || undefined
+
+    // 短语没有音标和词性那两格，别把它们连带写成空
+    if (isPhrase) {
+      if (nextDef === item.definition && nextUsage === item.usage) return
+      onUpdateWord(item.word, { definition: nextDef, grammar: nextUsage })
+      return
+    }
 
     if (nextPos === item.pos && nextPhonetic === item.phonetic && nextDef === item.definition) return
 
@@ -636,7 +657,13 @@ function VocabCard({
           )}
         </div>
         <div className="flex flex-col items-end gap-1">
-          {isEditMode ? (
+          {isPhrase ? (
+            showEnglish && (
+              <span className="shrink-0 px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 text-xs font-medium">
+                短语
+              </span>
+            )
+          ) : isEditMode ? (
             /* 保持阅读态那颗药丸的样子，宽度跟着内容走 */
             <span className="pos-fit shrink-0" data-value={localPos || '词性'}>
               <input
@@ -667,7 +694,7 @@ function VocabCard({
           )}
         </div>
       </div>
-      {isEditMode ? (
+      {isPhrase ? null : isEditMode ? (
         /* 类名和下面阅读态那一行保持一致，两种模式看起来才是同一行字 */
         <input
           type="text"
@@ -703,6 +730,23 @@ function VocabCard({
               点击显示释义
             </span>
           )}
+        </div>
+      )}
+      {/* 短语专有的第二格：用法 / 搭配。单词卡不显示这一行 */}
+      {isPhrase && (isEditMode || item.usage) && (
+        <div className="mt-2 min-h-[24px]">
+          {isEditMode ? (
+            <AutoTextarea
+              className="field-inline text-sm text-stone-500 font-sans leading-snug"
+              placeholder="用法 / 搭配"
+              aria-label="短语用法"
+              value={localUsage}
+              onChange={setLocalUsage}
+              onBlur={handleSave}
+            />
+          ) : showChinese ? (
+            <span className="text-sm text-stone-500 leading-snug block">{item.usage}</span>
+          ) : null}
         </div>
       )}
     </div>

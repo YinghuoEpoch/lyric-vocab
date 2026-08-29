@@ -7,13 +7,17 @@ import {
   createEnricher,
   fillWords,
   fillSentences,
+  fillPhrases,
   isWordNoteIncomplete,
   isSentenceIncomplete,
+  isPhraseIncomplete,
   mergeWordFill,
   mergeSentenceFill,
+  mergePhraseFill,
   type FillProgress,
   type WordTask,
-  type SentenceTask
+  type SentenceTask,
+  type PhraseTask
 } from '../enrich'
 import type { AutoFillState } from '../components/AutoFillDialog'
 
@@ -73,7 +77,7 @@ export function useAutoFill({ appData, reviewTarget, writeAnnotation }: UseAutoF
 
     const tasks: WordTask[] = []
     for (const a of annotations) {
-      if (a.type === 'sentence' || !inScope.has(a.docId)) continue
+      if (a.type !== 'word' || !inScope.has(a.docId)) continue
       if (!a.text || !isWordNoteIncomplete(annotationToWordNote(a))) continue
 
       if (!linesOf.has(a.docId)) {
@@ -85,6 +89,32 @@ export function useAutoFill({ appData, reviewTarget, writeAnnotation }: UseAutoF
       tasks.push({
         id: a.id,
         word: a.text,
+        context: ref ? linesOf.get(a.docId)![ref.line] : undefined
+      })
+    }
+    return tasks
+  }, [scopePageIds, annotations, appData.pages])
+
+  /** 范围内所有还有格子没填的短语，同样带上它所在那一行 */
+  const phraseTasks = useMemo<PhraseTask[]>(() => {
+    const inScope = new Set(scopePageIds)
+    const linesOf = new Map<string, string[]>()
+    const wordsOf = new Map<string, ReturnType<typeof buildWordList>>()
+
+    const tasks: PhraseTask[] = []
+    for (const a of annotations) {
+      if (a.type !== 'phrase' || !inScope.has(a.docId)) continue
+      if (!a.text || !isPhraseIncomplete({ definition: a.definition, grammar: a.grammar })) continue
+
+      if (!linesOf.has(a.docId)) {
+        const content = appData.pages.find((p) => p.id === a.docId)?.content ?? ''
+        linesOf.set(a.docId, content ? content.split(/\r?\n/) : [])
+        wordsOf.set(a.docId, content ? buildWordList(content) : [])
+      }
+      const ref = a.start ? wordsOf.get(a.docId)!.find((w) => w.anchorId === a.start) : undefined
+      tasks.push({
+        id: a.id,
+        text: a.text,
         context: ref ? linesOf.get(a.docId)![ref.line] : undefined
       })
     }
@@ -128,8 +158,9 @@ export function useAutoFill({ appData, reviewTarget, writeAnnotation }: UseAutoF
 
     const controller = new AbortController()
     abortRef.current = controller
-    const total = wordTasks.length + sentenceTasks.length
+    const total = wordTasks.length + phraseTasks.length + sentenceTasks.length
     let wordsFilled = 0
+    let phrasesFilled = 0
 
     setState({ phase: 'running', progress: { done: 0, total, filled: 0 } })
 
@@ -160,9 +191,10 @@ export function useAutoFill({ appData, reviewTarget, writeAnnotation }: UseAutoF
         })
         wordsFilled = wordResult.filled
 
-        await fillSentences({
+        // 短语：和单词同一批数据、不同的提示词（要的是搭配用法，不是音标词性）
+        const phraseResult = await fillPhrases({
           enricher,
-          tasks: sentenceTasks,
+          tasks: phraseTasks,
           signal: controller.signal,
           onProgress: (p: FillProgress) =>
             setState({
@@ -171,6 +203,37 @@ export function useAutoFill({ appData, reviewTarget, writeAnnotation }: UseAutoF
                 done: wordTasks.length + p.done,
                 total,
                 filled: wordsFilled + p.filled
+              }
+            }),
+          onBatch: async (results) => {
+            const latest = await getAppData()
+            const byId = new Map((latest.annotations ?? []).map((a) => [a.id, a]))
+
+            for (const [id, fill] of Object.entries(results)) {
+              const target = byId.get(id)
+              if (!target) continue
+              const patch = mergePhraseFill(
+                { definition: target.definition, grammar: target.grammar },
+                fill
+              )
+              if (!patch) continue
+              await writeAnnotation({ ...target, ...patch, auto: true })
+            }
+          }
+        })
+        phrasesFilled = phraseResult.filled
+
+        await fillSentences({
+          enricher,
+          tasks: sentenceTasks,
+          signal: controller.signal,
+          onProgress: (p: FillProgress) =>
+            setState({
+              phase: 'running',
+              progress: {
+                done: wordTasks.length + phraseTasks.length + p.done,
+                total,
+                filled: wordsFilled + phrasesFilled + p.filled
               }
             }),
           onBatch: async (results) => {
@@ -203,13 +266,14 @@ export function useAutoFill({ appData, reviewTarget, writeAnnotation }: UseAutoF
         abortRef.current = null
       }
     })()
-  }, [wordTasks, sentenceTasks, writeAnnotation])
+  }, [wordTasks, phraseTasks, sentenceTasks, writeAnnotation])
 
   return {
     open,
     state,
     scopeName,
     pendingWords: wordTasks.length,
+    pendingPhrases: phraseTasks.length,
     pendingSentences: sentenceTasks.length,
     openDialog,
     closeDialog,

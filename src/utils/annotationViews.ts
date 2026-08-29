@@ -58,7 +58,10 @@ export function annotationToSentence(a: Annotation): Sentence {
 export function buildNotesIndex(annotations: Annotation[]): Record<string, NotesMap> {
   const byDoc = new Map<string, Annotation[]>()
   for (const a of annotations) {
-    if (a.type === 'sentence') continue
+    // 只收单词。短语虽然也是「词汇」，但它占的是一段范围，
+    // 塞进这张按坐标索引的表只会在首词底下画一条线，剩下几个词没有着落。
+    // 阅读页另有一条短语的路（buildPhraseList）。
+    if (a.type !== 'word') continue
     const list = byDoc.get(a.docId)
     if (list) list.push(a)
     else byDoc.set(a.docId, [a])
@@ -87,15 +90,56 @@ export function buildSentenceList(annotations: Annotation[]): Sentence[] {
     .map(annotationToSentence)
 }
 
-/** 在某篇文档里按坐标找一条单词标注 */
+/**
+ * 在某篇文档里按坐标找一条单词标注。
+ *
+ * 只认 `word`：短语的首词坐标可能和某个单词标注相同，
+ * 认了的话在那个词上长按会改到短语头上去。
+ */
 export function findWordAnnotation(
   annotations: Annotation[],
   docId: string,
   anchorId: string
 ): Annotation | undefined {
-  return annotations.find(
-    (a) => a.docId === docId && a.type !== 'sentence' && a.start === anchorId
-  )
+  return annotations.find((a) => a.docId === docId && a.type === 'word' && a.start === anchorId)
+}
+
+/** 短语的读模型：给阅读页画线、给抽屉预填 */
+export interface PhraseView {
+  id: string
+  text: string
+  /** 中文释义 */
+  definition: string
+  /** 用法 / 搭配说明。复用标注的 grammar 字段（句子那边装的是句型说明） */
+  usage: string
+  docId: string
+  startAnchorId: string
+  endAnchorId: string
+  orphaned?: boolean
+  auto?: boolean
+}
+
+export function annotationToPhrase(a: Annotation): PhraseView {
+  const p: PhraseView = {
+    id: a.id,
+    text: a.text,
+    definition: a.definition ?? '',
+    usage: a.grammar ?? '',
+    docId: a.docId,
+    startAnchorId: a.start ?? '',
+    endAnchorId: a.end ?? ''
+  }
+  if (a.auto) p.auto = true
+  if (isOrphanAnnotation(a)) p.orphaned = true
+  return p
+}
+
+/** 某篇文档里的短语，按 order 排好 */
+export function buildPhraseList(annotations: Annotation[], docId: string): PhraseView[] {
+  return annotations
+    .filter((a) => a.type === 'phrase' && a.docId === docId)
+    .sort((a, b) => a.order - b.order)
+    .map(annotationToPhrase)
 }
 
 /**
@@ -109,21 +153,29 @@ export function findAnnotationByKey(
 ): Annotation | undefined {
   return (
     findWordAnnotation(annotations, docId, key) ??
+    // 短语在右侧栏里用的是首词坐标；同一坐标上若还有单词标注，上一行已经先认领了
+    annotations.find((a) => a.docId === docId && a.type === 'phrase' && a.start === key) ??
     annotations.find((a) => a.id === key && a.docId === docId)
   )
 }
 
-/** 在某篇文档里按范围找一条句摘标注 */
+/**
+ * 在某篇文档里按范围找一条标注（句摘或短语）。
+ *
+ * 同一段范围可能既被标成短语又被标成句子，所以必须带上类型一起找，
+ * 否则保存短语时会改到那条句摘头上。
+ */
 export function findRangeAnnotation(
   annotations: Annotation[],
   docId: string,
   startAnchorId: string,
-  endAnchorId: string
+  endAnchorId: string,
+  type: 'sentence' | 'phrase' = 'sentence'
 ): Annotation | undefined {
   return annotations.find(
     (a) =>
       a.docId === docId &&
-      a.type === 'sentence' &&
+      a.type === type &&
       a.start === startAnchorId &&
       a.end === endAnchorId
   )

@@ -1,6 +1,7 @@
 import localforage from 'localforage'
 import type {
   Annotation,
+  AnnotationGroup,
   AnnotationType,
   AppData,
   LyricBook,
@@ -9,6 +10,7 @@ import type {
   Sentence,
   WordNote
 } from './types'
+import { annotationGroupOf } from './types'
 import { migrateToAnnotations, type MigrationReport } from './utils/migrateAnnotations'
 import { insertionOrder } from './utils/annotationOrder'
 import {
@@ -504,11 +506,11 @@ export function selectAnnotations(
     .sort((a, b) => a.order - b.order)
 }
 
-/** 排在同文档同类型的最后。用于兜底和迁移；新建标注请用 orderForNewAnnotation */
-export function nextAnnotationOrder(data: AppData, docId: string, type: AnnotationType): number {
+/** 排在同文档同组的最后。用于兜底和迁移；新建标注请用 orderForNewAnnotation */
+export function nextAnnotationOrder(data: AppData, docId: string, group: AnnotationGroup): number {
   let max = -1
   for (const a of data.annotations ?? []) {
-    if (a.docId === docId && a.type === type && a.order > max) max = a.order
+    if (a.docId === docId && annotationGroupOf(a.type) === group && a.order > max) max = a.order
   }
   return max + 1
 }
@@ -517,15 +519,18 @@ export function nextAnnotationOrder(data: AppData, docId: string, type: Annotati
  * 新建标注时该给的 order：**按正文顺序插进去**，排在正文里紧挨着它前面那条的后面。
  *
  * 从前一律排最后，于是 `apple and ear` 里后标的 and 会跑到卡片列表末尾。
- * 算法在 utils/annotationOrder.ts（纯函数、有单测），这里只负责挑出同文档同类型的那批。
+ * 算法在 utils/annotationOrder.ts（纯函数、有单测），这里只负责挑出同文档同组的那批。
+ * 「同组」而不是「同类型」：单词和短语共用一列卡片，必须排在同一条队里。
  */
 export function orderForNewAnnotation(
   data: AppData,
   docId: string,
-  type: AnnotationType,
+  group: AnnotationGroup,
   start: string | null
 ): number {
-  const siblings = (data.annotations ?? []).filter((a) => a.docId === docId && a.type === type)
+  const siblings = (data.annotations ?? []).filter(
+    (a) => a.docId === docId && annotationGroupOf(a.type) === group
+  )
   return insertionOrder(siblings, start)
 }
 
@@ -595,17 +600,17 @@ export async function updateAnnotationsByWord(
 }
 
 /**
- * 重排某篇文档某一类型的标注。
+ * 重排某篇文档某一组的标注（词汇 = 单词 + 短语，或句子）。
  * ids 里没提到的保持原有相对顺序，排在后面。
  */
 export async function reorderAnnotations(
   docId: string,
-  type: AnnotationType,
+  group: AnnotationGroup,
   ids: string[]
 ): Promise<AppData> {
   const data = await ensureLoaded()
   const rank = new Map(ids.map((id, i) => [id, i]))
-  const inScope = (a: Annotation) => a.docId === docId && a.type === type
+  const inScope = (a: Annotation) => a.docId === docId && annotationGroupOf(a.type) === group
 
   // 没被提到的接在后面：先按原 order 排，再依次编号
   const rest = (data.annotations ?? [])

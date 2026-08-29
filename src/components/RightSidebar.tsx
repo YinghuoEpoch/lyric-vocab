@@ -14,6 +14,8 @@ interface VocabItem {
   orphaned?: boolean
   /** 由 AI 自动填充，需要复核 */
   auto?: boolean
+  /** 是短语不是单词。短语没有音标/词性，给一枚小标签认领身份 */
+  isPhrase?: boolean
 }
 
 type NotesTab = 'vocab' | 'sentences'
@@ -265,6 +267,11 @@ function RightSidebarInner({
                         title="正文里已经没有这个词了，笔记被保留下来"
                       >
                         原文已删除
+                      </span>
+                    )}
+                    {item.isPhrase && (
+                      <span className="shrink-0 px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 text-xs font-medium">
+                        短语
                       </span>
                     )}
                     {item.pos && (

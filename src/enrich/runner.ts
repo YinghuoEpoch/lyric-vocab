@@ -1,4 +1,12 @@
-import type { Enricher, WordTask, SentenceTask, WordFill, SentenceFill } from './types'
+import type {
+  Enricher,
+  WordTask,
+  SentenceTask,
+  PhraseTask,
+  WordFill,
+  SentenceFill,
+  PhraseFill
+} from './types'
 
 /**
  * 分批执行填充，边填边回报进度。
@@ -13,6 +21,8 @@ import type { Enricher, WordTask, SentenceTask, WordFill, SentenceFill } from '.
 /** 每批多少条。句子输出更长，批次小一些，免得单次响应过大被截断。 */
 export const WORD_BATCH_SIZE = 40
 export const SENTENCE_BATCH_SIZE = 15
+/** 短语的输出比单词长、比句子短，批次取中间 */
+export const PHRASE_BATCH_SIZE = 25
 
 export interface FillProgress {
   /** 已处理条数（含没填上的） */
@@ -88,6 +98,28 @@ const blank = (v?: string): boolean => !v?.trim()
 /** 一条单词笔记还有格子空着吗（音标 / 词性 / 释义） */
 export function isWordNoteIncomplete(note: WordNoteFields): boolean {
   return blank(note.phonetic) || blank(note.pos) || blank(note.definition)
+}
+
+/** 一条短语还有格子空着吗（释义 / 用法） */
+export function isPhraseIncomplete(p: { definition?: string; grammar?: string }): boolean {
+  return blank(p.definition) || blank(p.grammar)
+}
+
+/** 短语：把 AI 给的内容并进空格，用户写过的一律不动 */
+export function mergePhraseFill(
+  current: { definition?: string; grammar?: string },
+  fill: PhraseFill
+): Partial<PhraseFill> | null {
+  const patch: Partial<PhraseFill> = {}
+  let any = false
+  for (const field of ['definition', 'grammar'] as const) {
+    if (!blank(current[field])) continue
+    const value = fill[field]
+    if (blank(value)) continue
+    patch[field] = value!.trim()
+    any = true
+  }
+  return any ? patch : null
 }
 
 /** 一条句摘还有格子空着吗（句型说明 / 翻译） */
@@ -169,6 +201,25 @@ export function fillSentences({
     tasks,
     batchSize: SENTENCE_BATCH_SIZE,
     run: (batch, sig) => enricher.fillSentences(batch, sig),
+    onBatch,
+    onProgress,
+    signal
+  })
+}
+
+export interface FillPhrasesArgs {
+  enricher: Enricher
+  tasks: PhraseTask[]
+  onBatch: (results: Record<string, PhraseFill>) => void | Promise<void>
+  onProgress?: (p: FillProgress) => void
+  signal?: AbortSignal
+}
+
+export function fillPhrases({ enricher, tasks, onBatch, onProgress, signal }: FillPhrasesArgs) {
+  return runBatches<PhraseTask, PhraseFill>({
+    tasks,
+    batchSize: PHRASE_BATCH_SIZE,
+    run: (batch, sig) => enricher.fillPhrases(batch, sig),
     onBatch,
     onProgress,
     signal

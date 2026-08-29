@@ -10,7 +10,7 @@ import { VocabularyDashboard } from './components/VocabularyDashboard'
 import { useExportBackup } from './hooks/useExportBackup'
 import type {
   Annotation,
-  AnnotationType,
+  AnnotationGroup,
   AppData,
   LyricBook,
   LyricPage,
@@ -22,6 +22,7 @@ import { reconcileAnnotations, markAnnotationOrphaned } from './utils/reconcile'
 import {
   annotationToSentence,
   buildNotesIndex,
+  buildPhraseList,
   buildSentenceList,
   findAnnotationByKey,
   findRangeAnnotation,
@@ -293,6 +294,12 @@ export default function App() {
     [sentences, currentPageId]
   )
 
+  /** 当前文档的短语。阅读页据此画线、开抽屉 */
+  const phrasesForCurrent = useMemo(
+    () => (currentPageId ? buildPhraseList(annotations, currentPageId) : []),
+    [annotations, currentPageId]
+  )
+
   const vocabList = useMemo(() => {
     const activePageIds = new Set(activePages.map((p) => p.id))
     const out: Array<{
@@ -304,6 +311,7 @@ export default function App() {
       definition?: string
       orphaned?: boolean
       auto?: boolean
+      isPhrase?: boolean
     }> = []
     for (const pageId of Object.keys(notesIndex)) {
       if (!activePageIds.has(pageId)) continue
@@ -323,8 +331,21 @@ export default function App() {
           })
       }
     }
+    // 短语也是词汇，跟单词同一张清单；孤儿没有坐标，用 id 顶上（删除那条路认得）
+    for (const a of annotations) {
+      if (a.type !== 'phrase' || !activePageIds.has(a.docId) || !a.text) continue
+      out.push({
+        word: a.text,
+        anchorId: a.start ?? a.id,
+        pageId: a.docId,
+        definition: a.definition,
+        orphaned: a.start === null || undefined,
+        auto: a.auto,
+        isPhrase: true
+      })
+    }
     return out
-  }, [notesIndex, activePages])
+  }, [notesIndex, activePages, annotations])
 
   useEffect(() => {
     if (!currentPageId && activePages.length > 0) {
@@ -544,7 +565,7 @@ export default function App() {
               type: 'word',
               start: anchorId,
               end: anchorId,
-              order: orderForNewAnnotation(latest, currentPageId, 'word', anchorId),
+              order: orderForNewAnnotation(latest, currentPageId, 'vocab', anchorId),
               createdAt: Date.now(),
               ...fields
             }
@@ -922,6 +943,72 @@ export default function App() {
     []
   )
 
+  /**
+   * 保存短语。
+   *
+   * 和句摘同一段范围可以并存（同一句话既想记句型、又想记里面的搭配），
+   * 所以查重时必须连类型一起对，否则会改到句摘头上。
+   *
+   * 释义存 definition、用法存 grammar —— 和单词、句子共用同一批字段，
+   * 备份、对账、迁移都不必为短语再开一路。
+   */
+  const handleAddPhrase = useCallback(
+    (p: {
+      text: string
+      definition: string
+      usage: string
+      docId: string
+      startAnchorId: string
+      endAnchorId: string
+    }) => {
+      void (async () => {
+        const latest = dataRef.current
+        const existing = findRangeAnnotation(
+          latest.annotations ?? [],
+          p.docId,
+          p.startAnchorId,
+          p.endAnchorId,
+          'phrase'
+        )
+        const next: Annotation = existing
+          ? { ...existing, text: p.text, definition: p.definition, grammar: p.usage }
+          : {
+              id: generateId(),
+              docId: p.docId,
+              type: 'phrase',
+              start: p.startAnchorId,
+              end: p.endAnchorId,
+              text: p.text,
+              // 和单词同一条队：复习页里它们是同一列卡片
+              order: orderForNewAnnotation(latest, p.docId, 'vocab', p.startAnchorId),
+              createdAt: Date.now(),
+              definition: p.definition,
+              grammar: p.usage
+            }
+        delete next.auto // 用户亲手写的，不再算 AI 填的
+        setAppData(await saveAnnotation(next))
+      })()
+    },
+    []
+  )
+
+  /** 从阅读页删除一条短语（按范围找） */
+  const handleDeletePhrase = useCallback(
+    (startAnchorId: string, endAnchorId: string) => {
+      if (!currentPageId) return
+      const target = findRangeAnnotation(
+        dataRef.current.annotations ?? [],
+        currentPageId,
+        startAnchorId,
+        endAnchorId,
+        'phrase'
+      )
+      if (!target) return
+      void (async () => setAppData(await deleteAnnotation(target.id)))()
+    },
+    [currentPageId]
+  )
+
   const handleScrollToWord = useCallback((pageId: string, anchorId: string) => {
     setScrollTarget({ pageId, anchorId })
     setActivePanel(null)
@@ -964,15 +1051,22 @@ export default function App() {
     []
   )
 
-  const handleUpdateWord = useCallback((word: string, updates: Partial<WordNote>) => {
-    const { word: _ignored, orphaned: _alsoIgnored, ...fields } = updates
-    void (async () => setAppData(await updateAnnotationsByWord(word, fields)))()
-  }, [])
+  /**
+   * 复习页改一条词汇卡。按拼写更新，全库同一个词/短语一起改。
+   * grammar 是短语卡的「用法」那一格；单词卡不会传它。
+   */
+  const handleUpdateWord = useCallback(
+    (word: string, updates: Partial<WordNote> & { grammar?: string }) => {
+      const { word: _ignored, orphaned: _alsoIgnored, ...fields } = updates
+      void (async () => setAppData(await updateAnnotationsByWord(word, fields)))()
+    },
+    []
+  )
 
   /** 复习页拖拽调整卡片顺序。排序逻辑只在存储层实现一份，这里拿结果直接更新界面 */
   const handleReorderCards = useCallback(
-    (docId: string, type: AnnotationType, ids: string[]) => {
-      void (async () => setAppData(await reorderAnnotations(docId, type, ids)))()
+    (docId: string, group: AnnotationGroup, ids: string[]) => {
+      void (async () => setAppData(await reorderAnnotations(docId, group, ids)))()
     },
     []
   )
@@ -1152,6 +1246,9 @@ export default function App() {
                 onAddSentence={handleAddSentence}
                 pendingSentenceEdit={pendingSentenceEdit}
                 onDeleteSentence={handleDeleteSentence}
+                phrases={phrasesForCurrent}
+                onAddPhrase={handleAddPhrase}
+                onDeletePhrase={handleDeletePhrase}
                 editMode={editMode}
                 onEditModeChange={handleEditModeChange}
                 savedProgress={currentPage.progress}
@@ -1195,7 +1292,7 @@ export default function App() {
             onReorder={handleReorderCards}
             onVocabCountChange={setReviewVocabCount}
             onOpenAutoFill={autoFill.openDialog}
-            autoFillCount={autoFill.pendingWords + autoFill.pendingSentences}
+            autoFillCount={autoFill.pendingWords + autoFill.pendingPhrases + autoFill.pendingSentences}
           />
         )}
       </main>
@@ -1228,6 +1325,7 @@ export default function App() {
       <AutoFillDialog
         open={autoFill.open}
         pendingWords={autoFill.pendingWords}
+        pendingPhrases={autoFill.pendingPhrases}
         pendingSentences={autoFill.pendingSentences}
         scopeName={autoFill.scopeName}
         state={autoFill.state}

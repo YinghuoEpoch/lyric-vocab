@@ -34,6 +34,7 @@ interface AutoFillDialogProps {
   open: boolean
   /** 待填充的数量（还有格子没填的笔记，不必整条空白） */
   pendingWords: number
+  pendingPhrases: number
   pendingSentences: number
   /** 当前范围的名字，例如某个文库或某篇文档 */
   scopeName: string
@@ -55,6 +56,7 @@ const inputClass =
 export function AutoFillDialog({
   open,
   pendingWords,
+  pendingPhrases,
   pendingSentences,
   scopeName,
   state,
@@ -112,7 +114,7 @@ export function AutoFillDialog({
 
   if (!open) return null
 
-  const total = pendingWords + pendingSentences
+  const total = pendingWords + pendingPhrases + pendingSentences
   const percent =
     state.progress.total > 0 ? Math.round((state.progress.done / state.progress.total) * 100) : 0
 
@@ -296,14 +298,18 @@ export function AutoFillDialog({
             <p className="text-xs text-ink-muted leading-relaxed">
               将为「{scopeName}」里
               <span className="text-ink font-medium">还有格子空着</span>
-              的笔记补上：单词补音标、词性、中文释义；句子补句型说明与翻译。
+              的笔记补上：单词补音标、词性、中文释义；短语补释义与用法；句子补句型说明与翻译。
               <span className="text-ink font-medium">只补空着的那几格，你写过的一个字都不动。</span>
             </p>
 
             <div className="rounded-lg bg-stone-50 border border-paper-border p-2.5 text-sm text-ink">
               待填充：
               {pendingWords > 0 && <span className="ml-1">{pendingWords} 个单词</span>}
-              {pendingWords > 0 && pendingSentences > 0 && <span className="mx-1">·</span>}
+              {pendingWords > 0 && pendingPhrases > 0 && <span className="mx-1">·</span>}
+              {pendingPhrases > 0 && <span>{pendingPhrases} 个短语</span>}
+              {(pendingWords > 0 || pendingPhrases > 0) && pendingSentences > 0 && (
+                <span className="mx-1">·</span>
+              )}
               {pendingSentences > 0 && <span>{pendingSentences} 个句子</span>}
               {total === 0 && <span className="ml-1 text-ink-muted">都填全了</span>}
             </div>

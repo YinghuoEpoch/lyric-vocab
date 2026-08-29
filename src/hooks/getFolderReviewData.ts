@@ -3,12 +3,16 @@ import { isOrphanAnnotation } from '../types'
 
 export interface FolderVocabItem {
   id: string
+  /** 单词还是短语。短语的卡片不显示音标/词性，改显示「用法」 */
+  kind: 'word' | 'phrase'
   pageId: string
   pageTitle: string
   word: string
   phonetic?: string
   pos?: string
   definition?: string
+  /** 短语的用法 / 搭配（存在标注的 grammar 字段里） */
+  usage?: string
   /** 原文已删除 / 由 AI 填充：文库模式的卡片也要显示这些标记 */
   orphaned?: boolean
   auto?: boolean
@@ -44,12 +48,14 @@ export function getFolderReviewData(
     if (!existing) {
       byWord.set(key, {
         id: `${a.docId}-${key}`,
+        kind: a.type === 'phrase' ? 'phrase' : 'word',
         pageId: a.docId,
         pageTitle: titleOf.get(a.docId) ?? '未命名',
         word: a.text,
         phonetic: a.phonetic,
         pos: a.pos,
         definition: a.definition,
+        usage: a.grammar,
         orphaned: isOrphanAnnotation(a) || undefined,
         auto: a.auto,
         frequency: 1

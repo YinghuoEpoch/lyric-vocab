@@ -1,6 +1,7 @@
 import { memo, useState, useCallback, useRef, useLayoutEffect, useEffect, useMemo } from 'react'
 import { tokenizeLine } from '../utils/tokenize'
 import type { NotesMap, ReaderSettings, Sentence, WordNote } from '../types'
+import type { PhraseView } from '../utils/annotationViews'
 import { X, Trash2 } from 'lucide-react'
 import { useWordInteraction } from '../hooks/useWordInteraction'
 import { useBackHandler, BackPriority } from '../hooks/useBackHandler'
@@ -36,6 +37,19 @@ interface LyricEditorProps {
   pendingSentenceEdit?: Sentence | null
   /** 删除句摘 */
   onDeleteSentence?: (startAnchorId: string, endAnchorId: string) => void
+  /** 当前文档下已保存的短语（正文里画一条连续实线） */
+  phrases?: PhraseView[]
+  /** 保存短语 */
+  onAddPhrase?: (phrase: {
+    text: string
+    definition: string
+    usage: string
+    docId: string
+    startAnchorId: string
+    endAnchorId: string
+  }) => void
+  /** 删除短语 */
+  onDeletePhrase?: (startAnchorId: string, endAnchorId: string) => void
   editMode: boolean
   /** 切换编辑模式；退出时把最终正文一并交出去，供上层做笔记对账 */
   onEditModeChange: (v: boolean, finalContent?: string) => void
@@ -70,6 +84,9 @@ function LyricEditorInner({
   onAddSentence,
   pendingSentenceEdit,
   onDeleteSentence,
+  phrases,
+  onAddPhrase,
+  onDeletePhrase,
   editMode,
   onEditModeChange,
   savedProgress = 0,
@@ -181,8 +198,61 @@ function LyricEditorInner({
   const [selection, setSelection] = useState<Selection | null>(null)
   const [bubbleForm, setBubbleForm] = useState<WordNote>({ word: '' })
   const [sentenceForm, setSentenceForm] = useState({ grammar: '', meaning: '' })
-  // 底部抽屉当前模式：单词 or 句摘；null 表示不显示
+  const [phraseForm, setPhraseForm] = useState({ definition: '', usage: '' })
+  // 底部抽屉当前模式：单词 or 范围（短语/句摘）；null 表示不显示
   const [fullMode, setFullMode] = useState<'word' | 'sentence' | null>(null)
+  /**
+   * 选中一段之后，它算短语还是句子。
+   *
+   * 两者的差别只在「记什么」——短语记搭配和释义，句子记句型和翻译，
+   * 范围本身没有任何区别，所以不另立一种手势，让用户在抽屉里点一下改。
+   */
+  const [rangeKind, setRangeKind] = useState<'phrase' | 'sentence'>('sentence')
+
+  /** 几个词以内默认当短语。多数固定搭配都在这个长度内，猜错了点一下就改 */
+  const PHRASE_GUESS_MAX_WORDS = 4
+
+  /** 新框出一段时：优先沿用这段已经存过的类型，没存过就按长度猜 */
+  const decideRangeKind = useCallback(
+    (startAnchorId: string, endAnchorId: string, text: string): 'phrase' | 'sentence' => {
+      const savedPhrase = phrases?.find(
+        (p) => p.startAnchorId === startAnchorId && p.endAnchorId === endAnchorId
+      )
+      if (savedPhrase) return 'phrase'
+      const savedSentence = sentences?.find(
+        (s) => s.startAnchorId === startAnchorId && s.endAnchorId === endAnchorId
+      )
+      if (savedSentence) return 'sentence'
+      const words = text.trim().split(/\s+/).filter(Boolean).length
+      return words <= PHRASE_GUESS_MAX_WORDS ? 'phrase' : 'sentence'
+    },
+    [phrases, sentences]
+  )
+
+  /** 打开一段范围：定类型、把已存过的内容填回表单 */
+  const openRange = useCallback(
+    (startAnchorId: string, endAnchorId: string, text: string) => {
+      const kind = decideRangeKind(startAnchorId, endAnchorId, text)
+      setRangeKind(kind)
+      const savedPhrase = phrases?.find(
+        (p) => p.startAnchorId === startAnchorId && p.endAnchorId === endAnchorId
+      )
+      const savedSentence = sentences?.find(
+        (s) => s.startAnchorId === startAnchorId && s.endAnchorId === endAnchorId
+      )
+      setPhraseForm({
+        definition: savedPhrase?.definition ?? '',
+        usage: savedPhrase?.usage ?? ''
+      })
+      setSentenceForm({
+        grammar: savedSentence?.grammar ?? '',
+        meaning: savedSentence?.meaning ?? ''
+      })
+      setSelection({ type: 'sentence', startAnchorId, endAnchorId, text })
+      setFullMode('sentence')
+    },
+    [decideRangeKind, phrases, sentences]
+  )
 
   // 当前选中的句子是否对应「已保存的句摘」：
   // - 第一次框选的新句子：不在 sentences 中 → 不显示删除按钮
@@ -235,7 +305,8 @@ function LyricEditorInner({
       meaning: pendingSentenceEdit.meaning || ''
     })
 
-    // 打开底部抽屉（句子模式）
+    // 打开底部抽屉（句子模式）—— 从右侧栏点进来的一定是句摘，不走「按长度猜」
+    setRangeKind('sentence')
     setFullMode('sentence')
 
     // 清空 pendingSentenceEdit，避免重复触发
@@ -253,6 +324,31 @@ function LyricEditorInner({
     for (let k = lo; k <= hi; k++) set.add(orderedWords[k].anchorId)
     return set
   }, [selection, orderedWords])
+
+  /** 已保存短语的 anchor 集合：正文里画一条连续实线 */
+  const savedPhraseAnchorSet = useMemo(() => {
+    if (!phrases || phrases.length === 0) return new Set<string>()
+    const set = new Set<string>()
+    for (const p of phrases) {
+      // 孤儿短语（原文已删除）不画线，它的坐标已经失效
+      if (p.orphaned) continue
+      const i = orderedWords.findIndex((w) => w.anchorId === p.startAnchorId)
+      const j = orderedWords.findIndex((w) => w.anchorId === p.endAnchorId)
+      if (i === -1 || j === -1) continue
+      const [lo, hi] = i <= j ? [i, j] : [j, i]
+      for (let k = lo; k <= hi; k++) set.add(orderedWords[k].anchorId)
+    }
+    return set
+  }, [phrases, orderedWords])
+
+  /** 当前选中的这段是不是一条已存过的短语（决定要不要显示删除按钮） */
+  const canDeletePhrase = useMemo(() => {
+    if (!selection || selection.type !== 'sentence' || rangeKind !== 'phrase') return false
+    return !!phrases?.some(
+      (p) =>
+        p.startAnchorId === selection.startAnchorId && p.endAnchorId === selection.endAnchorId
+    )
+  }, [selection, phrases, rangeKind])
 
   // 已保存句摘的 anchor 集合：用于在原文中长期以虚线标记句子范围
   const savedSentenceAnchorSet = useMemo(() => {
@@ -295,24 +391,19 @@ function LyricEditorInner({
           clearAll()
           return
         }
-        // 长按另一个词：升级为句摘 A→B
+        // 长按另一个词：升级为一段范围（短语或句子，抽屉里可切换）
         const { startAnchorId, endAnchorId } = normalizeRange(selection.anchorId, anchorId)
-        const text = getRangeText(startAnchorId, endAnchorId)
-        setSelection({ type: 'sentence', startAnchorId, endAnchorId, text })
-        setSentenceForm({ grammar: '', meaning: '' })
-        setFullMode('sentence') // 抽屉切换为句摘表单（句型 / 翻译）
+        openRange(startAnchorId, endAnchorId, getRangeText(startAnchorId, endAnchorId))
         return
       }
 
-      // 3. 已经是句摘模式：修正范围到新的终点
+      // 3. 已经是范围模式：修正范围到新的终点
       if (selection.type === 'sentence') {
         const { startAnchorId, endAnchorId } = normalizeRange(selection.startAnchorId, anchorId)
-        const text = getRangeText(startAnchorId, endAnchorId)
-        setSelection({ type: 'sentence', startAnchorId, endAnchorId, text })
-        setFullMode('sentence')
+        openRange(startAnchorId, endAnchorId, getRangeText(startAnchorId, endAnchorId))
       }
     },
-    [selection, notes, normalizeRange, getRangeText, clearAll]
+    [selection, notes, normalizeRange, getRangeText, clearAll, openRange]
   )
 
   /**
@@ -332,16 +423,13 @@ function LyricEditorInner({
           return
         }
 
-        // 点击另一个单词：升级为句摘 A→B
+        // 点击另一个单词：升级为一段范围 A→B
         const { startAnchorId, endAnchorId } = normalizeRange(selection.anchorId, anchorId)
-        const text = getRangeText(startAnchorId, endAnchorId)
-        setSelection({ type: 'sentence', startAnchorId, endAnchorId, text })
-        setSentenceForm({ grammar: '', meaning: '' })
-        setFullMode('sentence')
+        openRange(startAnchorId, endAnchorId, getRangeText(startAnchorId, endAnchorId))
         return
       }
 
-      // 2. 当前为句摘模式：修正范围起止（保持起点 A 不变）
+      // 2. 当前为范围模式：修正范围起止（保持起点 A 不变）
       if (selection.type === 'sentence') {
         const { startAnchorId, endAnchorId } = normalizeRange(selection.startAnchorId, anchorId)
 
@@ -354,13 +442,11 @@ function LyricEditorInner({
           return
         }
 
-        // 2.2 否则维持句摘模式
-        const text = getRangeText(startAnchorId, endAnchorId)
-        setSelection({ type: 'sentence', startAnchorId, endAnchorId, text })
-        setFullMode('sentence')
+        // 2.2 否则维持范围模式
+        openRange(startAnchorId, endAnchorId, getRangeText(startAnchorId, endAnchorId))
       }
     },
-    [selection, normalizeRange, getRangeText, orderedWords, clearAll]
+    [selection, normalizeRange, getRangeText, orderedWords, clearAll, openRange]
   )
 
   const { getWordHandlers, pressingAnchorId, interactionHint } = useWordInteraction({
@@ -373,6 +459,15 @@ function LyricEditorInner({
     if (!selection) return
     if (selection.type === 'word') {
       onNoteSave(selection.anchorId, { ...bubbleForm, word: selection.word })
+    } else if (rangeKind === 'phrase') {
+      onAddPhrase?.({
+        text: selection.text,
+        definition: phraseForm.definition,
+        usage: phraseForm.usage,
+        docId: pageId,
+        startAnchorId: selection.startAnchorId,
+        endAnchorId: selection.endAnchorId
+      })
     } else {
       onAddSentence?.({
         text: selection.text,
@@ -385,7 +480,18 @@ function LyricEditorInner({
     }
     // 大弹窗保存：完全结束这次操作（包括小气泡与选区）
     clearAll()
-  }, [selection, bubbleForm, sentenceForm, pageId, onNoteSave, onAddSentence, clearAll])
+  }, [
+    selection,
+    bubbleForm,
+    sentenceForm,
+    phraseForm,
+    rangeKind,
+    pageId,
+    onNoteSave,
+    onAddSentence,
+    onAddPhrase,
+    clearAll
+  ])
 
   // 仅关闭大弹窗，不影响当前选中与小气泡
   const closeFullPopup = useCallback(() => {
@@ -403,6 +509,12 @@ function LyricEditorInner({
     onDeleteSentence?.(selection.startAnchorId, selection.endAnchorId)
     clearAll()
   }, [selection, onDeleteSentence, clearAll])
+
+  const handleDeletePhrase = useCallback(() => {
+    if (!selection || selection.type !== 'sentence') return
+    onDeletePhrase?.(selection.startAnchorId, selection.endAnchorId)
+    clearAll()
+  }, [selection, onDeletePhrase, clearAll])
 
   // 点在单词和抽屉之外时：
   // - 若抽屉开着：先收起抽屉，保留选中与高亮
@@ -507,11 +619,12 @@ function LyricEditorInner({
         {lines.map((line, lineIndex) => {
           const segments = tokenizeLine(line)
 
-          // 为当前行计算「已保存句摘」所覆盖的所有 segment（包括英文与中间的空格 / 标点）
-          const savedSegmentMask: boolean[] = (() => {
-            if (!sentences || !sentences.length || !savedSentenceAnchorSet.size) {
-              return new Array(segments.length).fill(false)
-            }
+          /**
+           * 算出这一行里，某个坐标集合覆盖了哪几段（连英文词之间的空格、标点一起算进去）。
+           * 句摘（虚线）和短语（实线）各算一份 —— 两条线的画法不同，但覆盖范围的算法一样。
+           */
+          const maskFor = (anchorSet: Set<string>): boolean[] => {
+            if (!anchorSet.size) return new Array(segments.length).fill(false)
             const mask = new Array(segments.length).fill(false)
             let wordIndexForSaved = 0
             let clusterStart: number | null = null
@@ -521,7 +634,7 @@ function LyricEditorInner({
               const seg = segments[segIdx]
               if (seg.type === 'en') {
                 const anchorIdForSeg = getAnchorId(lineIndex, wordIndexForSaved)
-                const isSavedWord = savedSentenceAnchorSet.has(anchorIdForSeg)
+                const isSavedWord = anchorSet.has(anchorIdForSeg)
                 if (isSavedWord) {
                   if (clusterStart === null) {
                     clusterStart = segIdx
@@ -545,7 +658,10 @@ function LyricEditorInner({
               }
             }
             return mask
-          })()
+          }
+
+          const savedSegmentMask = maskFor(savedSentenceAnchorSet)
+          const phraseSegmentMask = maskFor(savedPhraseAnchorSet)
 
           let wordIndex = 0
 
@@ -608,13 +724,16 @@ function LyricEditorInner({
             )
           }
 
-          // 将一行拆分为若干块：在已保存句摘中的块 / 不在句摘中的块
+          // 将一行拆分为若干块，按「是否在句摘里 / 是否在短语里」分段。
+          // 句摘画虚线、短语画实线；一段话既是句摘又含短语时两条线会叠在一起，
+          // 所以用「两个标记合起来」当分块依据，而不是只看句摘。
           const lineChildren: React.ReactNode[] = []
           let segIdx = 0
+          const kindOf = (i: number) => `${savedSegmentMask[i] ? 's' : ''}${phraseSegmentMask[i] ? 'p' : ''}`
           while (segIdx < segments.length) {
-            const inSavedBlock = savedSegmentMask[segIdx]
+            const kind = kindOf(segIdx)
             let end = segIdx + 1
-            while (end < segments.length && savedSegmentMask[end] === inSavedBlock) {
+            while (end < segments.length && kindOf(end) === kind) {
               end++
             }
 
@@ -623,14 +742,22 @@ function LyricEditorInner({
               chunkElems.push(renderInnerSegment(segments[k], k))
             }
 
-            if (inSavedBlock) {
-              // 整个块属于已保存句摘：统一在外层画一句连续的虚线
+            if (kind) {
+              // 短语：一条连续的实线（穿过词与词之间的空格，看得出是「一个整体」）
+              // 句摘：虚线。两者同时命中就都画，实线在内、虚线在外。
+              const inner = phraseSegmentMask[segIdx] ? (
+                <span className="border-b-2 border-amber-600/80 pb-[1px]">{chunkElems}</span>
+              ) : (
+                chunkElems
+              )
               lineChildren.push(
                 <span
                   key={`chunk-${lineIndex}-${segIdx}`}
-                  className="border-b border-dashed border-amber-600 pb-[1px]"
+                  className={
+                    savedSegmentMask[segIdx] ? 'border-b border-dashed border-amber-600 pb-[1px]' : ''
+                  }
                 >
-                  {chunkElems}
+                  {inner}
                 </span>
               )
             } else {
@@ -730,24 +857,67 @@ function LyricEditorInner({
                 />
               </div>
             ) : (
-              <div className="grid grid-cols-1 gap-2 mb-4">
-                <input
-                  type="text"
-                  placeholder="句型 / 语法"
-                  aria-label="句型语法"
-                  className="field-sheet"
-                  value={sentenceForm.grammar}
-                  onChange={(e) => setSentenceForm((f) => ({ ...f, grammar: e.target.value }))}
-                />
-                <input
-                  type="text"
-                  placeholder="翻译 / 释义"
-                  aria-label="翻译释义"
-                  className="field-sheet"
-                  value={sentenceForm.meaning}
-                  onChange={(e) => setSentenceForm((f) => ({ ...f, meaning: e.target.value }))}
-                />
-              </div>
+              <>
+                {/*
+                  选中一段之后，它是短语还是句子只有用户知道 —— 这里点一下就改。
+                  默认按长度猜（四个词以内当短语），猜对的时候一下都不用点。
+                */}
+                <div className="flex gap-1.5 mb-3">
+                  {(['phrase', 'sentence'] as const).map((kind) => (
+                    <button
+                      key={kind}
+                      type="button"
+                      onClick={() => setRangeKind(kind)}
+                      className={`flex-1 h-8 rounded-lg text-sm border transition-colors ${
+                        rangeKind === kind
+                          ? 'border-amber-500 bg-amber-50 text-amber-800 font-medium'
+                          : 'border-paper-border text-ink-muted hover:bg-stone-50'
+                      }`}
+                    >
+                      {kind === 'phrase' ? '短语' : '句子'}
+                    </button>
+                  ))}
+                </div>
+                {rangeKind === 'phrase' ? (
+                  <div className="grid grid-cols-1 gap-2 mb-4">
+                    <input
+                      type="text"
+                      placeholder="中文释义"
+                      aria-label="短语释义"
+                      className="field-sheet"
+                      value={phraseForm.definition}
+                      onChange={(e) => setPhraseForm((f) => ({ ...f, definition: e.target.value }))}
+                    />
+                    <input
+                      type="text"
+                      placeholder="用法 / 搭配"
+                      aria-label="短语用法"
+                      className="field-sheet"
+                      value={phraseForm.usage}
+                      onChange={(e) => setPhraseForm((f) => ({ ...f, usage: e.target.value }))}
+                    />
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 gap-2 mb-4">
+                    <input
+                      type="text"
+                      placeholder="句型 / 语法"
+                      aria-label="句型语法"
+                      className="field-sheet"
+                      value={sentenceForm.grammar}
+                      onChange={(e) => setSentenceForm((f) => ({ ...f, grammar: e.target.value }))}
+                    />
+                    <input
+                      type="text"
+                      placeholder="翻译 / 释义"
+                      aria-label="翻译释义"
+                      className="field-sheet"
+                      value={sentenceForm.meaning}
+                      onChange={(e) => setSentenceForm((f) => ({ ...f, meaning: e.target.value }))}
+                    />
+                  </div>
+                )}
+              </>
             )}
             {/* 保存是主操作，给到 44px；删除退成次要样式，不跟主按钮抢眼 */}
             <div className="flex gap-2">
@@ -769,12 +939,23 @@ function LyricEditorInner({
                   删除
                 </button>
               )}
-              {canDeleteSentence && (
+              {canDeleteSentence && rangeKind === 'sentence' && (
                 <button
                   type="button"
                   onClick={handleDeleteSentence}
                   className="h-11 px-4 rounded-lg bg-stone-100 hover:bg-red-50 text-red-600 font-medium text-[15px] flex items-center gap-1.5 transition-colors"
                   title="删除句摘"
+                >
+                  <Trash2 className="w-4 h-4" />
+                  删除
+                </button>
+              )}
+              {canDeletePhrase && (
+                <button
+                  type="button"
+                  onClick={handleDeletePhrase}
+                  className="h-11 px-4 rounded-lg bg-stone-100 hover:bg-red-50 text-red-600 font-medium text-[15px] flex items-center gap-1.5 transition-colors"
+                  title="删除短语"
                 >
                   <Trash2 className="w-4 h-4" />
                   删除

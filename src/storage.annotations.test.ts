@@ -68,15 +68,15 @@ describe('selectAnnotations', () => {
     expect(s.selectAnnotations(data, 'p1', 'sentence').map((a) => a.id)).toEqual(['s'])
   })
 
-  it('nextAnnotationOrder 排在同文档同类型的最后', async () => {
+  it('nextAnnotationOrder 排在同文档同组的最后', async () => {
     const s = await fresh({
       pages: [page('p1')],
       annotations: [anno({ id: 'a', order: 0 }), anno({ id: 'b', order: 5 })]
     })
     const data = await s.getAppData()
-    expect(s.nextAnnotationOrder(data, 'p1', 'word')).toBe(6)
-    expect(s.nextAnnotationOrder(data, 'p1', 'sentence')).toBe(0) // 另一类型自己从 0 开始
-    expect(s.nextAnnotationOrder(data, 'p2', 'word')).toBe(0)
+    expect(s.nextAnnotationOrder(data, 'p1', 'vocab')).toBe(6)
+    expect(s.nextAnnotationOrder(data, 'p1', 'sentence')).toBe(0) // 另一组自己从 0 开始
+    expect(s.nextAnnotationOrder(data, 'p2', 'vocab')).toBe(0)
   })
 })
 
@@ -163,7 +163,7 @@ describe('reorderAnnotations', () => {
       ]
     })
 
-    const data = await s.reorderAnnotations('p1', 'word', ['c', 'a', 'b'])
+    const data = await s.reorderAnnotations('p1', 'vocab', ['c', 'a', 'b'])
     expect(s.selectAnnotations(data, 'p1', 'word').map((a) => a.id)).toEqual(['c', 'a', 'b'])
   })
 
@@ -177,11 +177,11 @@ describe('reorderAnnotations', () => {
       ]
     })
 
-    const data = await s.reorderAnnotations('p1', 'word', ['c'])
+    const data = await s.reorderAnnotations('p1', 'vocab', ['c'])
     expect(s.selectAnnotations(data, 'p1', 'word').map((a) => a.id)).toEqual(['c', 'a', 'b'])
   })
 
-  it('不碰别篇文档、也不碰别的类型', async () => {
+  it('不碰别篇文档、也不碰别的组', async () => {
     const s = await fresh({
       pages: [page('p1'), page('p2')],
       annotations: [
@@ -191,7 +191,7 @@ describe('reorderAnnotations', () => {
       ]
     })
 
-    const data = await s.reorderAnnotations('p1', 'word', ['a'])
+    const data = await s.reorderAnnotations('p1', 'vocab', ['a'])
     const byId = new Map(data.annotations!.map((a) => [a.id, a]))
     expect(byId.get('s')!.order).toBe(0)
     expect(byId.get('z')!.order).toBe(0)

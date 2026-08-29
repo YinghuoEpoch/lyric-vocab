@@ -113,6 +113,19 @@ export interface Sentence {
  */
 export type AnnotationType = 'word' | 'phrase' | 'sentence'
 
+/**
+ * 排序分组。
+ *
+ * 单词和短语在复习页是**同一列卡片**（短语本质也是词汇），
+ * 所以它们必须排在同一条队里 —— 各编各的号的话，两套 0、1、2 混在一起
+ * 按数值排，短语就会随机插到单词中间。句子自成一队。
+ */
+export type AnnotationGroup = 'vocab' | 'sentence'
+
+export function annotationGroupOf(type: AnnotationType): AnnotationGroup {
+  return type === 'sentence' ? 'sentence' : 'vocab'
+}
+
 export interface Annotation {
   /** 稳定身份。创建后永不改变 —— 位置、原文、内容怎么变都不影响它 */
   id: string
