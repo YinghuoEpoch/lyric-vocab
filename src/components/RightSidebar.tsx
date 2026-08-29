@@ -2,6 +2,7 @@ import { memo, useState, useEffect } from 'react'
 import { PanelRightClose, BookOpen, ChevronRight, Trash2, Wand2, Undo2, X } from 'lucide-react'
 import type { Sentence } from '../types'
 import { AutoMark } from './AutoMark'
+import { useIsClamped } from '../hooks/useIsClamped'
 
 interface VocabItem {
   word: string
@@ -39,22 +40,33 @@ function SentenceCard({
   onEdit,
   onDelete
 }: SentenceCardProps) {
+  /*
+   * 「能不能展开」要看内容是不是真被截断了。
+   * 从前不看：三行以内的短句子点一下也进展开态，而展开态的下内边距
+   * 比平时多 4px —— 于是点了个寂寞，还凭空多出一截空白。
+   * 现在装得下就根本不给点，内边距也不再随展开变化。
+   */
+  const text = useIsClamped<HTMLParagraphElement>(!isActive, sentence.text)
+  const meaning = useIsClamped<HTMLParagraphElement>(!isActive, sentence.meaning)
+  const canExpand = isActive || text.clamped || meaning.clamped
+
   return (
     <div className="flex w-full rounded-lg overflow-hidden">
       {/* 内容区域 */}
       <div
         className={`
-          flex-1 cursor-pointer
-          px-2.5 pt-2 ${isActive ? 'pb-3' : 'pb-2'}
-          hover:shadow-sm hover:bg-stone-50
+          flex-1
+          px-2.5 pt-2 pb-2
           flex flex-col gap-2
           ${alt ? 'bg-gray-50' : 'bg-white'}
           ${isActive ? 'bg-stone-50' : ''}
+          ${canExpand ? 'cursor-pointer hover:shadow-sm hover:bg-stone-50' : ''}
         `}
-        onClick={onToggle}
+        onClick={canExpand ? onToggle : undefined}
       >
         {/* 英文句子：主引用文本 */}
         <p
+          ref={text.ref}
           className={`font-serif text-sm text-ink leading-snug ${
             isActive ? '' : 'line-clamp-3'
           }`}
@@ -90,6 +102,7 @@ function SentenceCard({
         {/* 中文释义：辅助说明 */}
         {sentence.meaning && (
           <p
+            ref={meaning.ref}
             className={`text-xs text-stone-500 leading-snug font-sans ${
               isActive ? '' : 'line-clamp-1'
             }`}
@@ -145,6 +158,116 @@ interface RightSidebarProps {
   className?: string
 }
 
+interface VocabCardProps {
+  item: VocabItem
+  /** 交替底色 */
+  alt: boolean
+  isActive: boolean
+  onToggle: () => void
+  onScrollToWord: (pageId: string, anchorId: string) => void
+  onDeleteVocab: (pageId: string, anchorId: string) => void
+}
+
+/**
+ * 生词板里的一张卡。
+ *
+ * 做成和句摘卡一样「点一下展开」：短语一行放不下就省略号，点卡片看全。
+ * 和句摘卡同一条规矩 —— **装得下就根本不给点**，免得点了个寂寞还撑高一截。
+ */
+function VocabCard({ item, alt, isActive, onToggle, onScrollToWord, onDeleteVocab }: VocabCardProps) {
+  // 只有短语才可能放不下；单个词永远是一行，测了也永远是 false
+  const phrase = useIsClamped<HTMLButtonElement>(!isActive, item.word)
+  const canExpand = !!item.isPhrase && (isActive || phrase.clamped)
+
+  return (
+    <div
+      className={`w-full text-left rounded-lg border border-stone-200/70 p-2.5 ${
+        alt ? 'bg-gray-50/70' : 'bg-white'
+      } ${isActive ? 'bg-stone-50' : ''} ${
+        canExpand ? 'cursor-pointer hover:shadow-sm hover:bg-stone-50' : ''
+      }`}
+      onClick={canExpand ? onToggle : undefined}
+    >
+      {/* 顶部栏：单词 + 音标 | 词性胶囊 */}
+      <div className="flex items-center justify-between gap-2 flex-wrap">
+        <div
+          className={`flex items-baseline gap-2 min-w-0 ${
+            item.isPhrase ? 'w-full' : 'flex-1'
+          }`}
+        >
+          <button
+            type="button"
+            onClick={(e) => {
+              // 点词是「跳到文中」，别连带把卡片展开了
+              e.stopPropagation()
+              onScrollToWord(item.pageId, item.anchorId)
+            }}
+            ref={phrase.ref}
+            className={`font-lyric-en font-serif text-amber-800 font-bold text-base text-left hover:underline decoration-amber-600 decoration-2 underline-offset-2 rounded focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-400 ${
+              item.isPhrase
+                ? // 短语：一行放不下就省略号，点卡片展开看全。
+                  // 这里**必须允许收缩**（min-w-0）—— 从前和单词一样写着 shrink-0，
+                  // 于是宁可撑破卡片也不截断，长短语整条溢出到侧栏外面。
+                  `min-w-0 break-words ${isActive ? '' : 'line-clamp-1'}`
+                : // 单个词不收缩，免得旁边的音标把它挤扁。词短，挤得下
+                  'shrink-0'
+            }`}
+            title={`跳到「${item.word}」在文中的位置`}
+          >
+            {item.word}
+            {item.auto && <AutoMark />}
+          </button>
+          {item.phonetic && (
+            <span className="text-xs text-ink-muted italic font-mono truncate">
+              {item.phonetic}
+            </span>
+          )}
+        </div>
+        {item.orphaned && (
+          <span
+            className="shrink-0 px-2 py-0.5 rounded-full bg-stone-100 text-ink-muted text-xs font-medium border border-stone-300/70"
+            title="正文里已经没有这个词了，笔记被保留下来"
+          >
+            原文已删除
+          </span>
+        )}
+        {item.isPhrase && (
+          <span className="shrink-0 px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 text-xs font-medium">
+            短语
+          </span>
+        )}
+        {item.pos && (
+          <span className="shrink-0 px-2 py-0.5 rounded-full bg-stone-200/80 text-ink text-xs font-medium">
+            {item.pos}
+          </span>
+        )}
+        {/* 只有孤儿才给删除按钮：正常单词回正文里长按就能删，
+            而孤儿在正文里已经没有对应的词，不给这个入口就永远删不掉 */}
+        {item.orphaned && (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation()
+              onDeleteVocab(item.pageId, item.anchorId)
+            }}
+            className="shrink-0 p-1 rounded-md text-ink-muted hover:bg-red-50 hover:text-red-600"
+            title="删除这条笔记"
+            aria-label={`删除 ${item.word} 的笔记`}
+          >
+            <Trash2 className="w-3.5 h-3.5" />
+          </button>
+        )}
+      </div>
+      {/* 底部栏：中文释义 */}
+      {item.definition && (
+        <p className="text-xs text-ink-muted mt-1 leading-snug font-sans">
+          {item.definition}
+        </p>
+      )}
+    </div>
+  )
+}
+
 function RightSidebarInner({
   vocab,
   sentences,
@@ -169,6 +292,8 @@ function RightSidebarInner({
     ? sentences.filter((s) => s.docId === currentPageId)
     : sentences
   const [activeSentenceId, setActiveSentenceId] = useState<string | null>(null)
+  /** 展开中的生词卡。和句摘一样，同一时间只开一张 */
+  const [activeVocabKey, setActiveVocabKey] = useState<string | null>(null)
 
   const folderPercent =
     totalDocsInFolder > 0
@@ -178,6 +303,7 @@ function RightSidebarInner({
   // 当切换文档或标签页时，重置当前激活的句子卡，避免高亮“遗留”
   useEffect(() => {
     setActiveSentenceId(null)
+    setActiveVocabKey(null)
   }, [currentPageId, tab])
 
   // 避免未使用的 setter 在严格 TS 配置下报错
@@ -294,73 +420,20 @@ function RightSidebarInner({
             <ul className="space-y-2">
               {filtered.map((item, index) => (
               <li key={`${item.pageId}-${item.anchorId}`}>
-                {/* 整张卡片不再是点击区：想看释义却被弹到正文里去，很烦。
-                    跳转只挂在单词本身上。 */}
-                <div
-                  className={`w-full text-left rounded-lg border border-stone-200/70 p-2.5 ${
-                    index % 2 === 0 ? 'bg-white' : 'bg-gray-50/70'
-                  }`}
-                >
-                  {/* 顶部栏：单词 + 音标 | 词性胶囊 */}
-                  <div className="flex items-center justify-between gap-2 flex-wrap">
-                    <div className="flex items-baseline gap-2 min-w-0 flex-1">
-                      <button
-                        type="button"
-                        onClick={() => onScrollToWord(item.pageId, item.anchorId)}
-                        className="font-lyric-en font-serif text-amber-800 font-bold text-base shrink-0 text-left hover:underline decoration-amber-600 decoration-2 underline-offset-2 rounded focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-400"
-                        title={`跳到「${item.word}」在文中的位置`}
-                      >
-                        {item.word}
-                        {item.auto && <AutoMark />}
-                      </button>
-                      {item.phonetic && (
-                        <span className="text-xs text-ink-muted italic font-mono truncate">
-                          {item.phonetic}
-                        </span>
-                      )}
-                    </div>
-                    {item.orphaned && (
-                      <span
-                        className="shrink-0 px-2 py-0.5 rounded-full bg-stone-100 text-ink-muted text-xs font-medium border border-stone-300/70"
-                        title="正文里已经没有这个词了，笔记被保留下来"
-                      >
-                        原文已删除
-                      </span>
-                    )}
-                    {item.isPhrase && (
-                      <span className="shrink-0 px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 text-xs font-medium">
-                        短语
-                      </span>
-                    )}
-                    {item.pos && (
-                      <span className="shrink-0 px-2 py-0.5 rounded-full bg-stone-200/80 text-ink text-xs font-medium">
-                        {item.pos}
-                      </span>
-                    )}
-                    {/* 只有孤儿才给删除按钮：正常单词回正文里长按就能删，
-                        而孤儿在正文里已经没有对应的词，不给这个入口就永远删不掉 */}
-                    {item.orphaned && (
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          onDeleteVocab(item.pageId, item.anchorId)
-                        }}
-                        className="shrink-0 p-1 rounded-md text-ink-muted hover:bg-red-50 hover:text-red-600"
-                        title="删除这条笔记"
-                        aria-label={`删除 ${item.word} 的笔记`}
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
-                    )}
-                  </div>
-                  {/* 底部栏：中文释义 */}
-                  {item.definition && (
-                    <p className="text-xs text-ink-muted mt-1 leading-snug font-sans">
-                      {item.definition}
-                    </p>
-                  )}
-                </div>
+                <VocabCard
+                  item={item}
+                  alt={index % 2 !== 0}
+                  isActive={activeVocabKey === `${item.pageId}-${item.anchorId}`}
+                  onToggle={() =>
+                    setActiveVocabKey((cur) =>
+                      cur === `${item.pageId}-${item.anchorId}`
+                        ? null
+                        : `${item.pageId}-${item.anchorId}`
+                    )
+                  }
+                  onScrollToWord={onScrollToWord}
+                  onDeleteVocab={onDeleteVocab}
+                />
               </li>
             ))}
           </ul>
