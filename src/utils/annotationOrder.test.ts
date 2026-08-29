@@ -89,6 +89,38 @@ describe('不冲掉用户拖出来的顺序', () => {
     expect(插入后顺序(existing, 'L0W1', 'and')).toEqual(['ear', 'apple', 'and'])
   })
 
+  it('顺序被完全打乱时：紧跟「正文里它前面那条」，插在那条后面', () => {
+    // 正文顺序是 a b c d（坐标拉开，好在中间插），用户拖成了 d b a c
+    const existing = [
+      { ...a('L0W30', 0), name: 'd' },
+      { ...a('L0W10', 1), name: 'b' },
+      { ...a('L0W0', 2), name: 'a' },
+      { ...a('L0W20', 3), name: 'c' }
+    ]
+    // 新标的 b2 在正文里夹在 b 与 c 之间 -> 跟在 b 后面（而不是跑到 c 前面）
+    expect(插入后顺序(existing, 'L0W15', 'b2')).toEqual(['d', 'b', 'b2', 'a', 'c'])
+  })
+
+  it('打乱时，正文里最靠前的新词排到它「正文后继」的前面', () => {
+    const existing = [
+      { ...a('L0W3', 0), name: 'd' },
+      { ...a('L0W1', 1), name: 'b' },
+      { ...a('L0W2', 2), name: 'c' }
+    ]
+    // 新词在正文里比谁都靠前，正文后继是 b -> 插到 b 前面
+    expect(插入后顺序(existing, 'L0W0', 'a')).toEqual(['d', 'a', 'b', 'c'])
+  })
+
+  it('打乱时，正文里最靠后的新词不一定排在列表最后', () => {
+    const existing = [
+      { ...a('L0W3', 0), name: 'd' },
+      { ...a('L0W1', 1), name: 'b' },
+      { ...a('L0W2', 2), name: 'c' }
+    ]
+    // 新词在正文里最靠后，前一条是 d，而 d 被拖到了第一位 -> 跟在 d 后面
+    expect(插入后顺序(existing, 'L0W9', 'e')).toEqual(['d', 'e', 'b', 'c'])
+  })
+
   it('算出来的是小数也没关系，排序只看大小', () => {
     const existing = [a('L0W0', 0), a('L0W2', 1)]
     const order = insertionOrder(existing, 'L0W1')
