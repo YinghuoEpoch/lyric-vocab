@@ -8,13 +8,11 @@ import {
   MoreHorizontal,
   Pencil,
   Trash2,
-  Save,
-  FolderOpen,
   RotateCcw,
   X,
   ChevronRight,
   GripVertical,
-  Type
+  Settings
 } from 'lucide-react'
 import {
   DndContext,
@@ -36,6 +34,7 @@ import {
 import { restrictToVerticalAxis, restrictToWindowEdges } from '@dnd-kit/modifiers'
 import { CSS } from '@dnd-kit/utilities'
 import { createPortal } from 'react-dom'
+import { SettingsDialog } from './SettingsDialog'
 import { useBackHandler, BackPriority } from '../hooks/useBackHandler'
 import { IMPORT_ACCEPT } from '../importers'
 import type { LyricBook, LyricPage, ReaderSettings } from '../types'
@@ -175,10 +174,9 @@ function LeftSidebarInner({
   const [organizeMode, setOrganizeMode] = useState(false)
   const [activeItem, setActiveItem] = useState<ItemKind | null>(null)
   const [dragOverBookId, setDragOverBookId] = useState<string | null>(null)
-  const [appearanceOpen, setAppearanceOpen] = useState(false)
+  const [settingsOpen, setSettingsOpen] = useState(false)
   const preEditOpenFoldersRef = useRef<string[] | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
-  const fileInputRef = useRef<HTMLInputElement>(null)
   const txtFileInputRef = useRef<HTMLInputElement>(null)
 
   // 全局点击：当菜单打开时，点击任意「非菜单 / 非触发按钮」区域都会关闭菜单
@@ -343,19 +341,6 @@ function LeftSidebarInner({
       else onReviewTargetChange({ type: 'page', id: page.id })
     },
     [mode, onSelectPage, onReviewTargetChange]
-  )
-
-  const handleRestoreBackupClick = useCallback(() => {
-    fileInputRef.current?.click()
-  }, [])
-
-  const handleFileChange = useCallback(
-    (e: React.ChangeEvent<HTMLInputElement>) => {
-      const file = e.target.files?.[0]
-      if (file) onRestoreBackup(file)
-      e.target.value = ''
-    },
-    [onRestoreBackup]
   )
 
   const handleTxtFileChange = useCallback(
@@ -1050,9 +1035,17 @@ function LeftSidebarInner({
         )}
       </DndContext>
 
-      {/* 底部：5 个图标按钮严格统一尺寸（同高、同格、同图标大小） */}
+      {/*
+       * 底部三格：导入 / 回收站 / 设置。
+       *
+       * 从前是五个光秃秃的图标（导入、外观、导出备份、恢复备份、回收站），
+       * 只有 title 提示 —— 那是鼠标悬停才冒出来的东西，手机上根本不存在，
+       * 五个格子等于五个哑谜。而且三类性质不同的东西排成一样宽的五格：
+       * 导入是天天用的动作、回收站是东西的去处、另外三个是低频设置。
+       * 现在设置类的全收进设置页，剩下三格，每格 83px，放得下图标加文字。
+       */}
       <div className="shrink-0 border-t border-paper-border bg-gray-50">
-        <div className="grid grid-cols-5 gap-px">
+        <div className="grid grid-cols-3 gap-px">
           <input
             ref={txtFileInputRef}
             type="file"
@@ -1060,133 +1053,52 @@ function LeftSidebarInner({
             className="hidden"
             onChange={handleTxtFileChange}
           />
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept=".json,application/json"
-            className="hidden"
-            onChange={handleFileChange}
-          />
           <button
             type="button"
             onClick={() => txtFileInputRef.current?.click()}
-            className="flex h-11 w-full min-w-0 flex-shrink-0 items-center justify-center text-gray-600 transition-colors hover:bg-gray-100"
-            title="导入书籍"
+            className="flex h-14 w-full min-w-0 flex-col items-center justify-center gap-0.5 text-gray-600 transition-colors hover:bg-gray-100"
           >
             <FileText className="h-5 w-5 shrink-0" aria-hidden />
-          </button>
-          <button
-            type="button"
-            onClick={() => setAppearanceOpen((o) => !o)}
-            className={`flex h-11 w-full min-w-0 flex-shrink-0 items-center justify-center transition-colors hover:bg-gray-100 ${
-              appearanceOpen ? 'bg-amber-50 text-amber-700' : 'text-gray-600'
-            }`}
-            title="阅读外观"
-          >
-            <Type className="h-5 w-5 shrink-0" aria-hidden />
-          </button>
-          <button
-            type="button"
-            onClick={onExportBackup}
-            className="flex h-11 w-full min-w-0 flex-shrink-0 items-center justify-center text-gray-600 transition-colors hover:bg-gray-100"
-            title="导出备份"
-          >
-            <Save className="h-5 w-5 shrink-0" aria-hidden />
-          </button>
-          <button
-            type="button"
-            onClick={handleRestoreBackupClick}
-            className="flex h-11 w-full min-w-0 flex-shrink-0 items-center justify-center text-gray-600 transition-colors hover:bg-gray-100"
-            title="恢复备份"
-          >
-            <FolderOpen className="h-5 w-5 shrink-0" aria-hidden />
+            <span className="text-[11px] leading-none">导入</span>
           </button>
           <button
             type="button"
             onClick={() => setRecycleOpen(true)}
-            className="relative flex h-11 w-full min-w-0 flex-shrink-0 items-center justify-center text-gray-600 transition-colors hover:bg-gray-100"
-            title="回收站"
+            className="relative flex h-14 w-full min-w-0 flex-col items-center justify-center gap-0.5 text-gray-600 transition-colors hover:bg-gray-100"
           >
             <Trash2 className="h-5 w-5 shrink-0" aria-hidden />
+            <span className="text-[11px] leading-none">回收站</span>
             {trashCount > 0 && (
-              <span className="absolute right-1 top-1 flex h-3.5 min-w-[14px] items-center justify-center rounded-full bg-amber-500 px-1 text-[10px] font-medium text-white">
+              <span className="absolute right-2 top-1.5 flex h-3.5 min-w-[14px] items-center justify-center rounded-full bg-amber-500 px-1 text-[10px] font-medium text-white">
                 {trashCount > 99 ? '99+' : trashCount}
               </span>
             )}
           </button>
+          <button
+            type="button"
+            onClick={() => setSettingsOpen(true)}
+            className="flex h-14 w-full min-w-0 flex-col items-center justify-center gap-0.5 text-gray-600 transition-colors hover:bg-gray-100"
+          >
+            <Settings className="h-5 w-5 shrink-0" aria-hidden />
+            <span className="text-[11px] leading-none">设置</span>
+          </button>
         </div>
       </div>
 
-      {/* 外观设置 Popover：fixed 脱离侧栏 overflow，避免被裁剪 */}
-      {appearanceOpen &&
+      {/*
+       * 设置页。和下面的回收站一样用传送门挂到 body 上 ——
+       * 侧栏外层带 transform，留在 aside 里的话遮罩只盖得住 250px 宽的侧栏。
+       */}
+      {settingsOpen &&
         createPortal(
-          <>
-            <div
-              className="fixed inset-0 z-40"
-              aria-hidden
-              onClick={() => setAppearanceOpen(false)}
-            />
-            <div className="fixed bottom-16 left-4 z-50 w-56 rounded-xl border border-gray-200 bg-white shadow-xl p-3 space-y-3">
-              <div className="flex items-center justify-between gap-2">
-                <span className="text-xs font-medium text-ink-muted">字号</span>
-                <div className="flex items-center gap-1">
-                  <button
-                    type="button"
-                    onClick={() => onReaderSettingsChange({ ...readerSettings, fontSize: Math.max(12, readerSettings.fontSize - 2) })}
-                    className="w-8 h-8 rounded-lg border border-stone-200 hover:bg-stone-100 text-ink text-sm font-medium"
-                  >
-                    −
-                  </button>
-                  <span className="w-8 text-center text-sm text-ink tabular-nums">{readerSettings.fontSize}</span>
-                  <button
-                    type="button"
-                    onClick={() => onReaderSettingsChange({ ...readerSettings, fontSize: Math.min(24, readerSettings.fontSize + 2) })}
-                    className="w-8 h-8 rounded-lg border border-stone-200 hover:bg-stone-100 text-ink text-sm font-medium"
-                  >
-                    +
-                  </button>
-                </div>
-              </div>
-              <div>
-                <span className="text-xs font-medium text-ink-muted block mb-1.5">字体</span>
-                <div className="flex gap-1">
-                  {(['sans', 'serif', 'rounded'] as const).map((f) => (
-                    <button
-                      key={f}
-                      type="button"
-                      onClick={() => onReaderSettingsChange({ ...readerSettings, fontFamily: f })}
-                      className={`flex-1 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
-                        readerSettings.fontFamily === f
-                          ? 'border-amber-500 bg-amber-50 text-amber-800'
-                          : 'border-stone-200 hover:bg-stone-100 text-ink-muted'
-                      }`}
-                    >
-                      {f === 'sans' ? '无衬线' : f === 'serif' ? '衬线' : '圆体'}
-                    </button>
-                  ))}
-                </div>
-              </div>
-              <div>
-                <span className="text-xs font-medium text-ink-muted block mb-1.5">主题</span>
-                <div className="flex gap-1">
-                  {(['pure', 'original', 'rice'] as const).map((t) => (
-                    <button
-                      key={t}
-                      type="button"
-                      onClick={() => onReaderSettingsChange({ ...readerSettings, theme: t })}
-                      className={`flex-1 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
-                        readerSettings.theme === t
-                          ? 'border-amber-500 bg-amber-50 text-amber-800'
-                          : 'border-stone-200 hover:bg-stone-100 text-ink-muted'
-                      }`}
-                    >
-                      {t === 'pure' ? '标准' : t === 'original' ? '青灰' : '暖白'}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            </div>
-          </>,
+          <SettingsDialog
+            open={settingsOpen}
+            onClose={() => setSettingsOpen(false)}
+            readerSettings={readerSettings}
+            onReaderSettingsChange={onReaderSettingsChange}
+            onExportBackup={onExportBackup}
+            onRestoreBackup={onRestoreBackup}
+          />,
           document.body
         )}
 
