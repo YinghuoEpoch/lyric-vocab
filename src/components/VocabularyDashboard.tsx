@@ -311,8 +311,16 @@ function VocabularyDashboardInner({
             type="button"
             onClick={() => setHideEnglish((v) => !v)}
             title={hideEnglish ? '显示英文' : '隐藏英文'}
+            /*
+              没开遮挡时**不给底色**，只留图标和字。
+              从前不管开没开都是一块灰底，于是这一行里三个实心块（英、中、AI 填充）
+              并排塞在 40px 的带里，上下各只剩 4px —— 竖着看很堵。
+              现在平时只剩 AI 填充一个实心块（它实心是有含义的：还差几条没填全），
+              遮挡一开那块琥珀色反而更跳得出来。
+              这也是全 App 最后一处「盒中盒」，和两个侧栏那次是同一件事。
+            */
             className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-sm font-medium transition-colors ${
-              hideEnglish ? 'bg-amber-100 text-amber-800' : 'bg-stone-100 text-ink-muted hover:bg-stone-200'
+              hideEnglish ? 'bg-amber-100 text-amber-800' : 'text-ink-muted hover:bg-stone-100'
             }`}
           >
             {hideEnglish ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
@@ -323,7 +331,7 @@ function VocabularyDashboardInner({
             onClick={() => setHideChinese((v) => !v)}
             title={hideChinese ? '显示中文' : '隐藏中文'}
             className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-sm font-medium transition-colors ${
-              hideChinese ? 'bg-amber-100 text-amber-800' : 'bg-stone-100 text-ink-muted hover:bg-stone-200'
+              hideChinese ? 'bg-amber-100 text-amber-800' : 'text-ink-muted hover:bg-stone-100'
             }`}
           >
             {hideChinese ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
