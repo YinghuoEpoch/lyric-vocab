@@ -23,3 +23,6 @@ android/app/src/main/assets/capacitor.plugins.json
 .DS_Store
 .idea/
 *.log
+
+# 交给用户的 APK 副本，不进版本库
+*.apk
