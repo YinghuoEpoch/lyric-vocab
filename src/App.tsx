@@ -797,6 +797,17 @@ export default function App() {
     void (async () => setAppData(await deleteAnnotation(id)))()
   }, [])
 
+  /**
+   * 复习页编辑模式下左滑删掉一条笔记。
+   *
+   * 按 id 删，词、短语、句摘走同一条路 —— 标注模型统一之后它们本来就是一种东西。
+   * **删了就是真没了**，标注不进回收站，所以界面那边是「滑开露出按钮、再点一下」
+   * 的两步，不是滑到底就删。
+   */
+  const handleDeleteAnnotationById = useCallback((id: string) => {
+    void (async () => setAppData(await deleteAnnotation(id)))()
+  }, [])
+
   /** 恢复备份。提成稳定引用，否则 LeftSidebar 的 memo 会被这个内联函数破坏。 */
   const handleRestoreBackup = useCallback((file: File) => {
             if (!window.confirm('恢复备份将覆盖现有数据，是否继续？')) return
@@ -1284,6 +1295,7 @@ export default function App() {
             onUpdateSentence={handleUpdateSentence}
             onReorder={handleReorderCards}
             onVocabCountChange={setReviewVocabCount}
+            onDeleteAnnotation={handleDeleteAnnotationById}
             onOpenAutoFill={autoFill.openDialog}
             autoFillCount={autoFill.pendingWords + autoFill.pendingPhrases + autoFill.pendingSentences}
           />
