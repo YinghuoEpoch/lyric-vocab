@@ -974,9 +974,21 @@ export default function App() {
     [currentPageId]
   )
 
+  /**
+   * 点生词板里的词：跳到它在正文里的位置，**但不收起面板**。
+   *
+   * 从前是跳完顺手把面板关掉的。改成留着，是为了能接着点下一个词
+   * —— 生词板这时候更像一张清单，一个个点过去听发音、看位置。
+   *
+   * 手机上面板是盖在正文上的（宽屏才是并排），所以跳过去的那一行
+   * 多半被挡着看不见；滚动位置是实打实变了的，关掉面板就在那儿。
+   * 量过：375px 屏上面板占掉右边 260px，正文只剩最左边 115px。
+   *
+   * 句摘那边的「编辑」仍然会收起面板 —— 那个动作是要在正文里改东西，
+   * 面板挡着就没法改了，跟这里不是一回事。
+   */
   const handleScrollToWord = useCallback((pageId: string, anchorId: string) => {
     setScrollTarget({ pageId, anchorId })
-    setActivePanel(null)
   }, [])
 
   const handleEditSentence = useCallback((sentence: Sentence) => {

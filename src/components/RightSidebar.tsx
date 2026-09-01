@@ -1,4 +1,6 @@
 import { memo, useState, useEffect } from 'react'
+import { useSpeak } from '../hooks/useSpeak'
+import { usePrefetchAudio } from '../hooks/usePrefetchAudio'
 import { PanelRightClose, BookOpen, ChevronRight, Trash2, Wand2, Undo2, X } from 'lucide-react'
 import type { Sentence } from '../types'
 import { AutoMark } from './AutoMark'
@@ -174,6 +176,11 @@ interface VocabCardProps {
   onToggle: () => void
   onScrollToWord: (pageId: string, anchorId: string) => void
   onDeleteVocab: (pageId: string, anchorId: string) => void
+  /** 这台手机读不出声就是 false，那就只跳转、不发声 */
+  canSpeak: boolean
+  /** 正在读的是不是这一条 */
+  speaking: boolean
+  onSpeak: () => void
 }
 
 /**
@@ -182,7 +189,17 @@ interface VocabCardProps {
  * 做成和句摘卡一样「点一下展开」：短语一行放不下就省略号，点卡片看全。
  * 和句摘卡同一条规矩 —— **装得下就根本不给点**，免得点了个寂寞还撑高一截。
  */
-function VocabCard({ item, alt, isActive, onToggle, onScrollToWord, onDeleteVocab }: VocabCardProps) {
+function VocabCard({
+  item,
+  alt,
+  isActive,
+  onToggle,
+  onScrollToWord,
+  onDeleteVocab,
+  canSpeak,
+  speaking,
+  onSpeak
+}: VocabCardProps) {
   // 只有短语才可能放不下；单个词永远是一行，测了也永远是 false
   const phrase = useIsClamped<HTMLButtonElement>(!isActive, item.word)
   const canExpand = !!item.isPhrase && (isActive || phrase.clamped)
@@ -208,12 +225,16 @@ function VocabCard({ item, alt, isActive, onToggle, onScrollToWord, onDeleteVoca
           <button
             type="button"
             onClick={(e) => {
-              // 点词是「跳到文中」，别连带把卡片展开了
+              // 点词是「跳到文中 + 读出来」，别连带把卡片展开了
               e.stopPropagation()
               onScrollToWord(item.pageId, item.anchorId)
+              if (canSpeak) onSpeak()
             }}
             ref={phrase.ref}
-            className={`font-lyric-en font-serif text-amber-800 font-bold text-base text-left hover:underline decoration-amber-600 decoration-2 underline-offset-2 rounded focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-400 ${
+            className={`font-lyric-en font-serif font-bold text-base text-left hover:underline decoration-amber-600 decoration-2 underline-offset-2 rounded focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-400 transition-colors ${
+              // 正在读的那个亮起来，和复习页同一套反馈
+              speaking ? 'text-amber-500' : 'text-amber-800'
+            } ${
               item.isPhrase
                 ? // 短语：一行放不下就省略号，点卡片展开看全。
                   // 这里**必须允许收缩**（min-w-0）—— 从前和单词一样写着 shrink-0，
@@ -222,7 +243,11 @@ function VocabCard({ item, alt, isActive, onToggle, onScrollToWord, onDeleteVoca
                 : // 单个词不收缩，免得旁边的音标把它挤扁。词短，挤得下
                   'shrink-0'
             }`}
-            title={`跳到「${item.word}」在文中的位置`}
+            title={
+              canSpeak
+                ? `读出「${item.word}」并跳到它在文中的位置`
+                : `跳到「${item.word}」在文中的位置`
+            }
           >
             {item.word}
             {item.auto && <AutoMark />}
@@ -304,6 +329,21 @@ function RightSidebarInner({
   const [activeSentenceId, setActiveSentenceId] = useState<string | null>(null)
   /** 展开中的生词卡。和句摘一样，同一时间只开一张 */
   const [activeVocabKey, setActiveVocabKey] = useState<string | null>(null)
+
+  /**
+   * 点词读出来，跟复习页是同一套：同时只读一个，正在读的那个亮起来。
+   * 读不出声的手机 canSpeak 就是 false，那就只跳转、不发声。
+   */
+  const { canSpeak, speakingId, speak } = useSpeak()
+
+  /**
+   * 这一篇的发音先备好，省掉每个词第一次点时等开口的那半秒。
+   * 和复习页共用同一个仓库 —— 那边存过的这里直接就有，不会重复联网。
+   */
+  usePrefetchAudio(
+    filtered.map((v) => v.word),
+    canSpeak && tab === 'vocab'
+  )
 
   const folderPercent =
     totalDocsInFolder > 0
@@ -455,6 +495,11 @@ function RightSidebarInner({
                   }
                   onScrollToWord={onScrollToWord}
                   onDeleteVocab={onDeleteVocab}
+                  canSpeak={canSpeak}
+                  speaking={speakingId === `${item.pageId}-${item.anchorId}`}
+                  onSpeak={() =>
+                    speak(`${item.pageId}-${item.anchorId}`, item.word, { lookup: true })
+                  }
                 />
               </li>
             ))}

@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { formatBytes } from './audioCache'
+import { looksLikeMp3 } from './fetchAudio'
 
 /**
  * 预取的测试。
@@ -24,14 +25,17 @@ vi.mock('./audioCache', async (importOriginal) => {
   }
 })
 
-vi.mock('./fetchAudio', () => ({
-  fetchAudioBytes: async (url: string) => {
-    fetched.push(url)
-    if (url.includes('zzqwmbl')) throw new Error('没有')
-    return new ArrayBuffer(8)
-  },
-  NoRecording: class extends Error {}
-}))
+vi.mock('./fetchAudio', async (importOriginal) => {
+  const real = await importOriginal<typeof import('./fetchAudio')>()
+  return {
+    ...real,
+    fetchAudioBytes: async (url: string) => {
+      fetched.push(url)
+      if (url.includes('zzqwmbl')) throw new Error('没有')
+      return new ArrayBuffer(8)
+    }
+  }
+})
 
 const { prefetchWords, PREFETCH_LIMIT } = await import('./prefetch')
 
@@ -90,5 +94,28 @@ describe('占用写给人看', () => {
     expect(formatBytes(512)).toBe('512B')
     expect(formatBytes(12717)).toBe('12KB')
     expect(formatBytes(6.1 * 1024 * 1024)).toBe('6.1MB')
+  })
+})
+
+describe('只认真正的 mp3', () => {
+  const mp3Id3 = () => new Uint8Array([0x49, 0x44, 0x33, 0x04, 0, 0]).buffer
+  const mp3Sync = () => new Uint8Array([0xff, 0xfb, 0x90, 0x00]).buffer
+  const html = () => new TextEncoder().encode('<!DOCTYPE html>\r\n<html lang="zh-CN">').buffer
+
+  it('ID3 开头的认', () => {
+    expect(looksLikeMp3(mp3Id3())).toBe(true)
+  })
+
+  it('帧同步开头的也认', () => {
+    expect(looksLikeMp3(mp3Sync())).toBe(true)
+  })
+
+  it('网页不认 —— 转发没配好时它是 200，光看状态码会把它当录音存下来', () => {
+    expect(looksLikeMp3(html())).toBe(false)
+  })
+
+  it('空的、太短的不认', () => {
+    expect(looksLikeMp3(new ArrayBuffer(0))).toBe(false)
+    expect(looksLikeMp3(new Uint8Array([0xff]).buffer)).toBe(false)
   })
 })
