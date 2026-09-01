@@ -234,10 +234,16 @@ function VocabularyDashboardInner({
    */
   const sortable = isEditMode && reviewTarget?.type === 'page' && !!onReorder
   /**
-   * 能不能左滑删除。**和拖拽排序同一个条件** —— 文库复习那边一张卡是
-   * 好几条标注合并出来的，删它等于一次删好几条，而且看不见删了哪几条。
+   * 能不能左滑删除。
+   *
+   * **编辑模式内外都给。** 一开始只在编辑模式里，结果真机上很难划出来 ——
+   * 那时候卡片正中间整条带子是输入框。挡输入框那条后来收窄了，
+   * 但**非编辑模式下压根没有输入框**，那边天生就顺手，没有理由不给。
+   *
+   * 「文库复习不给」这条**保留**：那边一张卡是按拼写把好几条标注合并出来的，
+   * 删它等于一次删好几条，而且看不见删了哪几条。和拖拽排序在那边被禁掉同一个理由。
    */
-  const swipable = isEditMode && reviewTarget?.type === 'page' && !!onDeleteAnnotation
+  const swipable = reviewTarget?.type === 'page' && !!onDeleteAnnotation
 
   const sensors = useSensors(
     // 激活阈值很小，安全性来自「必须按住手柄」这一事实（和左侧栏同一套做法）
@@ -637,6 +643,8 @@ function SortableCardInner({
       type="button"
       className="shrink-0 -ml-1 p-1 rounded text-stone-300 hover:text-ink cursor-grab active:cursor-grabbing"
       style={{ touchAction: 'none' }}
+      // 手柄有自己的手势，左滑删除那层要放它过去（见 SwipeToDelete）
+      data-no-swipe=""
       aria-label="拖动调整顺序"
       {...attributes}
       {...listeners}

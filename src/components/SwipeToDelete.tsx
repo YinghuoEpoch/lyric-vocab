@@ -76,8 +76,28 @@ export function SwipeToDelete({
   const offset = dragOffset ?? (open ? -REVEAL_PX : 0)
 
   const onPointerDown = useCallback((e: React.PointerEvent) => {
-    // 手柄、朗读按钮、编辑模式下的输入框都不能被滑动抢走
-    if ((e.target as HTMLElement).closest('button, input, textarea, select, a')) return
+    const target = e.target as HTMLElement
+
+    /*
+     * 只挡两种，别再多挡了。
+     *
+     * **第一版把 button / input / textarea 全挡掉，结果真机上「划了一点反应都没有」。**
+     * 编辑模式下卡片正中间那条带子全是输入框（音标、释义、词性）加朗读按钮 ——
+     * 量过：卡片上 15 个探测点有 9 个落在这些元素上，手指自然按下去几乎必然被挡。
+     *
+     * 浏览器里没发现，是因为当时把事件直接打在卡片外层的 div 上，绕开了所有子元素。
+     * **测手势要打在手指真正会碰到的那个元素上。**
+     */
+
+    // 1. 拖拽手柄有自己的手势（dnd-kit + touch-action: none），不能两边抢
+    if (target.closest('[data-no-swipe]')) return
+
+    // 2. 正在编辑的那一格：横着拖是在挪光标 / 选字，不是要划卡片。
+    //    没聚焦的格子照样能划 —— 那时候横拖没有别的含义
+    const field = target.closest('input, textarea')
+    if (field && document.activeElement === field) return
+
+    // 按钮不挡：只有走够 8px 才会接管，点一下照样是点一下
     start.current = { x: e.clientX, y: e.clientY }
     engaged.current = null
     swiped.current = false
@@ -125,13 +145,23 @@ export function SwipeToDelete({
 
   return (
     <div className="relative overflow-hidden rounded-xl">
-      {/* 删除区躺在卡片底下，卡片滑开才露出来 */}
-      <div className="absolute inset-y-0 right-0 flex" style={{ width: REVEAL_PX }}>
+      {/*
+        红色这层**铺满整张卡底下**，不是只占右边那 88px。
+
+        只占右边的话，卡片滑开时它的**圆角**会在接缝处露出一弯底色 ——
+        卡片是 rounded-xl，右边缘是弧的，而红块的左边是直的，两者贴不上。
+        铺满就没有接缝可言：卡片让开多少，露出来的就是多少红色。
+        （红色被外层的 rounded-xl + overflow-hidden 一起裁圆，四角跟着卡片走。）
+
+        按钮本身还是只有 88px，靠右站着。
+      */}
+      <div className="absolute inset-0 flex justify-end bg-red-500">
         <button
           type="button"
           onClick={onDelete}
           aria-label={deleteLabel}
-          className="flex-1 flex flex-col items-center justify-center gap-1 bg-red-500 text-white text-xs font-medium active:bg-red-600"
+          style={{ width: REVEAL_PX }}
+          className="flex flex-col items-center justify-center gap-1 text-white text-xs font-medium active:bg-red-600"
         >
           <Trash2 className="w-4 h-4" />
           删除
