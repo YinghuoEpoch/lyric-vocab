@@ -143,19 +143,35 @@ export function SwipeToDelete({
     setDragOffset(null)
   }, [onOpenChange])
 
+  /** 静止收着的时候根本不画红色那层 —— 画了也只会从圆角缝里透出来 */
+  const revealing = open || dragOffset !== null
+
   return (
-    <div className="relative overflow-hidden rounded-xl">
+    /*
+     * **手机上不裁，宽屏上裁。**
+     *
+     * 卡片往左滑时，`overflow-hidden` 是在**卡片自己的边界**上裁的 ——
+     * 看起来像卡片左边被一口口啃掉，而不是滑出去。手机上是单列，
+     * 让它滑出去就好，外面那层容器自然会在屏幕边缘裁断，那才是「被推出去」的样子。
+     *
+     * 宽屏（sm 起）一行有 2～4 张卡，不裁的话滑动的这张会盖到左边邻居身上，
+     * 所以那边仍旧裁。
+     */
+    <div className="relative overflow-visible sm:overflow-hidden rounded-xl">
       {/*
         红色这层**铺满整张卡底下**，不是只占右边那 88px。
 
         只占右边的话，卡片滑开时它的**圆角**会在接缝处露出一弯底色 ——
         卡片是 rounded-xl，右边缘是弧的，而红块的左边是直的，两者贴不上。
         铺满就没有接缝可言：卡片让开多少，露出来的就是多少红色。
-        （红色被外层的 rounded-xl + overflow-hidden 一起裁圆，四角跟着卡片走。）
 
-        按钮本身还是只有 88px，靠右站着。
+        自己带 `rounded-xl`，不靠外层去裁 —— 手机上外层是不裁的（见上面）。
+
+        **静止时干脆不画。** 两个同样大小、同样圆角的方块叠在一起，
+        边角上总会因为抗锯齿透出一丝红边（用户报的「边角没被盖全」就是它）。
+        与其去凑那一个像素，不如没在滑的时候根本不画。
       */}
-      <div className="absolute inset-0 flex justify-end bg-red-500">
+      <div className={`absolute inset-0 flex justify-end rounded-xl bg-red-500 ${revealing ? '' : 'hidden'}`}>
         <button
           type="button"
           onClick={onDelete}
