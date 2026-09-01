@@ -6,6 +6,7 @@ import {
   BookOpen,
   Brain,
   MoreHorizontal,
+  Plus,
   Pencil,
   Trash2,
   RotateCcw,
@@ -556,16 +557,28 @@ function LeftSidebarInner({
       <div className="shrink-0 p-3 border-b border-paper-border flex items-center justify-between gap-2">
         <span className="text-sm font-medium text-ink-muted tracking-wide">我的文库</span>
         <div className="flex items-center gap-1">
+          {/*
+            照右侧栏那颗「AI 划词」的样子做：图标 + 文字、不描边、hover 才出底色、
+            text-sm。从前是个 42×26 描边的小文字按钮，和旁边那枚纯图标按钮凑不成一对
+            （见 后续规划.md 第三十五节）。现在全 App 的次级操作是同一套长相。
+
+            图标用 GripVertical —— 就是点开之后每一行右边冒出来的那个拖拽手柄，
+            按钮和它要你干的事用同一个图案。
+
+            但它和「AI 划词」有一处必须不同：整理是**模式开关**，会一直亮着，
+            所以留着填色的选中态；AI 划词是一次性动作，没有「开着」这回事。
+          */}
           <button
             type="button"
             onClick={toggleOrganizeMode}
-            className={`px-2 py-1 rounded-lg text-xs font-medium border transition-colors ${
+            className={`flex items-center gap-1 px-2 py-[5px] rounded-lg text-sm font-medium transition-colors ${
               organizeMode
-                ? 'bg-amber-600 border-amber-600 text-white'
-                : 'border-stone-300 text-ink-muted hover:bg-stone-100 hover:text-ink'
+                ? 'bg-amber-600 text-white'
+                : 'text-ink-muted hover:bg-stone-100 hover:text-amber-700'
             }`}
             title="整理文库与文档顺序"
           >
+            <GripVertical className="w-3.5 h-3.5 shrink-0" />
             整理
           </button>
         </div>
@@ -1032,13 +1045,24 @@ function LeftSidebarInner({
             <button
               type="button"
               onClick={onAddBook}
-              // pl-9 是量出来的：文库行前面有个折叠三角（12px 图标 + 内外边距共 24px），
-              // 照 px-3 排的话这一行整体比文库行左移 24px，两列图标对不齐。
-              // 加上之后图标落在 x=44、文字落在 x=68，和文库行分毫不差
-              className="mt-1 flex w-full items-center gap-2 rounded-xl py-3.5 pl-9 pr-3 text-left text-ink-muted transition-colors hover:bg-stone-100 hover:text-ink"
+              // py-3.5 而不是照抄文库行的 py-2.5：文库行里还挂着一个 p-1.5 的「更多」按钮
+              // 把行撑到 49px，这一行没有，照抄只有 40px、看着矮一截。
+              // 14px 上下留白凑出 48px，和文库行差 1px，顺带够到安卓的最小触摸目标
+              className="flex w-full items-center gap-1 rounded-xl px-3 py-3.5 text-left text-ink-muted transition-colors hover:bg-stone-100 hover:text-ink"
             >
-              <FolderPlus className="w-4 h-4 shrink-0" aria-hidden />
-              <span className="text-sm">新建文库</span>
+              {/*
+                左边这个加号占的是文库行「折叠三角」那一格。
+                原来这行只有图标加文字、左边空着一格，看着**飘**（用户的原话）——
+                列表里每一行都是「三段」，只有它是两段，那一竖列就断了。
+                填上之后三条竖线全对齐：加号 x=20、文件夹 x=44、文字 x=68。
+              */}
+              <span className="p-1 shrink-0" aria-hidden>
+                <Plus className="w-3 h-3" />
+              </span>
+              <span className="flex-1 min-w-0 flex items-center gap-2">
+                <FolderPlus className="w-4 h-4 shrink-0" aria-hidden />
+                <span className="text-sm leading-snug">新建文库</span>
+              </span>
             </button>
           )}
             </div>
