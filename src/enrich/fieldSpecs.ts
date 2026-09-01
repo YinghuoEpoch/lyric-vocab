@@ -12,8 +12,20 @@
 /** 音标 */
 export const PHONETIC_SPEC = `国际音标，两侧带斜杠，例如 /stʊd/。按该词在上下文中的实际读音标注。`
 
-/** 词性 */
-export const POS_SPEC = `词性缩写，用中文习惯写法，例如 n. / v. / adj. / adv. / prep. / conj.`
+/**
+ * 词性。
+ *
+ * **这一格必须先定，释义跟着它走。** 从前这里只说了「写成 n. / v. 这种缩写」，
+ * 一个字没提上下文 —— 模型于是按词典词条的主词性填，
+ * `what fetters my fate` 里的 `fetters` 明明是动词，却被填成了 `n.`（羁绊）。
+ * 释义那条早就写了「必须结合上下文」，唯独词性漏了，两格于是各说各的。
+ */
+export const POS_SPEC = `词性缩写，用中文习惯写法，例如 n. / v. / adj. / adv. / prep. / conj.
+  **必须是这个词在所给这句话里实际充当的词性**，不是它在词典里最常见的那个词性。
+  同一个拼写在不同句子里词性可能不同，先读懂句子再判断：
+  fetters 在 "what fetters my fate" 中是动词（v.），在 "broke his fetters" 中才是名词（n.）
+  lead 在 "she will lead the team" 中是动词（v.），在 "pipes made of lead" 中是名词（n.）
+  present 在 "he will present it" 中是动词（v.），在 "a birthday present" 中是名词（n.）`
 
 /**
  * 单词释义。两条硬要求：结合上下文选义项、非原形要补出原形。
@@ -22,15 +34,25 @@ export const POS_SPEC = `词性缩写，用中文习惯写法，例如 n. / v. /
 export const DEFINITION_SPEC = `中文释义，简洁。**必须结合上下文选择该处真正的含义**，
   不要罗列多个义项。例如 stood 在 "I never stood up very tall" 中是「站立」，
   而在 "the offer stood" 中是「仍然有效」。
-  **如果这个词不是原形（是过去式、过去分词、现在分词、复数、比较级等变形），
-  就在释义末尾用括号补上原形和变形类型**，例如：
+  上下文不只决定选哪个义项，还可能决定词性：fetters 在 "what fetters my fate" 中
+  是动词「束缚」，而不是名词「羁绊」。
+  **释义必须和 pos 那一格说的词性一致**，两格不许打架 ——
+  先按句子定下词性，再在那个词性底下选义项。
+  **如果这个词不是原形（是过去式、过去分词、现在分词、第三人称单数、复数、
+  比较级、最高级等变形），就在释义末尾用括号补上原形和变形类型**，例如：
   flying -> 飞行；飞翔（fly 现在分词）
   stood -> 站立；挺立（stand 过去式）
   children -> 孩子们（child 复数）
-  本身就是原形的词不要加括号，直接给释义即可。`
+  fetters -> 束缚；禁锢（fetter 第三人称单数）
+  本身就是原形的词不要加括号，直接给释义即可。
+
+  **词尾的 -s 不一定是复数**：动词的第三人称单数也是 -s。
+  是哪一种由句子说了算 —— fetters 在 "what fetters my fate" 里是动词的第三人称单数，
+  在 "he broke his fetters" 里才是名词复数。看错了，词性和释义会一起错。`
 
 /** 原形。目前不显示，留给以后接词典用 */
-export const LEMMA_SPEC = `该词的原形，例如 stood -> stand、bursting -> burst。本身就是原形则原样返回。`
+export const LEMMA_SPEC = `该词的原形，例如 stood -> stand、bursting -> burst。本身就是原形则原样返回。
+  **按它在这句话里的词性还原**：fetters 作动词时还原成动词 fetter，不是名词 fetter。`
 
 /** 短语释义 */
 export const PHRASE_DEFINITION_SPEC = `中文释义，简洁。**必须结合上下文选择该处真正的含义**，不要罗列多个义项。
