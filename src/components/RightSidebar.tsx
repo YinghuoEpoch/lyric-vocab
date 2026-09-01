@@ -6,6 +6,7 @@ import type { Sentence } from '../types'
 import { AutoMark } from './AutoMark'
 import { useIsClamped } from '../hooks/useIsClamped'
 import { EditedMark } from './EditedMark'
+import { BAND_TOP, BAND_SUB } from './chrome'
 
 interface VocabItem {
   word: string
@@ -375,8 +376,7 @@ function RightSidebarInner({
     <aside
       className={`w-[260px] md:w-[350px] h-full shrink-0 border-l border-paper-border bg-white/80 flex flex-col overflow-hidden safe-area-padding ${className}`}
     >
-      <div className="shrink-0 p-3 border-b border-paper-border">
-        <div className="flex items-center justify-between mb-2">
+      <div className={BAND_TOP}>
           <span className="text-sm font-medium text-ink-muted flex items-center gap-2">
             <BookOpen className="w-4 h-4 text-amber-700/80" />
             笔记
@@ -435,15 +435,21 @@ function RightSidebarInner({
               <PanelRightClose className="w-4 h-4" />
             </button>
           </div>
-        </div>
-        <div className="flex rounded-lg border border-stone-200/80 p-0.5 bg-stone-50/80">
+      </div>
+      {/*
+        第二带：和左侧栏的「阅读/复习」、主区的提示条同高（见 chrome.ts）。
+        和那边一样拆掉了「盒中盒」—— 从前是带外框和底色的药丸，在 40px 的带里
+        上下只剩 2px，是全场最挤的一处。现在两个标签直接把整条带撑满。
+      */}
+      <div className={BAND_SUB}>
+        <div className="flex w-full self-stretch">
           <button
             type="button"
             onClick={() => setTab('vocab')}
-            className={`flex-1 py-1.5 text-xs font-medium rounded-md transition-colors ${
+            className={`flex flex-1 items-center justify-center border-b-2 text-sm font-medium transition-colors ${
               tab === 'vocab'
-                ? 'bg-white text-amber-800 shadow-sm border border-stone-200/80'
-                : 'text-ink-muted hover:text-ink'
+                ? 'border-amber-700 text-amber-800'
+                : 'border-transparent text-ink-muted hover:text-ink'
             }`}
           >
             生词
@@ -451,10 +457,10 @@ function RightSidebarInner({
           <button
             type="button"
             onClick={() => setTab('sentences')}
-            className={`flex-1 py-1.5 text-xs font-medium rounded-md transition-colors ${
+            className={`flex flex-1 items-center justify-center border-b-2 text-sm font-medium transition-colors ${
               tab === 'sentences'
-                ? 'bg-white text-amber-800 shadow-sm border border-stone-200/80'
-                : 'text-ink-muted hover:text-ink'
+                ? 'border-amber-700 text-amber-800'
+                : 'border-transparent text-ink-muted hover:text-ink'
             }`}
           >
             句摘

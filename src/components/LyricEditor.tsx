@@ -2,6 +2,7 @@ import { memo, useState, useCallback, useRef, useLayoutEffect, useEffect, useMem
 import { useSpeak } from '../hooks/useSpeak'
 import { tokenizeLine } from '../utils/tokenize'
 import { splitEdgePunctuation, stripEdgePunctuation } from '../utils/punctuation'
+import { BAND_SUB } from './chrome'
 import type { NotesMap, ReaderSettings, Sentence, WordNote } from '../types'
 import type { PhraseView } from '../utils/annotationViews'
 import { X, Trash2 } from 'lucide-react'
@@ -631,7 +632,7 @@ function LyricEditorInner({
   if (editMode) {
     return (
       <div className="flex flex-col h-full overflow-hidden bg-white">
-        <div className="shrink-0 flex items-center justify-between border-b border-gray-200 px-4 py-2 bg-white">
+        <div className={`${BAND_SUB} bg-white`}>
           <span className="text-sm opacity-80">编辑全文</span>
           <button
             type="button"
@@ -673,8 +674,8 @@ function LyricEditorInner({
 
   return (
     <div className="lyric-editor flex flex-col h-full overflow-hidden bg-white">
-      <div className="shrink-0 flex items-center justify-between border-b border-gray-200 px-4 py-2 bg-white">
-        <span className="text-sm opacity-80">{interactionHint}</span>
+      <div className={`${BAND_SUB} bg-white`}>
+        <span className="text-sm opacity-80 truncate">{interactionHint}</span>
         <button
           type="button"
           onClick={() => {

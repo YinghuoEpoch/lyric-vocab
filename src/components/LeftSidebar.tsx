@@ -38,6 +38,7 @@ import { createPortal } from 'react-dom'
 import { SettingsDialog } from './SettingsDialog'
 import { useBackHandler, BackPriority } from '../hooks/useBackHandler'
 import { IMPORT_ACCEPT } from '../importers'
+import { BAND_TOP, BAND_SUB } from './chrome'
 import type { LyricBook, LyricPage, ReaderSettings } from '../types'
 
 export type AppMode = 'read' | 'review'
@@ -554,7 +555,7 @@ function LeftSidebarInner({
 
   return (
     <aside className={`w-[250px] h-full shrink-0 border-r border-paper-border bg-white/80 flex flex-col overflow-hidden safe-area-padding ${className}`}>
-      <div className="shrink-0 p-3 border-b border-paper-border flex items-center justify-between gap-2">
+      <div className={BAND_TOP}>
         <span className="text-sm font-medium text-ink-muted tracking-wide">我的文库</span>
         <div className="flex items-center gap-1">
           {/*
@@ -584,14 +585,21 @@ function LeftSidebarInner({
         </div>
       </div>
 
-      {/* 双模式切换 */}
-      <div className="shrink-0 p-2 border-b border-paper-border">
-        <div className="grid grid-cols-2 gap-1 p-1 rounded-lg bg-stone-100">
+      {/*
+        双模式切换：三列共用的第二带。
+        从前是个带底色的药丸（盒中盒），在 40px 的带里只剩 4px 空气，用户说挤。
+        拆掉外框和底色改成纯文字标签之后，两颗按钮直接把整条带撑满 ——
+        不加高、正文一点不少，点得着的高度反而从 28px 变成整条 40px。
+      */}
+      <div className={BAND_SUB}>
+        <div className="flex w-full self-stretch">
           <button
             type="button"
             onClick={() => onModeChange('read')}
-            className={`flex items-center justify-center gap-1.5 py-2 rounded-md text-sm font-medium transition-colors ${
-              mode === 'read' ? 'bg-white text-amber-800 shadow-sm' : 'text-ink-muted hover:text-ink'
+            className={`flex flex-1 items-center justify-center gap-1.5 border-b-2 text-sm font-medium transition-colors ${
+              mode === 'read'
+                ? 'border-amber-700 text-amber-800'
+                : 'border-transparent text-ink-muted hover:text-ink'
             }`}
           >
             <BookOpen className="w-4 h-4" />
@@ -600,8 +608,10 @@ function LeftSidebarInner({
           <button
             type="button"
             onClick={() => onModeChange('review')}
-            className={`flex items-center justify-center gap-1.5 py-2 rounded-md text-sm font-medium transition-colors ${
-              mode === 'review' ? 'bg-white text-amber-800 shadow-sm' : 'text-ink-muted hover:text-ink'
+            className={`flex flex-1 items-center justify-center gap-1.5 border-b-2 text-sm font-medium transition-colors ${
+              mode === 'review'
+                ? 'border-amber-700 text-amber-800'
+                : 'border-transparent text-ink-muted hover:text-ink'
             }`}
           >
             <Brain className="w-4 h-4" />

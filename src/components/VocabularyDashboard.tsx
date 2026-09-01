@@ -15,6 +15,7 @@ import type { Annotation, AnnotationGroup, LyricPage, Sentence, WordNote } from 
 import { isOrphanAnnotation } from '../types'
 import { annotationToSentence } from '../utils/annotationViews'
 import { AutoMark } from './AutoMark'
+import { BAND_SUB } from './chrome'
 import { EditedMark } from './EditedMark'
 import { AutoTextarea } from './AutoTextarea'
 import { getFolderReviewData } from '../hooks/getFolderReviewData'
@@ -303,7 +304,7 @@ function VocabularyDashboardInner({
   return (
     <div className="flex-1 flex flex-col min-h-0 overflow-hidden bg-paper">
       {/* 背诵遮罩开关 + 词/句切换 */}
-      <div className="shrink-0 flex flex-wrap items-center justify-between gap-2 pl-4 pr-3 py-3 border-b border-paper-border bg-white/80">
+      <div className={`${BAND_SUB} flex-wrap bg-white/80`}>
         <div className="flex flex-wrap items-center gap-2">
           {/* 图标 + 单字，比「隐藏英文」四个字省一半宽度，四种遮罩状态都还在 */}
           <button
