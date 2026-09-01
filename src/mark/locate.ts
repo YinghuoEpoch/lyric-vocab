@@ -1,4 +1,5 @@
 import { buildWordList, getRangeText, type WordRef } from '../utils/reconcile'
+import { stripEdgePunctuation } from '../utils/punctuation'
 import { tokenizeLine } from '../utils/tokenize'
 import type { MarkPick } from './types'
 
@@ -119,8 +120,12 @@ export function locateMarks(
     const startAnchorId = lineWords[i].anchorId
     const endAnchorId = lineWords[j].anchorId
     // 以正文为准取原文：AI 给的大小写、标点都可能不一致
+    // 一键划词只出「单词」和「短语」，从不出句摘 —— 所以多词的一律剥掉两头的标点，
+    // 带着句号引号存进去，拿去词典查真人录音会查不到
     const text =
-      i === j ? lineWords[i].word : getRangeText(content, words, startAnchorId, endAnchorId)
+      i === j
+        ? lineWords[i].word
+        : stripEdgePunctuation(getRangeText(content, words, startAnchorId, endAnchorId))
     const key = normalize(text)
 
     if (taken.has(key)) {

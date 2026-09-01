@@ -1,6 +1,7 @@
 import { memo, useState, useCallback, useRef, useLayoutEffect, useEffect, useMemo } from 'react'
 import { useSpeak } from '../hooks/useSpeak'
 import { tokenizeLine } from '../utils/tokenize'
+import { splitEdgePunctuation, stripEdgePunctuation } from '../utils/punctuation'
 import type { NotesMap, ReaderSettings, Sentence, WordNote } from '../types'
 import type { PhraseView } from '../utils/annotationViews'
 import { X, Trash2 } from 'lucide-react'
@@ -469,7 +470,8 @@ function LyricEditorInner({
       onNoteSave(selection.anchorId, { ...bubbleForm, word: selection.word })
     } else if (rangeKind === 'phrase') {
       onAddPhrase?.({
-        text: selection.text,
+        // 短语不带两头的标点：要拿去词典查真人录音，`he said.` 是查不到的
+        text: stripEdgePunctuation(selection.text),
         definition: phraseForm.definition,
         usage: phraseForm.usage,
         docId: pageId,
@@ -625,18 +627,38 @@ function LyricEditorInner({
         }}
       >
         {lines.map((line, lineIndex) => {
-          const segments = tokenizeLine(line)
+          // 分词之后再把「其它」段两头的标点拆开，句摘那条虚线才盖得住引号句号。
+          // 不拆的话 `. “` 是一整段：整段画线会把前一句的句号也画上，不画又盖不到引号。
+          const segments = splitEdgePunctuation(tokenizeLine(line))
 
           /**
            * 算出这一行里，某个坐标集合覆盖了哪几段（连英文词之间的空格、标点一起算进去）。
            * 句摘（虚线）和短语（实线）各算一份 —— 两条线的画法不同，但覆盖范围的算法一样。
+           *
+           * `withEdges` 决定要不要连两头紧贴的标点一起盖：
+           * 句摘要（存下来的原文就带着引号句号），短语不要（存进去的两头是剥干净的，
+           * 线比字长就对不上了）。
            */
-          const maskFor = (anchorSet: Set<string>): boolean[] => {
-            if (!anchorSet.size) return new Array(segments.length).fill(false)
+          const maskFor = (anchorSet: Set<string>, withEdges: boolean): boolean[] => {
             const mask = new Array(segments.length).fill(false)
+            if (!anchorSet.size) return mask
             let wordIndexForSaved = 0
             let clusterStart: number | null = null
             let clusterEnd: number | null = null
+
+            // 结束当前簇：簇内全部标上；句摘还要把紧贴两头的标点段一并纳入
+            const flush = () => {
+              if (clusterStart === null || clusterEnd === null) return
+              let lo = clusterStart
+              let hi = clusterEnd
+              if (withEdges) {
+                if (lo > 0 && segments[lo - 1].edge === 'open') lo--
+                if (hi < segments.length - 1 && segments[hi + 1].edge === 'close') hi++
+              }
+              for (let k = lo; k <= hi; k++) mask[k] = true
+              clusterStart = null
+              clusterEnd = null
+            }
 
             for (let segIdx = 0; segIdx < segments.length; segIdx++) {
               const seg = segments[segIdx]
@@ -648,28 +670,19 @@ function LyricEditorInner({
                     clusterStart = segIdx
                   }
                   clusterEnd = segIdx
-                } else if (clusterStart !== null && clusterEnd !== null) {
-                  // 结束当前簇：将该簇内的所有 segment 标记为句摘范围
-                  for (let k = clusterStart; k <= clusterEnd; k++) {
-                    mask[k] = true
-                  }
-                  clusterStart = null
-                  clusterEnd = null
+                } else {
+                  flush()
                 }
                 wordIndexForSaved++
               }
             }
             // 行尾仍有未结束的簇
-            if (clusterStart !== null && clusterEnd !== null) {
-              for (let k = clusterStart; k <= clusterEnd; k++) {
-                mask[k] = true
-              }
-            }
+            flush()
             return mask
           }
 
-          const savedSegmentMask = maskFor(savedSentenceAnchorSet)
-          const phraseSegmentMask = maskFor(savedPhraseAnchorSet)
+          const savedSegmentMask = maskFor(savedSentenceAnchorSet, true)
+          const phraseSegmentMask = maskFor(savedPhraseAnchorSet, false)
 
           let wordIndex = 0
 
@@ -827,7 +840,12 @@ function LyricEditorInner({
           >
             <div className="flex items-start justify-between gap-3 mb-3">
               <span className="font-lyric-en font-serif text-amber-800 font-bold text-lg leading-snug min-w-0 break-words">
-                {selection.type === 'word' ? selection.word : selection.text}
+                {/* 抽屉顶上显示的就是待会儿存进去的那一份：切到「短语」时两头的标点先剥掉 */}
+                {selection.type === 'word'
+                  ? selection.word
+                  : rangeKind === 'phrase'
+                    ? stripEdgePunctuation(selection.text)
+                    : selection.text}
               </span>
               <button
                 type="button"

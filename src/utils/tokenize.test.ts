@@ -162,13 +162,13 @@ describe('划句子时要还原出可读的原文', () => {
   it('但不会把后面另一句话吞进来', () => {
     const line = 'I saw him. 3 dogs came'
     const w = buildWordList(line)
-    // 划到 him 为止，不该把后面的 3 dogs came 带上
-    expect(getRangeText(line, w, 'L0W0', 'L0W2')).toBe('I saw him')
+    // 划到 him 为止：句号紧贴着 him，跟着走；后面的 3 dogs came 隔着空格，不带
+    expect(getRangeText(line, w, 'L0W0', 'L0W2')).toBe('I saw him.')
   })
 
-  it('标点与原始空格照样保留', () => {
-    expect(rangeText('Hello, world!')).toBe('Hello, world')
-    expect(rangeText('Wait — really?')).toBe('Wait — really')
+  it('标点与原始空格照样保留（句末那个也在，见 punctuation.ts）', () => {
+    expect(rangeText('Hello, world!')).toBe('Hello, world!')
+    expect(rangeText('Wait — really?')).toBe('Wait — really?')
   })
 
   it('只截取选中的那一段，两头多余的内容不带进来', () => {

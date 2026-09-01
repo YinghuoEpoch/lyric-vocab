@@ -1,4 +1,5 @@
 import { tokenizeLine } from './tokenize'
+import { leadingClosers, stripEdgePunctuation, trailingOpeners } from './punctuation'
 import type { Annotation } from '../types'
 
 /**
@@ -66,9 +67,15 @@ export function getRangeText(
   if (i === -1 || j === -1) return ''
 
   const [a, b] = i <= j ? [words[i], words[j]] : [words[j], words[i]]
-  const from = a.start - (a.prefix?.length ?? 0)
-  let to = b.end + (b.suffix?.length ?? 0)
   const lines = content ? content.split(/\r?\n/) : ['']
+
+  let from = a.start - (a.prefix?.length ?? 0)
+  let to = b.end + (b.suffix?.length ?? 0)
+
+  // 两头紧贴的标点也算进来。分方向的：往左只吃开头类、往右只吃收尾类，
+  // 所以 `He smiled. “I like...` 从 I 起划只会吃到 `“`，前一句的句号带不进来。
+  from -= trailingOpeners((lines[a.line] ?? '').slice(0, from)).length
+  to += leadingClosers((lines[b.line] ?? '').slice(to)).length
 
   // 结尾若只剩数字和标点（"...hit in 2020"），一并带上。
   // 纯数字不是单词、选不中，范围只能停在 in，不补的话尾巴就没了。
@@ -89,6 +96,23 @@ export function getRangeText(
     .map((p) => p.trim())
     .filter(Boolean)
     .join(' ')
+}
+
+/**
+ * 取一条标注的范围原文。
+ *
+ * 句摘要带上两头的引号句号才算完整；**短语不能带** —— 短语要拿去词典查真人录音，
+ * `he said.` 这样带着句号是查不到的，整条会白白落回机器音。
+ */
+function rangeTextFor(
+  a: Annotation,
+  content: string,
+  words: WordRef[],
+  startAnchorId: string,
+  endAnchorId: string
+): string {
+  const text = getRangeText(content, words, startAnchorId, endAnchorId)
+  return a.type === 'phrase' ? stripEdgePunctuation(text) : text
 }
 
 /**
@@ -393,7 +417,7 @@ export function reconcileAnnotations(
     if (a.sourceText) {
       const revived = locateText(newList, a.sourceText, claimedWords)
       if (revived && revived.start !== revived.end) {
-        const text = getRangeText(newContent, newList, revived.start, revived.end)
+        const text = rangeTextFor(a, newContent, newList, revived.start, revived.end)
         kept.push({ ...stripSource(a), start: revived.start, end: revived.end, text })
         changed = true
         continue
@@ -425,7 +449,7 @@ export function reconcileAnnotations(
      * `a.sourceText ?? a.text`：只有第一次缩的时候才记，之后再怎么改都不动 ——
      * 记的必须是最初那一句，不是上一次缩完的样子。
      */
-    const text = getRangeText(newContent, newList, nextStart, nextEnd)
+    const text = rangeTextFor(a, newContent, newList, nextStart, nextEnd)
     const source = a.sourceText ?? a.text
     // 缩完又正好和原句一致（比如删了又加回来）：那就不是「改过」了，记号去掉
     kept.push(text === source ? { ...stripSource(a), start: nextStart, end: nextEnd, text }
@@ -454,7 +478,7 @@ export function reconcileAnnotations(
       claimedWords.add(found.start)
       kept.push({ ...base, start: found.start, end: found.end })
     } else {
-      const text = getRangeText(newContent, newList, found.start, found.end)
+      const text = rangeTextFor(a, newContent, newList, found.start, found.end)
       kept.push({ ...base, start: found.start, end: found.end, text })
     }
     changed = true
