@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { ChevronRight, Settings as SettingsIcon, X } from 'lucide-react'
 import { AiSettingsPanel } from './AiSettingsPanel'
+import { cacheStats, clearCache, formatBytes, type CacheStats } from '../speech/audioCache'
 import { UserGuide } from './UserGuide'
 import { AGREEMENT_CLAUSES, AGREEMENT_TITLE } from '../agreement'
 import { describeTarget, loadConfig, resolveConfig, type AiConfig } from '../enrich'
@@ -106,6 +107,8 @@ export function SettingsDialog({
   /** 正在看使用说明 */
   const [showGuide, setShowGuide] = useState(false)
   const backupInputRef = useRef<HTMLInputElement>(null)
+  /** 存了多少发音。打开设置页时读一次就够，不用一直盯着 */
+  const [audioStats, setAudioStats] = useState<CacheStats | null>(null)
 
   useEffect(() => {
     if (open) {
@@ -113,6 +116,8 @@ export function SettingsDialog({
       setEditingAi(false)
       setShowAgreement(false)
       setShowGuide(false)
+      setAudioStats(null)
+      void cacheStats().then(setAudioStats)
     }
   }, [open])
 
@@ -278,6 +283,33 @@ export function SettingsDialog({
                 <p className="text-xs text-ink-muted leading-relaxed">
                   「一键填充」和「一键划词」共用这一份配置。Key 只存在这台手机上，
                   不会上传，也不会写进导出的备份文件。
+                </p>
+              </Section>
+
+              <Section title="发音">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="flex-1 min-w-0 text-sm text-ink">
+                    {audioStats === null
+                      ? '正在统计…'
+                      : audioStats.count === 0
+                        ? '还没存下任何发音'
+                        : `已存 ${audioStats.count} 个发音，占 ${formatBytes(audioStats.bytes)}`}
+                  </span>
+                  <button
+                    type="button"
+                    disabled={!audioStats || audioStats.count === 0}
+                    onClick={async () => {
+                      await clearCache()
+                      setAudioStats(await cacheStats())
+                    }}
+                    className="shrink-0 h-9 px-3 rounded-lg border border-paper-border bg-white text-sm text-ink hover:bg-stone-100 disabled:opacity-40"
+                  >
+                    清空
+                  </button>
+                </div>
+                <p className="text-xs text-ink-muted leading-relaxed">
+                  单词和短语读过一次就存在这台手机上，之后不用联网、也没有等开口的停顿。
+                  清空只是删掉存的录音，笔记一条都不会动，下次点还会重新取。
                 </p>
               </Section>
 

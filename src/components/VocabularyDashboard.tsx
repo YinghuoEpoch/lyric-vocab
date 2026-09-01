@@ -19,6 +19,7 @@ import { EditedMark } from './EditedMark'
 import { AutoTextarea } from './AutoTextarea'
 import { getFolderReviewData } from '../hooks/getFolderReviewData'
 import { useSpeak } from '../hooks/useSpeak'
+import { usePrefetchAudio } from '../hooks/usePrefetchAudio'
 
 export type ReviewTarget =
   | { type: 'page'; id: string }
@@ -250,6 +251,15 @@ function VocabularyDashboardInner({
     onVocabCountChange?.(reviewMode === 'vocab' ? totalCards : totalSentenceCards)
   }, [totalCards, totalSentenceCards, reviewMode, onVocabCountChange])
 
+  /**
+   * 这一页的发音先悄悄备好，省掉每个词第一次点时等开口的那半秒。
+   * 和上面那个 useEffect 一样，必须待在提前 return 之前。
+   */
+  usePrefetchAudio(
+    grouped.flatMap((g) => g.items.map((i) => i.word)),
+    canSpeak && reviewMode === 'vocab'
+  )
+
   if (!reviewTarget) {
     return (
       <div className="flex-1 flex flex-col items-center justify-center text-ink-muted bg-paper">
@@ -391,7 +401,7 @@ function VocabularyDashboardInner({
                           dragHandle={handle}
                           canSpeak={canSpeak}
                           speaking={speakingId === item.id}
-                          onSpeak={() => speak(item.id, item.word)}
+                          onSpeak={() => speak(item.id, item.word, { lookup: true })}
                         />
                       )}
                     </SortableCard>

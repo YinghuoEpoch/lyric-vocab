@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { createHumanFirstSpeaker } from './humanFirst'
-import { dictAudioUrl, isSingleWord, AMERICAN, BRITISH } from './dictAudio'
+import { dictAudioUrl, isLookupWorthy, AMERICAN, BRITISH } from './dictAudio'
 import type { DictPlayer, Speaker } from './types'
 
 /**
@@ -55,7 +55,7 @@ function fakes() {
 describe('先真人，不行再机器', () => {
   it('单个词先去取真人录音，不惊动系统朗读', async () => {
     const f = fakes()
-    const done = f.speaker.speak('stumble')
+    const done = f.speaker.speak('stumble', { lookup: true })
     f.finishPlay()
     await done
     expect(f.log).toContain('放:stumble')
@@ -64,17 +64,33 @@ describe('先真人，不行再机器', () => {
 
   it('词典里没有就退回系统朗读，用户那边照样出声', async () => {
     const f = fakes()
-    const done = f.speaker.speak('zzqwmbl')
+    const done = f.speaker.speak('zzqwmbl', { lookup: true })
     f.failPlay()
     await done
     expect(f.log).toContain('念:zzqwmbl')
   })
 
-  it('整句不查词典，直接念 —— 查了也是白跑一趟', async () => {
+  it('句摘卡说了不查，就直接念 —— 词典里没有整句', async () => {
     const f = fakes()
-    await f.speaker.speak('He stumbled over a stone.')
+    await f.speaker.speak('He stumbled over a stone.', { lookup: false })
     expect(f.log.some((l) => l.startsWith('放:'))).toBe(false)
     expect(f.log).toContain('念:He stumbled over a stone.')
+  })
+
+  it('短语也去查词典 —— 词典里 give up 这类是有录音的', async () => {
+    const f = fakes()
+    const done = f.speaker.speak('give up', { lookup: true })
+    f.finishPlay()
+    await done
+    expect(f.log).toContain('放:give up')
+    expect(f.log.some((l) => l.startsWith('念:'))).toBe(false)
+  })
+
+  it('调用处没说要查，就一个字也不查', async () => {
+    const f = fakes()
+    await f.speaker.speak('stumble')
+    expect(f.log.some((l) => l.startsWith('放:'))).toBe(false)
+    expect(f.log).toContain('念:stumble')
   })
 
   it('语速照旧传给系统朗读', async () => {
@@ -87,13 +103,13 @@ describe('先真人，不行再机器', () => {
       cancel: () => {}
     }
     const player: DictPlayer = { play: () => Promise.reject(new Error('没有')), cancel: () => {} }
-    await createHumanFirstSpeaker(system, player).speak('zzqwmbl', { rate: 0.85 })
+    await createHumanFirstSpeaker(system, player).speak('zzqwmbl', { rate: 0.85, lookup: true })
     expect(log).toEqual(['zzqwmbl@0.85'])
   })
 
   it('按停之后不许把刚停下的词再念一遍', async () => {
     const f = fakes()
-    const done = f.speaker.speak('stumble')
+    const done = f.speaker.speak('stumble', { lookup: true })
     f.speaker.cancel()
     // 叫停时放录音那边算正常结束，所以这里已经没得可拒。
     // 但万一将来它改成「被叫停就报错」，也绝不能因此补念一遍 —— 号已经走过一格了
@@ -104,8 +120,8 @@ describe('先真人，不行再机器', () => {
 
   it('取录音的空当里点了别的词，前一个不许插进来念', async () => {
     const f = fakes()
-    const first = f.speaker.speak('stumble')
-    const second = f.speaker.speak('serendipity')
+    const first = f.speaker.speak('stumble', { lookup: true })
+    const second = f.speaker.speak('serendipity', { lookup: true })
     // 点第二个词时第一次播放已被叫停（正常结束），第二个还挂着。
     // 让第二个报错：该落回系统朗读的是第二个词，第一个不许冒出来
     f.failPlay()
@@ -116,27 +132,31 @@ describe('先真人，不行再机器', () => {
 
   it('换一个词时，上一次的录音和上一句都要停掉', async () => {
     const f = fakes()
-    void f.speaker.speak('stumble')
-    void f.speaker.speak('serendipity')
+    void f.speaker.speak('stumble', { lookup: true })
+    void f.speaker.speak('serendipity', { lookup: true })
     expect(f.log.filter((l) => l === '停放').length).toBeGreaterThanOrEqual(2)
     expect(f.log).toContain('停念')
   })
 })
 
-describe('查不查词典', () => {
-  it('单个词才查', () => {
-    expect(isSingleWord('stumble')).toBe(true)
-    expect(isSingleWord('  stumble  ')).toBe(true)
+describe('值不值得查词典', () => {
+  it('单词查', () => {
+    expect(isLookupWorthy('stumble')).toBe(true)
+    expect(isLookupWorthy('  stumble  ')).toBe(true)
   })
 
-  it('带空格的一律不查 —— 词典里没有整句', () => {
-    expect(isSingleWord('give up')).toBe(false)
-    expect(isSingleWord('He stumbled.')).toBe(false)
+  it('短语也查 —— 词典里收固定搭配', () => {
+    expect(isLookupWorthy('give up')).toBe(true)
+    expect(isLookupWorthy('look forward to')).toBe(true)
+  })
+
+  it('长得不像词条的就别白跑一趟了', () => {
+    expect(isLookupWorthy('He stumbled over a stone in the dark.')).toBe(false)
   })
 
   it('空的不查', () => {
-    expect(isSingleWord('')).toBe(false)
-    expect(isSingleWord('   ')).toBe(false)
+    expect(isLookupWorthy('')).toBe(false)
+    expect(isLookupWorthy('   ')).toBe(false)
   })
 })
 

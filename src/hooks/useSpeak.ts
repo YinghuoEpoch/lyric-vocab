@@ -18,7 +18,7 @@ export function useSpeak() {
   useEffect(() => () => speaker?.cancel(), [speaker])
 
   const speak = useCallback(
-    (id: string, text: string) => {
+    (id: string, text: string, options: { lookup?: boolean } = {}) => {
       if (!speaker) return
       const mine = ++ticket.current
 
@@ -31,10 +31,12 @@ export function useSpeak() {
 
       setError(null)
       setSpeakingId(id)
-      // 单个词读慢一点更听得清；整句按正常语速
+      // 单个词读慢一点更听得清；整句按正常语速。
+      // 放真人录音时这个语速用不上（录音本来就是人正常语速念的），
+      // 只有退回机器音那条路才会用到
       const rate = text.trim().includes(' ') ? 1 : 0.85
       void speaker
-        .speak(text, { rate })
+        .speak(text, { rate, lookup: options.lookup })
         .catch((e) => {
           if (ticket.current !== mine) return
           setError(
