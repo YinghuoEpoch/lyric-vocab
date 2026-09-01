@@ -2,6 +2,8 @@ import { Capacitor } from '@capacitor/core'
 import type { Speaker } from './types'
 import { createWebSpeaker, isWebSpeechAvailable } from './webSpeech'
 import { createNativeSpeaker, openVoiceInstall } from './nativeSpeech'
+import { createDictPlayer } from './dictAudio'
+import { createHumanFirstSpeaker } from './humanFirst'
 
 /**
  * 朗读层入口。界面只跟这里打交道：问一句「能不能读」，要一个朗读器。
@@ -10,6 +12,10 @@ import { createNativeSpeaker, openVoiceInstall } from './nativeSpeech'
  * 不是两套都留着好玩 —— 安卓 WebView 没有网页版朗读接口（手机 Chrome 有，
  * WebView 没有），所以 App 里必须用原生插件；而开发时在电脑浏览器里调界面，
  * 那边没有原生插件，只能用网页版。两条路都收在这一个文件里，界面无需知道。
+ *
+ * **这两条都是「合成」，嗓子好不好看手机脸色。** 所以外面再包一层：
+ * 单个词先取词典里人录的发音，取不到才落回合成（humanFirst.ts）。
+ * 包在这里而不是改界面 —— 界面照旧只管「要一个朗读器」。
  */
 
 function useNative(): boolean {
@@ -22,8 +28,13 @@ export function isSpeechAvailable(): boolean {
 
 /** 拿一个朗读器；这台设备两条路都走不通才返回 null */
 export function createSpeaker(): Speaker | null {
-  if (useNative()) return createNativeSpeaker()
-  return isWebSpeechAvailable() ? createWebSpeaker() : null
+  const system = useNative()
+    ? createNativeSpeaker()
+    : isWebSpeechAvailable()
+      ? createWebSpeaker()
+      : null
+  if (!system) return null
+  return createHumanFirstSpeaker(system, createDictPlayer())
 }
 
 /**
