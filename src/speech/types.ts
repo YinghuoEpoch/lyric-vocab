@@ -12,6 +12,19 @@ export interface Speaker {
   cancel(): void
 }
 
+/**
+ * 放一段词典里人录好的发音。
+ *
+ * 和 Speaker 分开是因为它做的是另一件事：Speaker 是「把文字合成出来」，
+ * 这里是「把现成的录音放出来」，而且**可能压根没有这个词的录音**（那就抛错）。
+ */
+export interface DictPlayer {
+  /** 放这个词的录音；放完（或被叫停）才结束，没有录音则抛错 */
+  play(word: string): Promise<void>
+  /** 立刻停下 */
+  cancel(): void
+}
+
 export interface SpeakOptions {
   /** 语速，1 是正常。单个单词读慢一点更听得清 */
   rate?: number
