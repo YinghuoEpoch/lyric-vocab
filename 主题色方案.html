@@ -1,0 +1,184 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>主题色方案</title>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@600&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  *{box-sizing:border-box}
+  body{margin:0;padding:18px 0 70px;background:#eceae6;color:#2c2c2c;
+       font-family:Inter,-apple-system,'PingFang SC','Microsoft YaHei',sans-serif;font-size:15px}
+  .wrap{padding:0 16px;max-width:1400px;margin:0 auto}
+  h1{font-size:20px;margin:0 0 5px}
+  .lede{color:#5c5c5c;font-size:13.5px;margin:0 0 16px;line-height:1.6}
+  .ctrl{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:18px;position:sticky;top:0;
+        background:#eceae6;padding:10px 0;z-index:5;border-bottom:1px solid #ddd9d3}
+  .ctrl button{font:inherit;font-size:13.5px;padding:7px 15px;border-radius:99px;cursor:pointer;
+        border:1px solid #cfcbc4;background:#fff;color:#3f3f3f}
+  .ctrl button[aria-pressed="true"]{background:#2c2c2c;color:#fff;border-color:#2c2c2c}
+  .ctrl .sep{width:1px;background:#d6d2cb;margin:2px 4px}
+
+  .rail{display:flex;gap:18px;overflow-x:auto;padding:4px 0 18px;scroll-snap-type:x proximity}
+  .col{flex:none;scroll-snap-align:start}
+  .cap{display:flex;align-items:center;gap:8px;margin:0 0 8px 2px}
+  .cap .dot{width:13px;height:13px;border-radius:50%}
+  .cap .nm{font-weight:600;font-size:14.5px}
+  .cap .tg{font-size:11px;color:#6b6b6b;border:1px solid #d6d2cb;border-radius:99px;padding:1px 7px}
+  .why{font-size:12px;color:#6b6b6b;margin:0 0 9px 2px;width:375px;line-height:1.55}
+
+  /* ── 手机 ── */
+  .phone{width:375px;height:700px;border-radius:24px;overflow:hidden;
+         border:1px solid #d6d2cb;box-shadow:0 6px 20px rgba(0,0,0,.09);
+         display:flex;flex-direction:column;background:var(--paper)}
+  .bar{flex:none;display:flex;align-items:center;justify-content:space-between;gap:8px;
+       min-height:44px;padding:0 12px;border-bottom:1px solid #e5e3df;background:#fff}
+  .band{flex:none;display:flex;align-items:center;justify-content:space-between;gap:8px;
+        min-height:40px;padding:0 12px;border-bottom:1px solid #e5e3df;background:rgba(255,255,255,.8)}
+  .scroll{flex:1;overflow:hidden;padding:16px 14px;background:var(--paper)}
+  .ttl{font-size:15.5px;color:#3f3f3f}
+  .ico{color:#5c5c5c;font-size:17px;line-height:1}
+  .pen{display:inline-flex;align-items:center;justify-content:center;width:32px;height:32px;
+       border-radius:9px;background:var(--c100);color:var(--c700);font-size:15px}
+  .grp{display:flex;align-items:center;gap:13px}
+  .eye{display:inline-flex;align-items:center;gap:4px;font-size:14px;color:#5c5c5c}
+  .ai{display:inline-flex;align-items:center;gap:4px;font-size:14px;font-weight:500;color:var(--c700)}
+  .tab{font-size:14px;color:#5c5c5c}
+  .tab.on{color:var(--c700);font-weight:600;border-bottom:2px solid var(--c500);padding-bottom:2px}
+
+  .doc{display:flex;align-items:center;gap:7px;font-size:14.5px;font-weight:600;color:#3f3f3f;margin-bottom:11px}
+  .doc small{font-weight:400;color:#8a8a8a}
+  .card{border:1px solid #e7e5e4;background:#fff;border-radius:12px;padding:13px;
+        box-shadow:0 1px 2px rgba(0,0,0,.05);margin-bottom:11px;position:relative;min-height:96px}
+  .word{font-family:'Playfair Display',Georgia,serif;font-size:23px;color:var(--c800);line-height:1.2}
+  .ipa{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:13px;color:#78716c;font-style:italic;margin-top:3px}
+  .def{font-size:14px;color:#3f3f3f;border-top:1px solid #f0efed;margin-top:9px;padding-top:8px}
+  .pos{position:absolute;top:12px;right:12px;font-size:11.5px;color:#57534e;
+       background:#f5f5f4;border:1px solid #e7e5e4;border-radius:99px;padding:2px 9px}
+
+  /* 阅读屏 */
+  .read{font-size:17px;line-height:1.95;color:#2c2c2c;padding:10px 12px}
+  .read u{text-decoration:none;border-bottom:2px solid var(--c500);padding-bottom:1px}
+  .read .sn{border-bottom:2px dashed var(--c400)}
+  .hint{font-size:13.5px;color:#5c5c5c}
+  .act{font-size:14px;color:#5c5c5c}
+
+  .foot{margin-top:22px;padding-top:16px;border-top:1px solid #ddd9d3;color:#5c5c5c;font-size:13px;line-height:1.7}
+  .foot b{color:#2c2c2c}
+  code{background:#e3e0da;padding:1px 5px;border-radius:4px;font-size:12px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>主题色方案</h1>
+  <p class="lede">五个颜色，整屏对照，横着划着看。上面可以切「复习页 / 阅读页」和三种纸色 —— 变的只有强调色。</p>
+
+  <div class="ctrl">
+    <button data-scr="review" aria-pressed="true">复习页</button>
+    <button data-scr="read" aria-pressed="false">阅读页</button>
+    <span class="sep"></span>
+    <button data-paper="#ffffff" aria-pressed="false">标准</button>
+    <button data-paper="#f8f9f8" aria-pressed="false">青灰</button>
+    <button data-paper="#fffefc" aria-pressed="true">暖白</button>
+  </div>
+
+  <div class="rail" id="rail"></div>
+
+  <div class="foot">
+    <p><b>怎么改</b>：把代码里 119 处 <code>amber-N</code> 换成 <code>accent-N</code>，色阶写进 <code>tailwind.config.js</code>。改完以后再想换色只动配置一处 —— 和上次那个 <code>hover:</code> 变体一个路子。</p>
+    <p><b>范围</b>：只动强调色，三种纸色不受影响。</p>
+    <p><b>我看不出来的</b>：这几个色在你手机屏幕上的实际观感 —— 屏幕色温差别不小，松绿和石墨尤其。</p>
+  </div>
+</div>
+
+<script>
+const OPTS = [
+  { nm:'琥珀', tg:'现在', why:'暖、纸感强。缺点是和「AI 填充」那种提示性的黄容易混在一起。',
+    c:{100:'#fef3c7',400:'#fbbf24',500:'#f59e0b',700:'#b45309',800:'#92400e'} },
+  { nm:'墨蓝', tg:'像钢笔', why:'最像用钢笔写在纸上。冷色，和三种纸色都不打架，下划线看着像批注不像高亮。',
+    c:{100:'#e0e7ff',400:'#818cf8',500:'#6366f1',700:'#4338ca',800:'#3730a3'} },
+  { nm:'松绿', tg:'配青灰', why:'和「青灰」那档纸色同一个色系，最协调；在暖白上偏冷，会有点跳。',
+    c:{100:'#ccfbf1',400:'#2dd4bf',500:'#14b8a6',700:'#0f766e',800:'#115e59'} },
+  { nm:'朱红', tg:'像朱批', why:'最醒目，像老师的红笔。生词多的时候满屏是红，看久了累。',
+    c:{100:'#ffe4e6',400:'#fb7185',500:'#f43f5e',700:'#be123c',800:'#9f1239'} },
+  { nm:'石墨', tg:'无彩', why:'不用颜色，只用深浅。最安静，但「哪些词标过」的辨识度也最低。',
+    c:{100:'#f5f5f4',400:'#a8a29e',500:'#78716c',700:'#44403c',800:'#292524'} }
+];
+
+const WORDS = [
+  ['stood','/stʊd/','站立；挺立（stand 过去式）','v.'],
+  ['stumble','/ˈstʌmbl/','绊倒；跌跌撞撞','v.'],
+  ['learned','/lɜːrnd/','学会；得知（learn 过去式）','v.'],
+  ['bursting','/ˈbɜːrstɪŋ/','爆开；满溢（burst 现在分词）','v.']
+];
+
+const screenReview = () => `
+  <div class="bar">
+    <span class="ico">☰</span>
+    <span class="ttl">Wish My Life Away (5)</span>
+    <span class="pen">✎</span>
+  </div>
+  <div class="band">
+    <span class="grp"><span class="eye">👁 英</span><span class="eye">👁 中</span></span>
+    <span class="grp"><span class="ai">✧ AI 填充 1</span><span class="tab on">词</span></span>
+  </div>
+  <div class="scroll">
+    <div class="doc">📄 Wish My Life Away <small>(5)</small></div>
+    ${WORDS.map(w=>`
+      <div class="card">
+        <span class="pos">${w[3]}</span>
+        <div class="word">${w[0]}</div>
+        <div class="ipa">${w[1]}</div>
+        <div class="def">${w[2]}</div>
+      </div>`).join('')}
+  </div>`;
+
+const screenRead = () => `
+  <div class="bar">
+    <span class="ico">☰</span>
+    <span class="ttl">Wish My Life Away</span>
+    <span class="ico">◧</span>
+  </div>
+  <div class="band">
+    <span class="hint">阅读模式 · 长按单词添加笔记</span>
+    <span class="act">编辑全文</span>
+  </div>
+  <div class="scroll">
+    <div class="read">
+      He <u>stood</u> at the window and <u>learned</u> to<br>
+      <span class="sn">wish his whole life away</span>, the light<br>
+      <u>bursting</u> through as he began to <u>stumble</u><br>
+      toward whatever came next.
+      <br><br>
+      他站在窗前，学会了把一生都<br>许愿许掉。
+    </div>
+  </div>`;
+
+let scr = 'review', paper = '#fffefc';
+
+function render(){
+  document.getElementById('rail').innerHTML = OPTS.map(o=>{
+    const vars = Object.entries(o.c).map(([k,v])=>`--c${k}:${v}`).join(';');
+    return `<div class="col">
+      <div class="cap"><span class="dot" style="background:${o.c[700]}"></span>
+        <span class="nm">${o.nm}</span><span class="tg">${o.tg}</span></div>
+      <div class="why">${o.why}</div>
+      <div class="phone" style="${vars};--paper:${paper}">
+        ${scr==='review'?screenReview():screenRead()}
+      </div>
+    </div>`;
+  }).join('');
+}
+
+document.querySelector('.ctrl').addEventListener('click', e=>{
+  const b = e.target.closest('button'); if(!b) return;
+  if(b.dataset.scr){ scr=b.dataset.scr;
+    document.querySelectorAll('[data-scr]').forEach(x=>x.setAttribute('aria-pressed', String(x===b))); }
+  if(b.dataset.paper){ paper=b.dataset.paper;
+    document.querySelectorAll('[data-paper]').forEach(x=>x.setAttribute('aria-pressed', String(x===b))); }
+  render();
+});
+render();
+</script>
+</body>
+</html>
