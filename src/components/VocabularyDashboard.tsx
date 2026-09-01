@@ -20,6 +20,7 @@ import { AutoTextarea } from './AutoTextarea'
 import { getFolderReviewData } from '../hooks/getFolderReviewData'
 import { useSpeak } from '../hooks/useSpeak'
 import { usePrefetchAudio } from '../hooks/usePrefetchAudio'
+import { SwipeToDelete } from './SwipeToDelete'
 
 export type ReviewTarget =
   | { type: 'page'; id: string }
@@ -68,6 +69,13 @@ export interface VocabularyDashboardProps {
    * 文库复习的条目是合并出来的，没有对应的标注可写回。
    */
   onReorder?: (docId: string, group: AnnotationGroup, ids: string[]) => void
+  /**
+   * 删除一条笔记（左滑露出的那颗按钮）。
+   *
+   * 和拖拽排序同一个范围：**只在单篇文档的复习里**。文库复习的卡片是按拼写
+   * 合并出来的，一张卡背后可能是好几条标注，滑掉它等于一次删好几条。
+   */
+  onDeleteAnnotation?: (id: string) => void
   /** 打开「一键填充」对话框；范围就是当前复习的文档或文库 */
   onOpenAutoFill?: () => void
   /** 当前范围内还有多少条空白笔记；为 0 时不显示填充按钮（没什么可填的） */
@@ -85,11 +93,14 @@ function VocabularyDashboardInner({
   onVocabCountChange,
   onOpenAutoFill,
   autoFillCount = 0,
-  onReorder
+  onReorder,
+  onDeleteAnnotation
 }: VocabularyDashboardProps) {
   const [hideEnglish, setHideEnglish] = useState(false)
   const [hideChinese, setHideChinese] = useState(false)
   const [reviewMode, setReviewMode] = useState<'vocab' | 'sentence'>('vocab')
+  /** 左滑露出删除的那张卡。同时只开一张，不然满屏都是红按钮 */
+  const [swipedId, setSwipedId] = useState<string | null>(null)
 
   /**
    * 点词 / 点句读出来。这台手机不支持朗读时 canSpeak 为 false，喇叭就不画。
@@ -222,6 +233,11 @@ function VocabularyDashboardInner({
    * - 平时不开，免得翻卡片时误拖
    */
   const sortable = isEditMode && reviewTarget?.type === 'page' && !!onReorder
+  /**
+   * 能不能左滑删除。**和拖拽排序同一个条件** —— 文库复习那边一张卡是
+   * 好几条标注合并出来的，删它等于一次删好几条，而且看不见删了哪几条。
+   */
+  const swipable = isEditMode && reviewTarget?.type === 'page' && !!onDeleteAnnotation
 
   const sensors = useSensors(
     // 激活阈值很小，安全性来自「必须按住手柄」这一事实（和左侧栏同一套做法）
@@ -250,6 +266,12 @@ function VocabularyDashboardInner({
   useEffect(() => {
     onVocabCountChange?.(reviewMode === 'vocab' ? totalCards : totalSentenceCards)
   }, [totalCards, totalSentenceCards, reviewMode, onVocabCountChange])
+
+  // 退出编辑模式、换一篇、切到句摘那边：滑开的那张收回去，
+  // 不然红按钮会一直挂在那儿，下次进来还开着
+  useEffect(() => {
+    setSwipedId(null)
+  }, [isEditMode, reviewTarget?.id, reviewMode])
 
   /**
    * 这一页的发音先悄悄备好，省掉每个词第一次点时等开口的那半秒。
@@ -392,17 +414,26 @@ function VocabularyDashboardInner({
                   {group.items.map((item) => (
                     <SortableCard key={item.id} id={item.id} sortable={sortable}>
                       {(handle) => (
-                        <VocabCard
-                          item={item}
-                          hideEnglish={hideEnglish}
-                          hideChinese={hideChinese}
-                          isEditMode={isEditMode}
-                          onUpdateWord={onUpdateWord}
-                          dragHandle={handle}
-                          canSpeak={canSpeak}
-                          speaking={speakingId === item.id}
-                          onSpeak={() => speak(item.id, item.word, { lookup: true })}
-                        />
+                        <MaybeSwipe
+                          swipable={swipable}
+                          id={item.id}
+                          deleteLabel={`删除「${item.word}」这条笔记`}
+                          openId={swipedId}
+                          onOpenIdChange={setSwipedId}
+                          onDelete={(id) => onDeleteAnnotation?.(id)}
+                        >
+                          <VocabCard
+                            item={item}
+                            hideEnglish={hideEnglish}
+                            hideChinese={hideChinese}
+                            isEditMode={isEditMode}
+                            onUpdateWord={onUpdateWord}
+                            dragHandle={handle}
+                            canSpeak={canSpeak}
+                            speaking={speakingId === item.id}
+                            onSpeak={() => speak(item.id, item.word, { lookup: true })}
+                          />
+                        </MaybeSwipe>
                       )}
                     </SortableCard>
                   ))}
@@ -428,17 +459,26 @@ function VocabularyDashboardInner({
                   {group.items.map((item) => (
                     <SortableCard key={item.id} id={item.id} sortable={sortable}>
                       {(handle) => (
-                        <SentenceCard
-                          item={item}
-                          hideEnglish={hideEnglish}
-                          hideChinese={hideChinese}
-                          isEditMode={isEditMode}
-                          onUpdateSentence={onUpdateSentence}
-                          dragHandle={handle}
-                          canSpeak={canSpeak}
-                          speaking={speakingId === item.id}
-                          onSpeak={() => speak(item.id, item.text)}
-                        />
+                        <MaybeSwipe
+                          swipable={swipable}
+                          id={item.id}
+                          deleteLabel="删除这条句摘"
+                          openId={swipedId}
+                          onOpenIdChange={setSwipedId}
+                          onDelete={(id) => onDeleteAnnotation?.(id)}
+                        >
+                          <SentenceCard
+                            item={item}
+                            hideEnglish={hideEnglish}
+                            hideChinese={hideChinese}
+                            isEditMode={isEditMode}
+                            onUpdateSentence={onUpdateSentence}
+                            dragHandle={handle}
+                            canSpeak={canSpeak}
+                            speaking={speakingId === item.id}
+                            onSpeak={() => speak(item.id, item.text)}
+                          />
+                        </MaybeSwipe>
                       )}
                     </SortableCard>
                   ))}
@@ -518,6 +558,42 @@ function CardGrid({
         <div className={GRID_CLASS}>{children}</div>
       </SortableContext>
     </DndContext>
+  )
+}
+
+/**
+ * 可滑就套一层，不可滑就原样放行。
+ *
+ * 不做成「一直套着、靠 props 关掉」—— 那样非编辑模式下每张卡都白白多两层 div
+ * 和一串指针事件监听，一页上百张卡不划算。
+ */
+function MaybeSwipe({
+  swipable,
+  id,
+  deleteLabel,
+  openId,
+  onOpenIdChange,
+  onDelete,
+  children
+}: {
+  swipable: boolean
+  id: string
+  deleteLabel: string
+  openId: string | null
+  onOpenIdChange: (id: string | null) => void
+  onDelete: (id: string) => void
+  children: React.ReactNode
+}) {
+  if (!swipable) return <>{children}</>
+  return (
+    <SwipeToDelete
+      open={openId === id}
+      onOpenChange={(open) => onOpenIdChange(open ? id : null)}
+      onDelete={() => onDelete(id)}
+      deleteLabel={deleteLabel}
+    >
+      {children}
+    </SwipeToDelete>
   )
 }
 
