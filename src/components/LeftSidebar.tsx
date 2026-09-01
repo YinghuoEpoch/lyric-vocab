@@ -6,6 +6,7 @@ import {
   BookOpen,
   Brain,
   MoreHorizontal,
+  Plus,
   Pencil,
   Trash2,
   RotateCcw,
@@ -556,25 +557,29 @@ function LeftSidebarInner({
       <div className="shrink-0 p-3 border-b border-paper-border flex items-center justify-between gap-2">
         <span className="text-sm font-medium text-ink-muted tracking-wide">我的文库</span>
         <div className="flex items-center gap-1">
+          {/*
+            照右侧栏那颗「AI 划词」的样子做：图标 + 文字、不描边、hover 才出底色、
+            text-sm。从前是个 42×26 描边的小文字按钮，和旁边那枚纯图标按钮凑不成一对
+            （见 后续规划.md 第三十五节）。现在全 App 的次级操作是同一套长相。
+
+            图标用 GripVertical —— 就是点开之后每一行右边冒出来的那个拖拽手柄，
+            按钮和它要你干的事用同一个图案。
+
+            但它和「AI 划词」有一处必须不同：整理是**模式开关**，会一直亮着，
+            所以留着填色的选中态；AI 划词是一次性动作，没有「开着」这回事。
+          */}
           <button
             type="button"
             onClick={toggleOrganizeMode}
-            className={`px-2 py-1 rounded-lg text-xs font-medium border transition-colors ${
+            className={`flex items-center gap-1 px-2 py-[5px] rounded-lg text-sm font-medium transition-colors ${
               organizeMode
-                ? 'bg-amber-600 border-amber-600 text-white'
-                : 'border-stone-300 text-ink-muted hover:bg-stone-100 hover:text-ink'
+                ? 'bg-amber-600 text-white'
+                : 'text-ink-muted hover:bg-stone-100 hover:text-amber-700'
             }`}
             title="整理文库与文档顺序"
           >
+            <GripVertical className="w-3.5 h-3.5 shrink-0" />
             整理
-          </button>
-          <button
-            type="button"
-            onClick={onAddBook}
-            className="p-2 rounded-lg hover:bg-stone-100 text-ink-muted hover:text-ink transition-colors"
-            title="新建文库"
-          >
-            <FolderPlus className="w-4 h-4" />
           </button>
         </div>
       </div>
@@ -1019,6 +1024,47 @@ function LeftSidebarInner({
               )
             })}
           </SortableContext>
+
+          {/*
+           * 「新建文库」放在文库列表的末尾，而不是顶栏。
+           *
+           * 从前它在顶栏，是个**纯图标**按钮，挨着「整理」那个有框有字的按钮 ——
+           * 两个不是一类的东西并排：一个 42×26 有边框有文字，一个 32×32 无边框
+           * 只有图标；语义也不是一类（整理是模式开关，新建是一次性动作）。
+           * 而且它的说明全写在 title 里，**手机上没有 hover，title 根本不存在**，
+           * 等于一个哑谜 —— 这个坑第十九节（底部五个图标）和第二十二节（魔杖）
+           * 已经各踩过一次，这是漏网的第三个。
+           *
+           * 挪到列表末尾：创建的入口贴着被创建的东西，是最好猜的位置；
+           * 顺带有了文字，也有了够手指点的高度（量出来 48px，正好是安卓的最小推荐值；
+           * 顶栏那个只有 32px）。
+           *
+           * 整理模式下不显示 —— 那会儿在拖拽排序，新建是另一码事。
+           */}
+          {!organizeMode && (
+            <button
+              type="button"
+              onClick={onAddBook}
+              // py-3.5 而不是照抄文库行的 py-2.5：文库行里还挂着一个 p-1.5 的「更多」按钮
+              // 把行撑到 49px，这一行没有，照抄只有 40px、看着矮一截。
+              // 14px 上下留白凑出 48px，和文库行差 1px，顺带够到安卓的最小触摸目标
+              className="flex w-full items-center gap-1 rounded-xl px-3 py-3.5 text-left text-ink-muted transition-colors hover:bg-stone-100 hover:text-ink"
+            >
+              {/*
+                左边这个加号占的是文库行「折叠三角」那一格。
+                原来这行只有图标加文字、左边空着一格，看着**飘**（用户的原话）——
+                列表里每一行都是「三段」，只有它是两段，那一竖列就断了。
+                填上之后三条竖线全对齐：加号 x=20、文件夹 x=44、文字 x=68。
+              */}
+              <span className="p-1 shrink-0" aria-hidden>
+                <Plus className="w-3 h-3" />
+              </span>
+              <span className="flex-1 min-w-0 flex items-center gap-2">
+                <FolderPlus className="w-4 h-4 shrink-0" aria-hidden />
+                <span className="text-sm leading-snug">新建文库</span>
+              </span>
+            </button>
+          )}
             </div>
 
             {/* 底部版权信息：始终贴住目录滚动区域底部 */}

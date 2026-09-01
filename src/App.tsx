@@ -1297,6 +1297,7 @@ export default function App() {
             onVocabCountChange={setReviewVocabCount}
             onDeleteAnnotation={handleDeleteAnnotationById}
             onOpenAutoFill={autoFill.openDialog}
+            autoFillOpen={autoFill.open}
             autoFillCount={autoFill.pendingWords + autoFill.pendingPhrases + autoFill.pendingSentences}
           />
         )}
@@ -1316,6 +1317,7 @@ export default function App() {
             onScrollToWord={handleScrollToWord}
             onScrollToSentence={handleScrollToSentence}
             onAutoMark={currentPageId ? autoMark.openDialog : undefined}
+            autoMarkOpen={autoMark.open}
             markOutcome={markOutcome}
             onUndoMark={handleUndoMark}
             onDismissMark={autoMark.dismissOutcome}

@@ -78,6 +78,8 @@ export interface VocabularyDashboardProps {
   onDeleteAnnotation?: (id: string) => void
   /** 打开「一键填充」对话框；范围就是当前复习的文档或文库 */
   onOpenAutoFill?: () => void
+  /** 填充弹窗是否开着：开着时这颗按钮保持「按下」的样子（仅限没有空白卡片那一档）*/
+  autoFillOpen?: boolean
   /** 当前范围内还有多少条空白笔记；为 0 时不显示填充按钮（没什么可填的） */
   autoFillCount?: number
   [key: string]: any
@@ -92,6 +94,7 @@ function VocabularyDashboardInner({
   onUpdateSentence,
   onVocabCountChange,
   onOpenAutoFill,
+  autoFillOpen = false,
   autoFillCount = 0,
   onReorder,
   onDeleteAnnotation
@@ -339,10 +342,28 @@ function VocabularyDashboardInner({
               /* 视觉微调：它和旁边三个按钮尺寸本来完全一致（32px），
                  但实心底色让它读起来像一个「物体」，另外三个只是「文字」，
                  于是显得更大更重。把盒子和图标各收一点，找回平衡。 */
+              /*
+                补上 hover:text-amber-700 —— 从前这颗只有底色变、字不变，
+                和生词板那颗「AI 划词」凑不成一对。
+
+                按下去的反馈不写在这儿：`hover:` 这个变体本身已经被改成
+                「鼠标悬停 **或** 正按着」两条都出（见 tailwind.config.js），
+                所以这几行同时也是手指按住时的样子 —— 平时白底琥珀字，
+                有空白卡片时琥珀底再深一格。
+
+                **弹窗开着期间保持按下的样子，只给「没有空白卡片」那一档。**
+                和「AI 划词」同理：点完就弹窗，光靠「正按着」只会唰地亮一下又暗回去。
+                而这一档本来就和「AI 划词」长得一模一样，理应一起动。
+
+                有空白卡片那一档不掺和 —— 它亮着琥珀色另有含义（还差几条没填全），
+                再叠一层「弹窗开着」就读不清是哪个意思了。
+              */
               className={`flex items-center gap-1 px-2 py-[5px] rounded-lg text-sm font-medium transition-colors ${
                 autoFillCount > 0
-                  ? 'bg-amber-600 hover:bg-amber-700 text-white'
-                  : 'text-ink-muted hover:bg-stone-100'
+                  ? 'bg-amber-600 text-white hover:bg-amber-700'
+                  : `hover:bg-stone-100 hover:text-amber-700 ${
+                      autoFillOpen ? 'bg-stone-100 text-amber-700' : 'text-ink-muted'
+                    }`
               }`}
               title={
                 autoFillCount > 0
