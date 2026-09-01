@@ -568,14 +568,6 @@ function LeftSidebarInner({
           >
             整理
           </button>
-          <button
-            type="button"
-            onClick={onAddBook}
-            className="p-2 rounded-lg hover:bg-stone-100 text-ink-muted hover:text-ink transition-colors"
-            title="新建文库"
-          >
-            <FolderPlus className="w-4 h-4" />
-          </button>
         </div>
       </div>
 
@@ -1019,6 +1011,36 @@ function LeftSidebarInner({
               )
             })}
           </SortableContext>
+
+          {/*
+           * 「新建文库」放在文库列表的末尾，而不是顶栏。
+           *
+           * 从前它在顶栏，是个**纯图标**按钮，挨着「整理」那个有框有字的按钮 ——
+           * 两个不是一类的东西并排：一个 42×26 有边框有文字，一个 32×32 无边框
+           * 只有图标；语义也不是一类（整理是模式开关，新建是一次性动作）。
+           * 而且它的说明全写在 title 里，**手机上没有 hover，title 根本不存在**，
+           * 等于一个哑谜 —— 这个坑第十九节（底部五个图标）和第二十二节（魔杖）
+           * 已经各踩过一次，这是漏网的第三个。
+           *
+           * 挪到列表末尾：创建的入口贴着被创建的东西，是最好猜的位置；
+           * 顺带有了文字，也有了够手指点的高度（量出来 48px，正好是安卓的最小推荐值；
+           * 顶栏那个只有 32px）。
+           *
+           * 整理模式下不显示 —— 那会儿在拖拽排序，新建是另一码事。
+           */}
+          {!organizeMode && (
+            <button
+              type="button"
+              onClick={onAddBook}
+              // pl-9 是量出来的：文库行前面有个折叠三角（12px 图标 + 内外边距共 24px），
+              // 照 px-3 排的话这一行整体比文库行左移 24px，两列图标对不齐。
+              // 加上之后图标落在 x=44、文字落在 x=68，和文库行分毫不差
+              className="mt-1 flex w-full items-center gap-2 rounded-xl py-3.5 pl-9 pr-3 text-left text-ink-muted transition-colors hover:bg-stone-100 hover:text-ink"
+            >
+              <FolderPlus className="w-4 h-4 shrink-0" aria-hidden />
+              <span className="text-sm">新建文库</span>
+            </button>
+          )}
             </div>
 
             {/* 底部版权信息：始终贴住目录滚动区域底部 */}
