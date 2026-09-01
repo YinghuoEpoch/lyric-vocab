@@ -58,7 +58,6 @@ interface LyricEditorProps {
     endAnchorId: string
   }) => void
   /** 待编辑的句子（从右侧栏点击编辑按钮时传入） */
-  pendingSentenceEdit?: Sentence | null
   /** 删除句摘 */
   onDeleteSentence?: (startAnchorId: string, endAnchorId: string) => void
   /** 当前文档下已保存的短语（正文里画一条连续实线） */
@@ -106,7 +105,6 @@ function LyricEditorInner({
   onNoteSave,
   onNoteDelete,
   onAddSentence,
-  pendingSentenceEdit,
   onDeleteSentence,
   phrases,
   onAddPhrase,
@@ -309,34 +307,6 @@ function LyricEditorInner({
   useEffect(() => {
     clearAll()
   }, [pageId, clearAll])
-
-  // 响应从右侧栏点击编辑按钮：打开句子编辑弹窗
-  useEffect(() => {
-    if (!pendingSentenceEdit || pendingSentenceEdit.docId !== pageId) return
-
-    // 构建 SentenceSelection
-    const text = getRangeText(pendingSentenceEdit.startAnchorId, pendingSentenceEdit.endAnchorId)
-    setSelection({
-      type: 'sentence',
-      startAnchorId: pendingSentenceEdit.startAnchorId,
-      endAnchorId: pendingSentenceEdit.endAnchorId,
-      text
-    })
-
-    // 预填充表单
-    setSentenceForm({
-      grammar: pendingSentenceEdit.grammar || '',
-      meaning: pendingSentenceEdit.meaning || ''
-    })
-
-    // 打开底部抽屉（句子模式）—— 从右侧栏点进来的一定是句摘，不走「按长度猜」
-    setRangeKind('sentence')
-    setFullMode('sentence')
-
-    // 清空 pendingSentenceEdit，避免重复触发
-    // 注意：这里不能直接调用 setPendingSentenceEdit，因为它是从 props 传入的
-    // 需要在 App.tsx 中清空，但我们可以通过一个标记来避免重复处理
-  }, [pendingSentenceEdit, pageId, getRangeText])
 
   const sentenceRangeAnchorSet = useMemo(() => {
     if (!selection || selection.type !== 'sentence') return new Set<string>()

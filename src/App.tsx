@@ -165,7 +165,6 @@ export default function App() {
   const [reviewEditMode, setReviewEditMode] = useState(false)
   const [activePanel, setActivePanel] = useState<ActivePanel>(null)
   const [scrollTarget, setScrollTarget] = useState<{ pageId: string; anchorId: string } | null>(null)
-  const [pendingSentenceEdit, setPendingSentenceEdit] = useState<Sentence | null>(null)
   /** 「原文已删除」确认弹窗；resolve 用于把用户的选择交回给对账流程 */
   const [orphanPrompt, setOrphanPrompt] = useState<{
     words: string[]
@@ -345,13 +344,7 @@ export default function App() {
       el.scrollIntoView({ behavior: 'smooth', block: 'center' })
     }
     setScrollTarget(null)
-    // 如果当前有 pendingSentenceEdit，延迟清空它（等待滚动和弹窗打开完成）
-    if (pendingSentenceEdit) {
-      setTimeout(() => {
-        setPendingSentenceEdit(null)
-      }, 500)
-    }
-  }, [scrollTarget, currentPageId, pendingSentenceEdit])
+  }, [scrollTarget, currentPageId])
 
   const handleAddBook = useCallback(() => {
     void (async () => {
@@ -991,13 +984,15 @@ export default function App() {
     setScrollTarget({ pageId, anchorId })
   }, [])
 
-  const handleEditSentence = useCallback((sentence: Sentence) => {
-    // 1. 设置滚动目标（使用句子的起始 anchorId）
+  /**
+   * 点句摘卡右边那条箭头：跳到这句话在正文里的位置，**只做这一件事**。
+   *
+   * 从前它还顺手收起面板、弹出底部抽屉改语法和翻译。现在和生词卡点词一个规矩 ——
+   * 生词板是一张清单，点条目是去看它在哪，不是去改它。
+   * 改语法和翻译在复习页的句摘卡里（编辑模式），那边两格都能改。
+   */
+  const handleScrollToSentence = useCallback((sentence: Sentence) => {
     setScrollTarget({ pageId: sentence.docId, anchorId: sentence.startAnchorId })
-    // 2. 关闭右侧栏
-    setActivePanel(null)
-    // 3. 设置"待编辑的句子"状态，供 LyricEditor 使用
-    setPendingSentenceEdit(sentence)
   }, [])
 
   const handleDeleteSentence = useCallback(
@@ -1243,7 +1238,6 @@ export default function App() {
                 onNoteSave={handleNoteSave}
                 onNoteDelete={handleNoteDelete}
                 onAddSentence={handleAddSentence}
-                pendingSentenceEdit={pendingSentenceEdit}
                 onDeleteSentence={handleDeleteSentence}
                 phrases={phrasesForCurrent}
                 onAddPhrase={handleAddPhrase}
@@ -1308,7 +1302,7 @@ export default function App() {
             vocab={vocabList}
             sentences={sentences}
             onScrollToWord={handleScrollToWord}
-            onEditSentence={handleEditSentence}
+            onScrollToSentence={handleScrollToSentence}
             onAutoMark={currentPageId ? autoMark.openDialog : undefined}
             markOutcome={markOutcome}
             onUndoMark={handleUndoMark}
