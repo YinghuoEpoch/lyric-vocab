@@ -311,8 +311,17 @@ function VocabularyDashboardInner({
             type="button"
             onClick={() => setHideEnglish((v) => !v)}
             title={hideEnglish ? '显示英文' : '隐藏英文'}
-            className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-sm font-medium transition-colors ${
-              hideEnglish ? 'bg-amber-100 text-amber-800' : 'bg-stone-100 text-ink-muted hover:bg-stone-200'
+            /*
+              **这一行一个实心块都不留。**
+              带只有 40px，塞一个 32px 的实心块进去上下就各剩 4px —— 竖着看很堵，
+              而且不分开着关着：底色一填就堵。所以状态不再靠「填一块底色」表达。
+
+              开着 = 琥珀色的字 + 图标从「睁眼」换成「闭眼」，两个信号叠在一起，
+              比一块底色更好认，还不占竖向空间。
+              （和两个侧栏拆掉「盒中盒」是同一件事，这一行是最后一处。）
+            */
+            className={`flex items-center gap-1 px-2 py-1 rounded-lg text-sm font-medium transition-colors hover:bg-stone-100 ${
+              hideEnglish ? 'text-amber-700' : 'text-ink-muted'
             }`}
           >
             {hideEnglish ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
@@ -322,8 +331,8 @@ function VocabularyDashboardInner({
             type="button"
             onClick={() => setHideChinese((v) => !v)}
             title={hideChinese ? '显示中文' : '隐藏中文'}
-            className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-sm font-medium transition-colors ${
-              hideChinese ? 'bg-amber-100 text-amber-800' : 'bg-stone-100 text-ink-muted hover:bg-stone-200'
+            className={`flex items-center gap-1 px-2 py-1 rounded-lg text-sm font-medium transition-colors hover:bg-stone-100 ${
+              hideChinese ? 'text-amber-700' : 'text-ink-muted'
             }`}
           >
             {hideChinese ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
@@ -340,31 +349,20 @@ function VocabularyDashboardInner({
             <button
               type="button"
               onClick={onOpenAutoFill}
-              /* 视觉微调：它和旁边三个按钮尺寸本来完全一致（32px），
-                 但实心底色让它读起来像一个「物体」，另外三个只是「文字」，
-                 于是显得更大更重。把盒子和图标各收一点，找回平衡。 */
               /*
-                补上 hover:text-amber-700 —— 从前这颗只有底色变、字不变，
-                和生词板那颗「AI 划词」凑不成一对。
+                **整块琥珀底去掉了。** 它是这一行里最重的一块 —— 30px 的实心块塞在
+                40px 的带里上下各剩 5px，用户说的「显挤」主要就是它。
 
-                按下去的反馈不写在这儿：`hover:` 这个变体本身已经被改成
-                「鼠标悬停 **或** 正按着」两条都出（见 tailwind.config.js），
-                所以这几行同时也是手指按住时的样子 —— 平时白底琥珀字，
-                有空白卡片时琥珀底再深一格。
+                「还差几条没填全」改成**琥珀色的字 + 后面直接跟个数字**。
+                中间试过把数字装进一枚小圆点，用户说不用 —— 直接挂着就行，
+                少一层东西也少一处要对齐的地方。
 
-                **弹窗开着期间保持按下的样子，只给「没有空白卡片」那一档。**
-                和「AI 划词」同理：点完就弹窗，光靠「正按着」只会唰地亮一下又暗回去。
-                而这一档本来就和「AI 划词」长得一模一样，理应一起动。
-
-                有空白卡片那一档不掺和 —— 它亮着琥珀色另有含义（还差几条没填全），
-                再叠一层「弹窗开着」就读不清是哪个意思了。
+                按下去的反馈和「弹窗开着一直亮」都还在，只是都改成文字变色，
+                不再靠填底色（`hover:` 这个变体已经被改成「悬停 **或** 正按着」，
+                见 tailwind.config.js）。
               */
-              className={`flex items-center gap-1 px-2 py-[5px] rounded-lg text-sm font-medium transition-colors ${
-                autoFillCount > 0
-                  ? 'bg-amber-600 text-white hover:bg-amber-700'
-                  : `hover:bg-stone-100 hover:text-amber-700 ${
-                      autoFillOpen ? 'bg-stone-100 text-amber-700' : 'text-ink-muted'
-                    }`
+              className={`flex items-center gap-1 px-2 py-1 rounded-lg text-sm font-medium transition-colors hover:bg-stone-100 hover:text-amber-700 ${
+                autoFillCount > 0 || autoFillOpen ? 'text-amber-700' : 'text-ink-muted'
               }`}
               title={
                 autoFillCount > 0
@@ -386,7 +384,7 @@ function VocabularyDashboardInner({
           <button
             type="button"
             onClick={() => setReviewMode((v) => (v === 'vocab' ? 'sentence' : 'vocab'))}
-            className="px-3 py-1.5 rounded-lg text-sm font-medium text-ink-muted hover:bg-stone-100 focus:bg-stone-100 focus:outline-none transition-colors"
+            className="px-2 py-1 rounded-lg text-sm font-medium text-ink-muted hover:bg-stone-100 focus:bg-stone-100 focus:outline-none transition-colors"
           >
             {reviewMode === 'vocab' ? '词' : '句'}
           </button>
