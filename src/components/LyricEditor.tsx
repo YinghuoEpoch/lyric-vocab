@@ -1,4 +1,5 @@
 import { memo, useState, useCallback, useRef, useLayoutEffect, useEffect, useMemo } from 'react'
+import { useSpeak } from '../hooks/useSpeak'
 import { tokenizeLine } from '../utils/tokenize'
 import type { NotesMap, ReaderSettings, Sentence, WordNote } from '../types'
 import type { PhraseView } from '../utils/annotationViews'
@@ -362,6 +363,18 @@ function LyricEditorInner({
     return set
   }, [sentences, orderedWords])
 
+  /**
+   * 正文里长按一个词，顺带读出来。
+   *
+   * **只在「第一次长按、进入单词模式」那一下读**（下面第 1 种情况）。
+   * 接着点第二个词是在连成短语或句子，那时候读一个词没有意义，也吵 ——
+   * 用户明确要的就是这条界线。
+   *
+   * 词典里没有的词会退回机器音，和别处一样；读不出声的手机就是不响，
+   * 长按取词本身不受影响。
+   */
+  const { speak } = useSpeak()
+
   /** 长按取词：支持「词 → 句摘 → 修正范围」，始终使用底部抽屉 */
   const openWordDrawer = useCallback(
     (anchorId: string, word: string) => {
@@ -375,6 +388,7 @@ function LyricEditorInner({
         )
         setSelection({ type: 'word', anchorId, word })
         setFullMode('word') // 打开底部抽屉（音标 / 词性 / 释义）
+        speak(anchorId, word, { lookup: true })
         return
       }
 
@@ -397,7 +411,7 @@ function LyricEditorInner({
         openRange(startAnchorId, endAnchorId, getRangeText(startAnchorId, endAnchorId))
       }
     },
-    [selection, notes, normalizeRange, getRangeText, clearAll, openRange]
+    [selection, notes, normalizeRange, getRangeText, clearAll, openRange, speak]
   )
 
   /**
