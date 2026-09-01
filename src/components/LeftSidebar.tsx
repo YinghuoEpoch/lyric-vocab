@@ -585,14 +585,21 @@ function LeftSidebarInner({
         </div>
       </div>
 
-      {/* 双模式切换：三列共用的第二带 */}
+      {/*
+        双模式切换：三列共用的第二带。
+        从前是个带底色的药丸（盒中盒），在 40px 的带里只剩 4px 空气，用户说挤。
+        拆掉外框和底色改成纯文字标签之后，两颗按钮直接把整条带撑满 ——
+        不加高、正文一点不少，点得着的高度反而从 28px 变成整条 40px。
+      */}
       <div className={BAND_SUB}>
-        <div className="grid w-full grid-cols-2 gap-1 p-0.5 rounded-lg bg-stone-100">
+        <div className="flex w-full self-stretch">
           <button
             type="button"
             onClick={() => onModeChange('read')}
-            className={`flex items-center justify-center gap-1.5 py-1 rounded-md text-sm font-medium transition-colors ${
-              mode === 'read' ? 'bg-white text-amber-800 shadow-sm' : 'text-ink-muted hover:text-ink'
+            className={`flex flex-1 items-center justify-center gap-1.5 border-b-2 text-sm font-medium transition-colors ${
+              mode === 'read'
+                ? 'border-amber-700 text-amber-800'
+                : 'border-transparent text-ink-muted hover:text-ink'
             }`}
           >
             <BookOpen className="w-4 h-4" />
@@ -601,8 +608,10 @@ function LeftSidebarInner({
           <button
             type="button"
             onClick={() => onModeChange('review')}
-            className={`flex items-center justify-center gap-1.5 py-1 rounded-md text-sm font-medium transition-colors ${
-              mode === 'review' ? 'bg-white text-amber-800 shadow-sm' : 'text-ink-muted hover:text-ink'
+            className={`flex flex-1 items-center justify-center gap-1.5 border-b-2 text-sm font-medium transition-colors ${
+              mode === 'review'
+                ? 'border-amber-700 text-amber-800'
+                : 'border-transparent text-ink-muted hover:text-ink'
             }`}
           >
             <Brain className="w-4 h-4" />
