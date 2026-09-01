@@ -11,11 +11,19 @@ import {
 import { restrictToWindowEdges } from '@dnd-kit/modifiers'
 import { SortableContext, rectSortingStrategy, useSortable, arrayMove } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
-import type { Annotation, AnnotationGroup, LyricPage, Sentence, WordNote } from '../types'
+import type {
+  Annotation,
+  AnnotationGroup,
+  LyricPage,
+  ReaderSettings,
+  Sentence,
+  WordNote
+} from '../types'
 import { isOrphanAnnotation } from '../types'
 import { annotationToSentence } from '../utils/annotationViews'
 import { AutoMark } from './AutoMark'
 import { BAND_SUB } from './chrome'
+import { readerThemeStyles } from './theme'
 import { EditedMark } from './EditedMark'
 import { AutoTextarea } from './AutoTextarea'
 import { getFolderReviewData } from '../hooks/getFolderReviewData'
@@ -83,6 +91,8 @@ export interface VocabularyDashboardProps {
   autoFillOpen?: boolean
   /** 当前范围内还有多少条空白笔记；为 0 时不显示填充按钮（没什么可填的） */
   autoFillCount?: number
+  /** 阅读设置。这里只用 `theme` —— 底色要和阅读页同一个 */
+  readerSettings?: ReaderSettings
   [key: string]: any
 }
 
@@ -98,8 +108,10 @@ function VocabularyDashboardInner({
   autoFillOpen = false,
   autoFillCount = 0,
   onReorder,
-  onDeleteAnnotation
+  onDeleteAnnotation,
+  readerSettings = { fontSize: 18, fontFamily: 'sans', theme: 'pure' }
 }: VocabularyDashboardProps) {
+  const themeStyles = readerThemeStyles(readerSettings.theme)
   const [hideEnglish, setHideEnglish] = useState(false)
   const [hideChinese, setHideChinese] = useState(false)
   const [reviewMode, setReviewMode] = useState<'vocab' | 'sentence'>('vocab')
@@ -294,7 +306,7 @@ function VocabularyDashboardInner({
 
   if (!reviewTarget) {
     return (
-      <div className="flex-1 flex flex-col items-center justify-center text-ink-muted bg-paper">
+      <div className={`flex-1 flex flex-col items-center justify-center text-ink-muted ${themeStyles.bg}`}>
         <BookOpen className="w-12 h-12 mb-4 opacity-40" />
         <p className="text-sm text-center px-4">在左侧选择文档或文件夹以查看生词</p>
       </div>
@@ -302,7 +314,7 @@ function VocabularyDashboardInner({
   }
 
   return (
-    <div className="flex-1 flex flex-col min-h-0 overflow-hidden bg-paper">
+    <div className={`flex-1 flex flex-col min-h-0 overflow-hidden ${themeStyles.bg}`}>
       {/* 背诵遮罩开关 + 词/句切换 */}
       <div className={`${BAND_SUB} flex-wrap bg-white/80`}>
         <div className="flex flex-wrap items-center gap-2">

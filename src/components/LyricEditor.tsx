@@ -3,6 +3,7 @@ import { useSpeak } from '../hooks/useSpeak'
 import { tokenizeLine } from '../utils/tokenize'
 import { splitEdgePunctuation, stripEdgePunctuation } from '../utils/punctuation'
 import { BAND_SUB } from './chrome'
+import { readerThemeStyles } from './theme'
 import type { NotesMap, ReaderSettings, Sentence, WordNote } from '../types'
 import type { PhraseView } from '../utils/annotationViews'
 import { X, Trash2 } from 'lucide-react'
@@ -181,12 +182,8 @@ function LyricEditorInner({
     [orderedWords]
   )
 
-  const themeStyles =
-    readerSettings.theme === 'original'
-      ? { bg: 'bg-[#f8f9f8]', text: 'text-[#2c3e34]', border: 'border-[#2c3e34]/12' }
-      : readerSettings.theme === 'rice'
-        ? { bg: 'bg-[#fffefc]', text: 'text-[#333333]', border: 'border-amber-900/10' }
-        : { bg: 'bg-white', text: 'text-gray-900', border: 'border-gray-200' }
+  // 配色表搬去了 ./theme，复习页要用同一份
+  const themeStyles = readerThemeStyles(readerSettings.theme)
 
   const fontStack =
     readerSettings.fontFamily === 'serif'
