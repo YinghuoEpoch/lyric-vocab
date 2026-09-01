@@ -339,10 +339,19 @@ function VocabularyDashboardInner({
               /* 视觉微调：它和旁边三个按钮尺寸本来完全一致（32px），
                  但实心底色让它读起来像一个「物体」，另外三个只是「文字」，
                  于是显得更大更重。把盒子和图标各收一点，找回平衡。 */
+              /*
+                补上 hover:text-amber-700 —— 从前这颗只有底色变、字不变，
+                和生词板那颗「AI 划词」凑不成一对。
+
+                按下去的反馈不写在这儿：`hover:` 这个变体本身已经被改成
+                「鼠标悬停 **或** 正按着」两条都出（见 tailwind.config.js），
+                所以这一行同时也是手指按住时的样子 —— 平时白底琥珀字，
+                有空白卡片时琥珀底再深一格。
+              */
               className={`flex items-center gap-1 px-2 py-[5px] rounded-lg text-sm font-medium transition-colors ${
                 autoFillCount > 0
-                  ? 'bg-amber-600 hover:bg-amber-700 text-white'
-                  : 'text-ink-muted hover:bg-stone-100'
+                  ? 'bg-amber-600 text-white hover:bg-amber-700'
+                  : 'text-ink-muted hover:bg-stone-100 hover:text-amber-700'
               }`}
               title={
                 autoFillCount > 0
