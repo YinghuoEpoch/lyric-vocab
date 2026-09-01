@@ -31,11 +31,11 @@ const PROGRESS_DEBOUNCE_MS = 700
  * 彼此隔开 1.5px 以上，最深的一条离下一行还有 3px 富余。
  */
 const WORD_LINE_CLASS =
-  'underline decoration-solid decoration-amber-600 decoration-2 underline-offset-2'
+  'underline decoration-solid decoration-accent-600 decoration-2 underline-offset-2'
 const PHRASE_LINE_CLASS =
-  'underline decoration-wavy decoration-amber-600/90 decoration-1 underline-offset-[0.36em]'
+  'underline decoration-wavy decoration-accent-600/90 decoration-1 underline-offset-[0.36em]'
 const SENTENCE_LINE_CLASS =
-  'underline decoration-dashed decoration-amber-600 decoration-1 underline-offset-[0.6em]'
+  'underline decoration-dashed decoration-accent-600 decoration-1 underline-offset-[0.6em]'
 
 /** 单词选择：仅一个词 */
 type WordSelection = { type: 'word'; anchorId: string; word: string }
@@ -154,7 +154,7 @@ function LyricEditorInner({
   nextPage,
   onSelectPage,
   onReadingProgressChange,
-  readerSettings = { fontSize: 18, fontFamily: 'sans', theme: 'pure' }
+  readerSettings = { fontSize: 18, fontFamily: 'sans', theme: 'pure', accent: 'amber' }
 }: LyricEditorProps) {
   const lines = content ? content.split(/\n/) : ['']
 
@@ -634,7 +634,7 @@ function LyricEditorInner({
           <button
             type="button"
             onClick={() => onEditModeChange(false, draft)}
-            className="text-sm text-amber-500 hover:text-amber-400 font-medium"
+            className="text-sm text-accent-500 hover:text-accent-400 font-medium"
           >
             完成
           </button>
@@ -782,11 +782,11 @@ function LyricEditorInner({
               // 三种底色互斥，收成一个类名，免得多个 bg-* 叠在一起靠优先级打架：
               // 按住中 > 当前选中的词 > 处于句摘范围内
               const highlightClass = isPressing
-                ? 'bg-amber-300/70'
+                ? 'bg-accent-300/70'
                 : isSelectedWord
-                  ? 'bg-amber-200/80'
+                  ? 'bg-accent-200/80'
                   : inSentenceRange
-                    ? 'bg-amber-100/70'
+                    ? 'bg-accent-100/70'
                     : ''
 
               const handlers = getWordHandlers(anchorId, word)
@@ -885,7 +885,7 @@ function LyricEditorInner({
               <button
                 type="button"
                 onClick={() => onSelectPage(nextPage.id)}
-                className="text-sm hover:underline underline-offset-2 transition-colors py-1 text-ink-muted hover:text-amber-700"
+                className="text-sm hover:underline underline-offset-2 transition-colors py-1 text-ink-muted hover:text-accent-700"
                 aria-label={`下一章：${nextPage.title}`}
                 title={nextPage.title}
               >
@@ -918,7 +918,7 @@ function LyricEditorInner({
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-start justify-between gap-3 mb-3">
-              <span className="font-lyric-en font-serif text-amber-800 font-bold text-lg leading-snug min-w-0 break-words">
+              <span className="font-lyric-en font-serif text-accent-800 font-bold text-lg leading-snug min-w-0 break-words">
                 {/* 抽屉顶上显示的就是待会儿存进去的那一份：切到「短语」时两头的标点先剥掉 */}
                 {selection.type === 'word'
                   ? selection.word
@@ -977,7 +977,7 @@ function LyricEditorInner({
                       onClick={() => setRangeKind(kind)}
                       className={`flex-1 h-8 rounded-lg text-sm border transition-colors ${
                         rangeKind === kind
-                          ? 'border-amber-500 bg-amber-50 text-amber-800 font-medium'
+                          ? 'border-accent-500 bg-accent-50 text-accent-800 font-medium'
                           : 'border-paper-border text-ink-muted hover:bg-stone-50'
                       }`}
                     >
@@ -1031,7 +1031,7 @@ function LyricEditorInner({
               <button
                 type="button"
                 onClick={saveBubble}
-                className="flex-1 h-11 rounded-lg bg-amber-600 hover:bg-amber-700 active:bg-amber-800 text-white font-medium text-[15px] transition-colors"
+                className="flex-1 h-11 rounded-lg bg-accent-600 hover:bg-accent-700 active:bg-accent-800 text-white font-medium text-[15px] transition-colors"
               >
                 保存
               </button>

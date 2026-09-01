@@ -14,6 +14,20 @@
       ],
       "port": 5174,
       "autoPort": false
+    },
+    {
+      "name": "lyric-vocab-preview",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "run",
+        "preview",
+        "--",
+        "--port",
+        "4173",
+        "--strictPort"
+      ],
+      "port": 4173,
+      "autoPort": false
     }
   ]
 }

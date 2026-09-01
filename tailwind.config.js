@@ -10,7 +10,20 @@ export default {
         ink: '#2c2c2c',
         'ink-muted': '#5c5c5c',
         'paper-border': '#e5e3df',
-        'accent': '#b8860b'
+        /*
+         * 强调色。十档色阶全部走 CSS 变量（值在 src/index.css），
+         * 所以切换颜色不必重新编译 —— 改 <html data-accent> 一处即可。
+         *
+         * 变量里存的是 RGB 分量（"245 158 11"）而不是 #f59e0b，
+         * 为的是 `<alpha-value>` 还能用 —— 代码里有 19 处带透明度的写法
+         * （accent-500/30、accent-700/80 这类），存成十六进制它们会全废。
+         */
+        accent: Object.fromEntries(
+          [50, 100, 200, 300, 400, 500, 600, 700, 800, 900].map((n) => [
+            n,
+            `rgb(var(--accent-${n}) / <alpha-value>)`
+          ])
+        )
       },
       fontFamily: {
         serif: ['"Playfair Display"', 'Georgia', 'serif'],

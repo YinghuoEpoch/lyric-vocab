@@ -522,9 +522,9 @@ function LeftSidebarInner({
       if (!book) return null
       return (
         <div className="mb-4">
-          <div className="flex items-center gap-1 px-3 py-2.5 rounded-xl bg-white shadow-lg border border-amber-300">
+          <div className="flex items-center gap-1 px-3 py-2.5 rounded-xl bg-white shadow-lg border border-accent-300">
             <ChevronRight className="w-3 h-3 opacity-50" />
-            <Book className="w-4 h-4 text-amber-700/80 shrink-0 mt-0.5" />
+            <Book className="w-4 h-4 text-accent-700/80 shrink-0 mt-0.5" />
             <span className="text-sm text-ink font-medium flex-1 min-w-0 truncate leading-snug">
               {book.name}
             </span>
@@ -536,15 +536,15 @@ function LeftSidebarInner({
     if (!page) return null
     const isSelected = page.id === currentPageId
     return (
-      <div className="px-3 py-2 rounded-lg bg-white shadow-lg border border-amber-300 flex items-center gap-2">
+      <div className="px-3 py-2 rounded-lg bg-white shadow-lg border border-accent-300 flex items-center gap-2">
         <FileText
           className={`w-3.5 h-3.5 shrink-0 mt-0.5 ${
-            isSelected ? 'text-amber-700' : 'text-ink-muted'
+            isSelected ? 'text-accent-700' : 'text-ink-muted'
           }`}
         />
         <span
           className={`flex-1 min-w-0 text-sm truncate leading-relaxed ${
-            isSelected ? 'text-amber-800 font-medium' : 'text-ink-muted'
+            isSelected ? 'text-accent-800 font-medium' : 'text-ink-muted'
           }`}
         >
           {page.title || '未命名'}
@@ -574,8 +574,8 @@ function LeftSidebarInner({
             onClick={toggleOrganizeMode}
             className={`flex items-center gap-1 px-2 py-[5px] rounded-lg text-sm font-medium transition-colors ${
               organizeMode
-                ? 'bg-amber-600 text-white'
-                : 'text-ink-muted hover:bg-stone-100 hover:text-amber-700'
+                ? 'bg-accent-600 text-white'
+                : 'text-ink-muted hover:bg-stone-100 hover:text-accent-700'
             }`}
             title="整理文库与文档顺序"
           >
@@ -598,7 +598,7 @@ function LeftSidebarInner({
             onClick={() => onModeChange('read')}
             className={`flex flex-1 items-center justify-center gap-1.5 border-b-2 text-sm font-medium transition-colors ${
               mode === 'read'
-                ? 'border-amber-700 text-amber-800'
+                ? 'border-accent-700 text-accent-800'
                 : 'border-transparent text-ink-muted hover:text-ink'
             }`}
           >
@@ -610,7 +610,7 @@ function LeftSidebarInner({
             onClick={() => onModeChange('review')}
             className={`flex flex-1 items-center justify-center gap-1.5 border-b-2 text-sm font-medium transition-colors ${
               mode === 'review'
-                ? 'border-amber-700 text-amber-800'
+                ? 'border-accent-700 text-accent-800'
                 : 'border-transparent text-ink-muted hover:text-ink'
             }`}
           >
@@ -661,7 +661,7 @@ function LeftSidebarInner({
                           <div
                             className={`flex items-center gap-1 px-3 py-2 rounded-lg transition-colors ${
                               isSelected && !isEditingPage
-                                ? 'bg-amber-50/90 border border-amber-200/60'
+                                ? 'bg-accent-50/90 border border-accent-200/60'
                                 : 'hover:bg-stone-100 border border-transparent'
                             }`}
                           >
@@ -672,7 +672,7 @@ function LeftSidebarInner({
                             >
                               <FileText
                                 className={`w-3.5 h-3.5 shrink-0 mt-0.5 ${
-                                  isSelected ? 'text-amber-700' : 'text-ink-muted'
+                                  isSelected ? 'text-accent-700' : 'text-ink-muted'
                                 }`}
                               />
                               {isEditingPage ? (
@@ -683,13 +683,13 @@ function LeftSidebarInner({
                                   onChange={(e) => setEditValue(e.target.value)}
                                   onBlur={commitEdit}
                                   onKeyDown={handleKeyDown}
-                                  className="flex-1 min-w-0 px-2 py-1 text-sm rounded-md border border-paper-border bg-paper focus:outline-none focus:ring-2 focus:ring-amber-500/30 focus:border-amber-500 text-ink"
+                                  className="flex-1 min-w-0 px-2 py-1 text-sm rounded-md border border-paper-border bg-paper focus:outline-none focus:ring-2 focus:ring-accent-500/30 focus:border-accent-500 text-ink"
                                   onClick={(e) => e.stopPropagation()}
                                 />
                               ) : (
                                 <span
                                   className={`flex-1 min-w-0 text-sm truncate leading-relaxed ${
-                                    isSelected ? 'text-amber-800 font-medium' : 'text-ink-muted hover:text-ink'
+                                    isSelected ? 'text-accent-800 font-medium' : 'text-ink-muted hover:text-ink'
                                   }`}
                                 >
                                   {page.title || '未命名'}
@@ -793,8 +793,8 @@ function LeftSidebarInner({
                       <div
                         className={`flex items-center gap-1 px-3 py-2.5 rounded-xl transition-colors ${
                           !isEditingBook ? 'hover:bg-stone-100' : ''
-                        } ${bookSelected ? 'bg-amber-50/90 border border-amber-200/60' : ''} ${
-                          isDragOver ? 'ring-2 ring-amber-400' : ''
+                        } ${bookSelected ? 'bg-accent-50/90 border border-accent-200/60' : ''} ${
+                          isDragOver ? 'ring-2 ring-accent-400' : ''
                         }`}
                       >
                         {/* 折叠小三角，仅控制展开/折叠，不触发进入文件夹 */}
@@ -815,9 +815,9 @@ function LeftSidebarInner({
                           className="flex-1 min-w-0 flex items-center gap-2 text-left shrink-0"
                         >
                           {collapsed ? (
-                            <Book className="w-4 h-4 text-amber-700/80 shrink-0 mt-0.5" />
+                            <Book className="w-4 h-4 text-accent-700/80 shrink-0 mt-0.5" />
                           ) : (
-                            <BookOpen className="w-4 h-4 text-amber-700/80 shrink-0 mt-0.5" />
+                            <BookOpen className="w-4 h-4 text-accent-700/80 shrink-0 mt-0.5" />
                           )}
                           {isEditingBook ? (
                             <input
@@ -827,7 +827,7 @@ function LeftSidebarInner({
                               onChange={(e) => setEditValue(e.target.value)}
                               onBlur={commitEdit}
                               onKeyDown={handleKeyDown}
-                              className="flex-1 min-w-0 px-2 py-1 text-sm rounded-lg border border-paper-border bg-paper focus:outline-none focus:ring-2 focus:ring-amber-500/30 focus:border-amber-500 text-ink"
+                              className="flex-1 min-w-0 px-2 py-1 text-sm rounded-lg border border-paper-border bg-paper focus:outline-none focus:ring-2 focus:ring-accent-500/30 focus:border-accent-500 text-ink"
                               onClick={(e) => e.stopPropagation()}
                             />
                           ) : (
@@ -927,7 +927,7 @@ function LeftSidebarInner({
                                     <div
                                       className={`flex items-center gap-1 px-3 py-2 rounded-lg transition-colors ${
                                         isSelected && !isEditingPage
-                                          ? 'bg-amber-50/90 border border-amber-200/60'
+                                          ? 'bg-accent-50/90 border border-accent-200/60'
                                           : 'hover:bg-stone-100 border border-transparent'
                                       }`}
                                     >
@@ -938,7 +938,7 @@ function LeftSidebarInner({
                                       >
                                         <FileText
                                           className={`w-3.5 h-3.5 shrink-0 mt-0.5 ${
-                                            isSelected ? 'text-amber-700' : 'text-ink-muted'
+                                            isSelected ? 'text-accent-700' : 'text-ink-muted'
                                           }`}
                                         />
                                         {isEditingPage ? (
@@ -949,13 +949,13 @@ function LeftSidebarInner({
                                             onChange={(e) => setEditValue(e.target.value)}
                                             onBlur={commitEdit}
                                             onKeyDown={handleKeyDown}
-                                            className="flex-1 min-w-0 px-2 py-1 text-sm rounded-md border border-paper-border bg-paper focus:outline-none focus:ring-2 focus:ring-amber-500/30 focus:border-amber-500 text-ink"
+                                            className="flex-1 min-w-0 px-2 py-1 text-sm rounded-md border border-paper-border bg-paper focus:outline-none focus:ring-2 focus:ring-accent-500/30 focus:border-accent-500 text-ink"
                                             onClick={(e) => e.stopPropagation()}
                                           />
                                         ) : (
                                           <span
                                             className={`flex-1 min-w-0 text-sm truncate leading-relaxed ${
-                                              isSelected ? 'text-amber-800 font-medium' : 'text-ink-muted hover:text-ink'
+                                              isSelected ? 'text-accent-800 font-medium' : 'text-ink-muted hover:text-ink'
                                             }`}
                                           >
                                             {page.title || '未命名'}
@@ -1125,7 +1125,7 @@ function LeftSidebarInner({
             <Trash2 className="h-5 w-5 shrink-0" aria-hidden />
             <span className="text-[11px] leading-none">回收站</span>
             {trashCount > 0 && (
-              <span className="absolute right-2 top-1.5 flex h-3.5 min-w-[14px] items-center justify-center rounded-full bg-amber-500 px-1 text-[10px] font-medium text-white">
+              <span className="absolute right-2 top-1.5 flex h-3.5 min-w-[14px] items-center justify-center rounded-full bg-accent-500 px-1 text-[10px] font-medium text-white">
                 {trashCount > 99 ? '99+' : trashCount}
               </span>
             )}

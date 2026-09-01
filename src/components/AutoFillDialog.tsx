@@ -84,7 +84,7 @@ export function AutoFillDialog({
       <div className="max-w-sm w-[90%] max-h-[85vh] overflow-y-auto bg-white rounded-2xl shadow-xl border border-paper-border p-4 space-y-3">
         <div className="flex items-center justify-between">
           <h2 className="text-base font-semibold text-ink flex items-center gap-2">
-            <Sparkles className="w-4 h-4 text-amber-600" />
+            <Sparkles className="w-4 h-4 text-accent-600" />
             {needSetup ? 'AI 设置' : '一键填充'}
           </h2>
           {!running && (
@@ -132,7 +132,7 @@ export function AutoFillDialog({
               <div className="space-y-1.5">
                 <div className="h-1.5 rounded-full bg-stone-200 overflow-hidden">
                   <div
-                    className="h-full bg-amber-500 transition-all duration-300"
+                    className="h-full bg-accent-500 transition-all duration-300"
                     style={{ width: `${percent}%` }}
                   />
                 </div>
@@ -180,7 +180,7 @@ export function AutoFillDialog({
                   <button
                     type="button"
                     disabled={total === 0}
-                    className="flex-1 h-9 rounded-lg bg-amber-600 hover:bg-amber-700 disabled:opacity-40 text-white text-sm font-medium"
+                    className="flex-1 h-9 rounded-lg bg-accent-600 hover:bg-accent-700 disabled:opacity-40 text-white text-sm font-medium"
                     onClick={onStart}
                   >
                     {state.phase === 'done' || state.phase === 'error' ? '再试一次' : '开始填充'}

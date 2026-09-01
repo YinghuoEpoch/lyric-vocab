@@ -9,6 +9,7 @@ import { LyricEditor } from './components/LyricEditor'
 import { VocabularyDashboard } from './components/VocabularyDashboard'
 import { useExportBackup } from './hooks/useExportBackup'
 import type {
+  AccentColor,
   Annotation,
   AnnotationGroup,
   AppData,
@@ -80,8 +81,11 @@ const TOKENIZER_MIGRATION_KEY = 'lyric-vocab-tokenizer-migrated-v2'
 const defaultReaderSettings: ReaderSettings = {
   fontSize: 18,
   fontFamily: 'sans',
-  theme: 'pure'
+  theme: 'pure',
+  accent: 'amber'
 }
+
+const ACCENTS: readonly AccentColor[] = ['amber', 'indigo', 'teal', 'rose', 'stone']
 
 function loadReaderSettings(): ReaderSettings {
   try {
@@ -105,7 +109,11 @@ function loadReaderSettings(): ReaderSettings {
         if (f === 'mono') return 'rounded' as const
         return defaultReaderSettings.fontFamily
       })(),
-      theme
+      theme,
+      // 老用户存的设置里没有这一格，落回琥珀 —— 和他们一直看到的一样
+      accent: ACCENTS.includes(parsed.accent as AccentColor)
+        ? (parsed.accent as AccentColor)
+        : defaultReaderSettings.accent
     }
   } catch {
     return defaultReaderSettings
@@ -217,6 +225,15 @@ export default function App() {
       // ignore
     }
   }, [readerSettings])
+
+  /**
+   * 强调色挂到 <html data-accent> 上。
+   * 色阶是 CSS 变量（见 index.css），换一个属性值全 App 119 处一起变，
+   * 不用重新编译也不用刷新。
+   */
+  useEffect(() => {
+    document.documentElement.dataset.accent = readerSettings.accent
+  }, [readerSettings.accent])
 
   const exportBackup = useExportBackup()
 
@@ -1218,7 +1235,7 @@ export default function App() {
             }}
             className={`p-2 rounded-lg ${mode === 'read' ? 'md:hidden ' : ''}${
               mode === 'review' && reviewEditMode
-                ? 'bg-amber-100 text-amber-800'
+                ? 'bg-accent-100 text-accent-800'
                 : 'text-ink-muted hover:bg-stone-100'
             }`}
             aria-label={mode === 'review' ? '切换生词卡编辑模式' : '打开生词板'}
@@ -1276,7 +1293,7 @@ export default function App() {
                 onClick={() => {
                   setActivePanel('right')
                 }}
-                className="hidden md:flex fixed right-4 top-1/2 -translate-y-1/2 z-10 items-center gap-2 px-3 py-2 rounded-full border border-paper-border bg-white shadow-md hover:bg-amber-50 hover:border-amber-300 text-ink-muted hover:text-amber-800 transition-colors"
+                className="hidden md:flex fixed right-4 top-1/2 -translate-y-1/2 z-10 items-center gap-2 px-3 py-2 rounded-full border border-paper-border bg-white shadow-md hover:bg-accent-50 hover:border-accent-300 text-ink-muted hover:text-accent-800 transition-colors"
                 title="打开笔记"
               >
                 <BookOpen className="w-4 h-4" />
@@ -1374,7 +1391,7 @@ export default function App() {
                     {orphanPrompt.words.map((w) => (
                       <span
                         key={w}
-                        className="font-lyric-en font-serif text-amber-800 font-semibold text-sm px-2 py-0.5 rounded-full bg-white border border-stone-200"
+                        className="font-lyric-en font-serif text-accent-800 font-semibold text-sm px-2 py-0.5 rounded-full bg-white border border-stone-200"
                       >
                         {w}
                       </span>
@@ -1412,7 +1429,7 @@ export default function App() {
               </button>
               <button
                 type="button"
-                className="flex-1 h-9 rounded-lg bg-amber-600 hover:bg-amber-700 text-white text-sm font-medium"
+                className="flex-1 h-9 rounded-lg bg-accent-600 hover:bg-accent-700 text-white text-sm font-medium"
                 onClick={() => closeOrphanPrompt(true)}
               >
                 一并删除
@@ -1442,7 +1459,7 @@ export default function App() {
               </button>
               <button
                 type="button"
-                className="flex-1 h-9 rounded-lg bg-amber-600 hover:bg-amber-700 text-white text-sm font-medium"
+                className="flex-1 h-9 rounded-lg bg-accent-600 hover:bg-accent-700 text-white text-sm font-medium"
                 onClick={handleAcceptAgreement}
               >
                 同意

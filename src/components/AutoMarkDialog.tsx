@@ -91,7 +91,7 @@ export function AutoMarkDialog({
       <div className="max-w-sm w-[90%] max-h-[85vh] overflow-y-auto bg-white rounded-2xl shadow-xl border border-paper-border p-4 space-y-3">
         <div className="flex items-center justify-between">
           <h2 className="text-base font-semibold text-ink flex items-center gap-2">
-            <Wand2 className="w-4 h-4 text-amber-600" />
+            <Wand2 className="w-4 h-4 text-accent-600" />
             {needSetup ? 'AI 设置' : '一键划词'}
           </h2>
           {!running && (
@@ -134,7 +134,7 @@ export function AutoMarkDialog({
                     className={
                       'flex-1 h-8 rounded-lg text-sm border disabled:opacity-40 ' +
                       (l === options.level
-                        ? 'border-amber-500 bg-amber-50 text-amber-800 font-medium'
+                        ? 'border-accent-500 bg-accent-50 text-accent-800 font-medium'
                         : 'border-paper-border text-ink-muted hover:bg-stone-50')
                     }
                   >
@@ -156,7 +156,7 @@ export function AutoMarkDialog({
                     className={
                       'flex-1 h-8 rounded-lg text-sm border disabled:opacity-40 ' +
                       (a === options.amount
-                        ? 'border-amber-500 bg-amber-50 text-amber-800 font-medium'
+                        ? 'border-accent-500 bg-accent-50 text-accent-800 font-medium'
                         : 'border-paper-border text-ink-muted hover:bg-stone-50')
                     }
                   >
@@ -171,7 +171,7 @@ export function AutoMarkDialog({
               <div className="space-y-1.5">
                 <div className="h-1.5 rounded-full bg-stone-200 overflow-hidden">
                   <div
-                    className="h-full bg-amber-500 transition-all duration-300"
+                    className="h-full bg-accent-500 transition-all duration-300"
                     style={{ width: `${percent}%` }}
                   />
                 </div>
@@ -226,7 +226,7 @@ export function AutoMarkDialog({
                   </button>
                   <button
                     type="button"
-                    className="flex-1 h-9 rounded-lg bg-amber-600 hover:bg-amber-700 text-white text-sm font-medium"
+                    className="flex-1 h-9 rounded-lg bg-accent-600 hover:bg-accent-700 text-white text-sm font-medium"
                     onClick={state.phase === 'done' ? onClose : start}
                   >
                     {state.phase === 'done' ? '看看' : state.phase === 'error' ? '再试一次' : '开始划词'}

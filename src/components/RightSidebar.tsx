@@ -243,9 +243,9 @@ function VocabCard({
               if (canSpeak) onSpeak()
             }}
             ref={phrase.ref}
-            className={`font-lyric-en font-serif font-bold text-base text-left hover:underline decoration-amber-600 decoration-2 underline-offset-2 rounded focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-400 transition-colors ${
+            className={`font-lyric-en font-serif font-bold text-base text-left hover:underline decoration-accent-600 decoration-2 underline-offset-2 rounded focus:outline-none focus-visible:ring-2 focus-visible:ring-accent-400 transition-colors ${
               // 正在读的那个亮起来，和复习页同一套反馈
-              speaking ? 'text-amber-500' : 'text-amber-800'
+              speaking ? 'text-accent-500' : 'text-accent-800'
             } ${
               item.isPhrase
                 ? // 短语：一行放不下就省略号，点卡片展开看全。
@@ -279,7 +279,7 @@ function VocabCard({
           </span>
         )}
         {item.isPhrase && (
-          <span className="shrink-0 px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 text-xs font-medium">
+          <span className="shrink-0 px-2 py-0.5 rounded-full bg-accent-100 text-accent-800 text-xs font-medium">
             短语
           </span>
         )}
@@ -378,7 +378,7 @@ function RightSidebarInner({
     >
       <div className={BAND_TOP}>
           <span className="text-sm font-medium text-ink-muted flex items-center gap-2">
-            <BookOpen className="w-4 h-4 text-amber-700/80" />
+            <BookOpen className="w-4 h-4 text-accent-700/80" />
             笔记
             <span className="text-xs font-normal text-gray-400">
               ({tab === 'vocab' ? filtered.length : filteredSentences.length})
@@ -416,8 +416,8 @@ function RightSidebarInner({
                   用户说这样不协调。这颗按钮点完会弹窗，所以**弹窗开着期间一直保持
                   按下的样子**，关掉才还原：让人看得出「这颗按钮和眼前这张弹窗是一回事」。
                 */
-                className={`flex items-center gap-1 px-2 py-[5px] rounded-lg text-sm font-medium transition-colors hover:bg-stone-100 hover:text-amber-700 ${
-                  autoMarkOpen ? 'bg-stone-100 text-amber-700' : 'text-ink-muted'
+                className={`flex items-center gap-1 px-2 py-[5px] rounded-lg text-sm font-medium transition-colors hover:bg-stone-100 hover:text-accent-700 ${
+                  autoMarkOpen ? 'bg-stone-100 text-accent-700' : 'text-ink-muted'
                 }`}
                 title="一键划词：让 AI 通读全文挑出重点词"
                 aria-label="一键划词"
@@ -448,7 +448,7 @@ function RightSidebarInner({
             onClick={() => setTab('vocab')}
             className={`flex flex-1 items-center justify-center border-b-2 text-sm font-medium transition-colors ${
               tab === 'vocab'
-                ? 'border-amber-700 text-amber-800'
+                ? 'border-accent-700 text-accent-800'
                 : 'border-transparent text-ink-muted hover:text-ink'
             }`}
           >
@@ -459,7 +459,7 @@ function RightSidebarInner({
             onClick={() => setTab('sentences')}
             className={`flex flex-1 items-center justify-center border-b-2 text-sm font-medium transition-colors ${
               tab === 'sentences'
-                ? 'border-amber-700 text-amber-800'
+                ? 'border-accent-700 text-accent-800'
                 : 'border-transparent text-ink-muted hover:text-ink'
             }`}
           >
@@ -473,7 +473,7 @@ function RightSidebarInner({
         一次划几十条，没有撤销的话没人敢按这个按钮，所以撤销就摆在同一行。
       */}
       {markOutcome && (
-        <div className="shrink-0 flex items-start gap-2 px-3 py-2 bg-amber-50 border-b border-amber-200 text-xs text-amber-900 leading-relaxed">
+        <div className="shrink-0 flex items-start gap-2 px-3 py-2 bg-accent-50 border-b border-accent-200 text-xs text-accent-900 leading-relaxed">
           <span className="flex-1">
             已划上 {markOutcome.marked} 条
             {markOutcome.missed > 0 && `，${markOutcome.missed} 条没对上原文`}
@@ -482,7 +482,7 @@ function RightSidebarInner({
             <button
               type="button"
               onClick={() => onUndoMark(markOutcome.createdIds)}
-              className="shrink-0 px-2 py-0.5 rounded border border-amber-300 hover:bg-amber-100 font-medium inline-flex items-center gap-1"
+              className="shrink-0 px-2 py-0.5 rounded border border-accent-300 hover:bg-accent-100 font-medium inline-flex items-center gap-1"
             >
               <Undo2 className="w-3 h-3" />
               撤销
@@ -492,7 +492,7 @@ function RightSidebarInner({
             <button
               type="button"
               onClick={onDismissMark}
-              className="shrink-0 p-0.5 rounded hover:bg-amber-100"
+              className="shrink-0 p-0.5 rounded hover:bg-accent-100"
               aria-label="收起这条提示"
             >
               <X className="w-3.5 h-3.5" />

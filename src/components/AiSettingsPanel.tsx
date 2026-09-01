@@ -27,7 +27,7 @@ type TestState =
   | { phase: 'fail'; message: string }
 
 const inputClass =
-  'w-full h-9 px-2 text-sm rounded-lg border border-paper-border bg-stone-50/80 text-ink placeholder-ink-muted focus:outline-none focus:ring-1 focus:ring-amber-500/40 focus:border-amber-500'
+  'w-full h-9 px-2 text-sm rounded-lg border border-paper-border bg-stone-50/80 text-ink placeholder-ink-muted focus:outline-none focus:ring-1 focus:ring-accent-500/40 focus:border-accent-500'
 
 interface AiSettingsPanelProps {
   /** 保存成功后回调。上层据此决定是回到自己那屏还是关掉 */
@@ -100,7 +100,7 @@ export function AiSettingsPanel({ onSaved, onCancel }: AiSettingsPanelProps) {
               className={
                 'flex-1 h-8 rounded-lg text-sm border ' +
                 (p.id === draft.providerId
-                  ? 'border-amber-500 bg-amber-50 text-amber-800 font-medium'
+                  ? 'border-accent-500 bg-accent-50 text-accent-800 font-medium'
                   : 'border-paper-border text-ink-muted hover:bg-stone-50')
               }
             >
@@ -207,7 +207,7 @@ export function AiSettingsPanel({ onSaved, onCancel }: AiSettingsPanelProps) {
           <button
             type="button"
             disabled={!!missing}
-            className="flex-1 h-9 rounded-lg bg-amber-600 hover:bg-amber-700 disabled:opacity-40 text-white text-sm font-medium"
+            className="flex-1 h-9 rounded-lg bg-accent-600 hover:bg-accent-700 disabled:opacity-40 text-white text-sm font-medium"
             onClick={handleSave}
           >
             保存

@@ -109,7 +109,7 @@ function VocabularyDashboardInner({
   autoFillCount = 0,
   onReorder,
   onDeleteAnnotation,
-  readerSettings = { fontSize: 18, fontFamily: 'sans', theme: 'pure' }
+  readerSettings = { fontSize: 18, fontFamily: 'sans', theme: 'pure', accent: 'amber' }
 }: VocabularyDashboardProps) {
   const themeStyles = readerThemeStyles(readerSettings.theme)
   const [hideEnglish, setHideEnglish] = useState(false)
@@ -333,7 +333,7 @@ function VocabularyDashboardInner({
               （和两个侧栏拆掉「盒中盒」是同一件事，这一行是最后一处。）
             */
             className={`flex items-center gap-1 px-2 py-1 rounded-lg text-sm font-medium transition-colors hover:bg-stone-100 ${
-              hideEnglish ? 'text-amber-700' : 'text-ink-muted'
+              hideEnglish ? 'text-accent-700' : 'text-ink-muted'
             }`}
           >
             {hideEnglish ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
@@ -344,7 +344,7 @@ function VocabularyDashboardInner({
             onClick={() => setHideChinese((v) => !v)}
             title={hideChinese ? '显示中文' : '隐藏中文'}
             className={`flex items-center gap-1 px-2 py-1 rounded-lg text-sm font-medium transition-colors hover:bg-stone-100 ${
-              hideChinese ? 'text-amber-700' : 'text-ink-muted'
+              hideChinese ? 'text-accent-700' : 'text-ink-muted'
             }`}
           >
             {hideChinese ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
@@ -373,8 +373,8 @@ function VocabularyDashboardInner({
                 不再靠填底色（`hover:` 这个变体已经被改成「悬停 **或** 正按着」，
                 见 tailwind.config.js）。
               */
-              className={`flex items-center gap-1 px-2 py-1 rounded-lg text-sm font-medium transition-colors hover:bg-stone-100 hover:text-amber-700 ${
-                autoFillCount > 0 || autoFillOpen ? 'text-amber-700' : 'text-ink-muted'
+              className={`flex items-center gap-1 px-2 py-1 rounded-lg text-sm font-medium transition-colors hover:bg-stone-100 hover:text-accent-700 ${
+                autoFillCount > 0 || autoFillOpen ? 'text-accent-700' : 'text-ink-muted'
               }`}
               title={
                 autoFillCount > 0
@@ -404,13 +404,13 @@ function VocabularyDashboardInner({
       </div>
 
       {speechError && (
-        <div className="shrink-0 flex items-start gap-2 px-4 py-2 bg-amber-50 border-b border-amber-200 text-xs text-amber-900 leading-relaxed">
+        <div className="shrink-0 flex items-start gap-2 px-4 py-2 bg-accent-50 border-b border-accent-200 text-xs text-accent-900 leading-relaxed">
           <span className="flex-1 break-words">{speechError.message}</span>
           {speechError.missingVoice && installVoice && (
             <button
               type="button"
               onClick={installVoice}
-              className="shrink-0 px-2 py-0.5 rounded border border-amber-300 hover:bg-amber-100 font-medium"
+              className="shrink-0 px-2 py-0.5 rounded border border-accent-300 hover:bg-accent-100 font-medium"
             >
               去安装
             </button>
@@ -419,7 +419,7 @@ function VocabularyDashboardInner({
             type="button"
             onClick={dismissError}
             aria-label="知道了"
-            className="p-0.5 rounded hover:bg-amber-100"
+            className="p-0.5 rounded hover:bg-accent-100"
           >
             <X className="w-3.5 h-3.5" />
           </button>
@@ -552,7 +552,7 @@ function SpeakButton({
   className: string
   children: React.ReactNode
 }) {
-  if (!canSpeak) return <span className={`${className} text-amber-800`}>{children}</span>
+  if (!canSpeak) return <span className={`${className} text-accent-800`}>{children}</span>
 
   return (
     <button
@@ -560,7 +560,7 @@ function SpeakButton({
       onClick={onSpeak}
       aria-label={label}
       title={label}
-      className={`${className} transition-colors ${speaking ? 'text-amber-500' : 'text-amber-800'}`}
+      className={`${className} transition-colors ${speaking ? 'text-accent-500' : 'text-accent-800'}`}
     >
       {children}
     </button>
@@ -818,7 +818,7 @@ function VocabCard({
         <div className="flex flex-col items-end gap-1">
           {isPhrase ? (
             showEnglish && (
-              <span className="shrink-0 px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 text-xs font-medium">
+              <span className="shrink-0 px-2 py-0.5 rounded-full bg-accent-100 text-accent-800 text-xs font-medium">
                 短语
               </span>
             )
@@ -847,7 +847,7 @@ function VocabCard({
             )
           )}
           {showEnglish && item.frequency && item.frequency > 1 && (
-            <span className="inline-flex items-center justify-center rounded-full bg-amber-100 text-amber-800 text-[11px] px-1.5 py-0.5">
+            <span className="inline-flex items-center justify-center rounded-full bg-accent-100 text-accent-800 text-[11px] px-1.5 py-0.5">
               {item.frequency}
             </span>
           )}

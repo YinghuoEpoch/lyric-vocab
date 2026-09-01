@@ -12,6 +12,6 @@ export function readerThemeStyles(theme: ReaderSettings['theme']) {
   return theme === 'original'
     ? { bg: 'bg-[#f8f9f8]', text: 'text-[#2c3e34]', border: 'border-[#2c3e34]/12' }
     : theme === 'rice'
-      ? { bg: 'bg-[#fffefc]', text: 'text-[#333333]', border: 'border-amber-900/10' }
+      ? { bg: 'bg-[#fffefc]', text: 'text-[#333333]', border: 'border-accent-900/10' }
       : { bg: 'bg-white', text: 'text-gray-900', border: 'border-gray-200' }
 }

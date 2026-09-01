@@ -73,9 +73,19 @@ export interface AppData {
 export type ReaderSettings = {
   fontSize: number
   fontFamily: 'sans' | 'serif' | 'rounded'
-  /** 仅浅色变体：纯白 / 青灰(Sage) / 暖白 */
+  /** 纸色。仅浅色变体：纯白 / 青灰(Sage) / 暖白 */
   theme: 'pure' | 'original' | 'rice'
+  /**
+   * 强调色。下划线、按钮、卡片词头这些「有颜色的地方」用它。
+   *
+   * 和纸色是两件事：纸色管底，强调色管点缀，各选各的。
+   * 真正的色值在 src/index.css 里，这里存的只是选了哪一档。
+   */
+  accent: AccentColor
 }
+
+/** 琥珀 / 墨蓝 / 松绿 / 朱红 / 石墨 */
+export type AccentColor = 'amber' | 'indigo' | 'teal' | 'rose' | 'stone'
 
 /** 句摘：用户保存的句子（范围文本），用于句型/翻译笔记 */
 export interface Sentence {

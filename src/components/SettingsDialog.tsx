@@ -6,7 +6,7 @@ import { UserGuide } from './UserGuide'
 import { AGREEMENT_CLAUSES, AGREEMENT_TITLE } from '../agreement'
 import { describeTarget, loadConfig, resolveConfig, type AiConfig } from '../enrich'
 import { useBackHandler, BackPriority } from '../hooks/useBackHandler'
-import type { ReaderSettings } from '../types'
+import type { AccentColor, ReaderSettings } from '../types'
 
 /**
  * 设置页。
@@ -44,6 +44,19 @@ const THEMES = [
   { id: 'rice', label: '暖白' }
 ] as const
 
+/**
+ * 强调色。`swatch` 是给按钮自己显示用的死色 ——
+ * 不能用 accent-600 那种类名，否则五颗点会一起变成当前选中的颜色，
+ * 每颗必须显示它自己代表的色。色阶本体在 src/index.css。
+ */
+const ACCENTS = [
+  { id: 'amber', label: '琥珀', swatch: '#b45309' },
+  { id: 'indigo', label: '墨蓝', swatch: '#4338ca' },
+  { id: 'teal', label: '松绿', swatch: '#0f766e' },
+  { id: 'rose', label: '朱红', swatch: '#be123c' },
+  { id: 'stone', label: '石墨', swatch: '#44403c' }
+] as const
+
 /** 一组设置：标题小而灰，底下一张浅色卡片装内容 */
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
@@ -56,7 +69,7 @@ function Section({ title, children }: { title: string; children: React.ReactNode
   )
 }
 
-/** 一排等宽的单选按钮。字体和主题长得一样，所以收成一个 */
+/** 一排等宽的单选按钮。字体和纸色长得一样，所以收成一个 */
 function Choices<T extends string>({
   value,
   options,
@@ -76,11 +89,46 @@ function Choices<T extends string>({
           className={
             'flex-1 h-8 rounded-lg text-xs font-medium border transition-colors ' +
             (value === o.id
-              ? 'border-amber-500 bg-amber-50 text-amber-800'
+              ? 'border-accent-500 bg-accent-50 text-accent-800'
               : 'border-paper-border bg-white text-ink-muted hover:bg-stone-100')
           }
         >
           {o.label}
+        </button>
+      ))}
+    </div>
+  )
+}
+
+/**
+ * 一排颜色点。选中的套一圈深色环 —— 环用中性色，
+ * 否则选中琥珀时环也是琥珀，压在琥珀点上就看不见了。
+ *
+ * 名字写在上面那行标签里，不放 title：手机上没有悬停，title 等于没有
+ * （这个坑项目里踩过三次，见 后续规划.md 第三十五节）。
+ */
+function AccentChoices({
+  value,
+  onPick
+}: {
+  value: AccentColor
+  onPick: (id: AccentColor) => void
+}) {
+  return (
+    <div className="flex gap-2.5">
+      {ACCENTS.map((a) => (
+        <button
+          key={a.id}
+          type="button"
+          onClick={() => onPick(a.id)}
+          aria-label={a.label}
+          aria-pressed={value === a.id}
+          className={
+            'w-9 h-9 rounded-full p-[3px] border-2 transition-colors ' +
+            (value === a.id ? 'border-ink' : 'border-transparent hover:border-stone-300')
+          }
+        >
+          <span className="block w-full h-full rounded-full" style={{ background: a.swatch }} />
         </button>
       ))}
     </div>
@@ -171,7 +219,7 @@ export function SettingsDialog({
       >
         <div className="shrink-0 flex items-center justify-between gap-2 p-3 border-b border-paper-border">
           <span className="text-base font-semibold text-ink flex items-center gap-2 min-w-0">
-            <SettingsIcon className="w-4 h-4 text-amber-600 shrink-0" />
+            <SettingsIcon className="w-4 h-4 text-accent-600 shrink-0" />
             <span className="truncate">{title}</span>
           </span>
           <button
@@ -255,11 +303,23 @@ export function SettingsDialog({
                   />
                 </div>
                 <div className="space-y-1.5">
-                  <span className="text-sm text-ink block">主题</span>
+                  <span className="text-sm text-ink block">纸色</span>
                   <Choices
                     value={readerSettings.theme}
                     options={THEMES}
                     onPick={(t) => onReaderSettingsChange({ ...readerSettings, theme: t })}
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <span className="text-sm text-ink block">
+                    强调色{' '}
+                    <span className="text-ink-muted">
+                      · {ACCENTS.find((a) => a.id === readerSettings.accent)?.label}
+                    </span>
+                  </span>
+                  <AccentChoices
+                    value={readerSettings.accent}
+                    onPick={(a) => onReaderSettingsChange({ ...readerSettings, accent: a })}
                   />
                 </div>
               </Section>
