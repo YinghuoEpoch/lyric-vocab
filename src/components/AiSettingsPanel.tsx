@@ -44,8 +44,20 @@ export function AiSettingsPanel({ onSaved, onCancel }: AiSettingsPanelProps) {
    */
   const [draft, setDraft] = useState<AiConfig>(loadConfig)
   const [test, setTest] = useState<TestState>({ phase: 'idle' })
-  /** Key 是否明文显示。默认明文 —— 理由见下面输入框那处注释 */
-  const [showKey, setShowKey] = useState(true)
+  /**
+   * Key 是否明文显示。
+   *
+   * **已经存着 Key 就默认遮住，框是空的才默认明文。**
+   * 用户报的是「每次打开都把 Key 明晃晃摆出来，保密性为 0」——
+   * 确实如此。但一律默认遮住也不行：安卓 WebView 对密码框常常不给
+   * 「粘贴」菜单（第十四节那个坑），而这格永远是靠粘贴填的。
+   *
+   * 所以按「有没有东西可保」分：存着 Key 就遮起来（此时你是来看/来改的，
+   * 不是来粘的）；框是空的就明文（此时没什么可保，而且正是要粘贴的时候）。
+   */
+  const [showKey, setShowKey] = useState(
+    () => !(draft.keys[findProvider(draft.providerId).id] ?? '')
+  )
 
   const preset = findProvider(draft.providerId)
   const draftKey = draft.keys[preset.id] ?? ''
@@ -134,12 +146,16 @@ export function AiSettingsPanel({ onSaved, onCancel }: AiSettingsPanelProps) {
         )}
 
         {/*
-          Key 这一格默认**明文**，右边一枚眼睛可以遮起来。
-          两个原因：
+          Key 这一格空着时默认**明文**、已经存着 Key 时默认**遮住**，
+          右边那枚眼睛随时可以切（判断写在上面 showKey 那处）。
+
+          空着时之所以要明文：
           - 安卓 WebView 对密码框常常不给「粘贴」菜单，而这格永远是靠粘贴填的
           - Key 是一长串，粘成一串圆点的话粘错、粘漏都看不出来，
             只能等填充跑起来报错才知道
-          自己的手机、自己的 Key，明文没什么可藏的；真要遮就点那枚眼睛。
+
+          眼睛的图标跟**当前状态**走，不跟动作走：遮住时画一只划掉的眼睛
+          （内容是藏起来的），明文时画一只睁着的眼睛。从前是反的。
         */}
         <div className="relative">
           <input
@@ -160,7 +176,7 @@ export function AiSettingsPanel({ onSaved, onCancel }: AiSettingsPanelProps) {
             aria-label={showKey ? '遮住 Key' : '显示 Key'}
             title={showKey ? '遮住 Key' : '显示 Key'}
           >
-            {showKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+            {showKey ? <Eye className="w-4 h-4" /> : <EyeOff className="w-4 h-4" />}
           </button>
         </div>
 

@@ -79,9 +79,31 @@ export function AutoFillDialog({
   const percent =
     state.progress.total > 0 ? Math.round((state.progress.done / state.progress.total) * 100) : 0
 
+  /**
+   * 点弹窗外面的空白处：关掉。和设置弹窗一个做法（遮罩接点击、卡片挡住冒泡）。
+   *
+   * 两处例外，都是照着这个弹窗已有的规矩来的：
+   * - **跑着的时候不响应**。右上角那颗关闭键此时本来就是藏起来的
+   *   （`{!running && ...}`），点外面要是能关，等于给它开了个后门，
+   *   手一滑就把正在跑的任务打断了。安卓返回键另有规矩（跑着时按返回 = 取消任务），
+   *   那是明确的一次按键，不算误触，所以不动它。
+   * - **在「AI 设置」那一屏时退回上一屏**，而不是整个关掉 —— 和设置弹窗一致。
+   */
+  const closeOnBackdrop = () => {
+    if (running) return
+    if (editing) return setEditing(false)
+    onClose()
+  }
+
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 p-4">
-      <div className="max-w-sm w-[90%] max-h-[85vh] overflow-y-auto bg-white rounded-2xl shadow-xl border border-paper-border p-4 space-y-3">
+    <div
+      className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 p-4"
+      onClick={closeOnBackdrop}
+    >
+      <div
+        className="max-w-sm w-[90%] max-h-[85vh] overflow-y-auto bg-white rounded-2xl shadow-xl border border-paper-border p-4 space-y-3"
+        onClick={(e) => e.stopPropagation()}
+      >
         <div className="flex items-center justify-between">
           <h2 className="text-base font-semibold text-ink flex items-center gap-2">
             <Sparkles className="w-4 h-4 text-accent-600" />
