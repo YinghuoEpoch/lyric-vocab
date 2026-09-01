@@ -36,6 +36,7 @@ import { useBackHandler, handleBackPress, BackPriority } from './hooks/useBackHa
 import { useAutoFill } from './hooks/useAutoFill'
 import { useAutoMark } from './hooks/useAutoMark'
 import { AutoMarkDialog } from './components/AutoMarkDialog'
+import { BAND_TOP } from './components/chrome'
 import { AutoFillDialog } from './components/AutoFillDialog'
 import {
   getAppData,
@@ -1192,7 +1193,7 @@ export default function App() {
       {/* 右侧主区域：顶部栏 + 内容区（桌面端为 Column，避免 Header 与 Content 横向并列） */}
       <div className="flex flex-col flex-1 min-w-0 min-h-0 overflow-hidden">
         {/* 顶部栏：始终显示；桌面端仅保留标题与复习模式下的编辑按钮 */}
-        <header className="shrink-0 flex items-center gap-2 px-3 py-2 border-b border-gray-200 bg-white">
+        <header className={`${BAND_TOP} bg-white`}>
           <button
             type="button"
             onClick={() => setActivePanel((p) => (p === 'left' ? null : 'left'))}

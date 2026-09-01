@@ -6,6 +6,7 @@ import type { Sentence } from '../types'
 import { AutoMark } from './AutoMark'
 import { useIsClamped } from '../hooks/useIsClamped'
 import { EditedMark } from './EditedMark'
+import { BAND_TOP, BAND_SUB } from './chrome'
 
 interface VocabItem {
   word: string
@@ -375,8 +376,7 @@ function RightSidebarInner({
     <aside
       className={`w-[260px] md:w-[350px] h-full shrink-0 border-l border-paper-border bg-white/80 flex flex-col overflow-hidden safe-area-padding ${className}`}
     >
-      <div className="shrink-0 p-3 border-b border-paper-border">
-        <div className="flex items-center justify-between mb-2">
+      <div className={BAND_TOP}>
           <span className="text-sm font-medium text-ink-muted flex items-center gap-2">
             <BookOpen className="w-4 h-4 text-amber-700/80" />
             笔记
@@ -435,8 +435,10 @@ function RightSidebarInner({
               <PanelRightClose className="w-4 h-4" />
             </button>
           </div>
-        </div>
-        <div className="flex rounded-lg border border-stone-200/80 p-0.5 bg-stone-50/80">
+      </div>
+      {/* 第二带：和左侧栏的「阅读/复习」、主区的提示条同高（见 chrome.ts） */}
+      <div className={BAND_SUB}>
+        <div className="flex w-full rounded-lg border border-stone-200/80 p-0.5 bg-stone-50/80">
           <button
             type="button"
             onClick={() => setTab('vocab')}
