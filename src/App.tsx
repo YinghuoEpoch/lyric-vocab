@@ -1316,6 +1316,7 @@ export default function App() {
             onScrollToWord={handleScrollToWord}
             onScrollToSentence={handleScrollToSentence}
             onAutoMark={currentPageId ? autoMark.openDialog : undefined}
+            autoMarkOpen={autoMark.open}
             markOutcome={markOutcome}
             onUndoMark={handleUndoMark}
             onDismissMark={autoMark.dismissOutcome}

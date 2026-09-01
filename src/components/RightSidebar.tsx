@@ -164,6 +164,8 @@ interface RightSidebarProps {
   onClose: () => void
   /** 一键划词。不给就不显示那个按钮 */
   onAutoMark?: () => void
+  /** 划词弹窗是否开着：开着时这颗按钮一直保持「按下」的样子 */
+  autoMarkOpen?: boolean
   /** 刚划完那一批的战报；null 表示没有可显示的 */
   markOutcome?: { marked: number; missed: number; createdIds: string[] } | null
   onUndoMark?: (ids: string[]) => void
@@ -322,6 +324,7 @@ function RightSidebarInner({
   currentPageId,
   onClose,
   onAutoMark,
+  autoMarkOpen = false,
   markOutcome = null,
   onUndoMark,
   onDismissMark,
@@ -405,7 +408,17 @@ function RightSidebarInner({
               <button
                 type="button"
                 onClick={onAutoMark}
-                className="flex items-center gap-1 px-2 py-[5px] rounded-lg text-sm font-medium text-ink-muted hover:bg-stone-100 hover:text-amber-700 transition-colors"
+                /*
+                  按下去的反馈：`hover:` 这个变体已经被改成「鼠标悬停 **或** 正按着」
+                  两条都出（见 tailwind.config.js），所以这一行同时也是按住时的样子。
+
+                  但光靠按住不够 —— 手指一松就退，点完只看见「唰地亮一下又暗回去」，
+                  用户说这样不协调。这颗按钮点完会弹窗，所以**弹窗开着期间一直保持
+                  按下的样子**，关掉才还原：让人看得出「这颗按钮和眼前这张弹窗是一回事」。
+                */
+                className={`flex items-center gap-1 px-2 py-[5px] rounded-lg text-sm font-medium transition-colors hover:bg-stone-100 hover:text-amber-700 ${
+                  autoMarkOpen ? 'bg-stone-100 text-amber-700' : 'text-ink-muted'
+                }`}
                 title="一键划词：让 AI 通读全文挑出重点词"
                 aria-label="一键划词"
               >
