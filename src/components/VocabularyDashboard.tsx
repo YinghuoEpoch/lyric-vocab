@@ -312,15 +312,16 @@ function VocabularyDashboardInner({
             onClick={() => setHideEnglish((v) => !v)}
             title={hideEnglish ? '显示英文' : '隐藏英文'}
             /*
-              没开遮挡时**不给底色**，只留图标和字。
-              从前不管开没开都是一块灰底，于是这一行里三个实心块（英、中、AI 填充）
-              并排塞在 40px 的带里，上下各只剩 4px —— 竖着看很堵。
-              现在平时只剩 AI 填充一个实心块（它实心是有含义的：还差几条没填全），
-              遮挡一开那块琥珀色反而更跳得出来。
-              这也是全 App 最后一处「盒中盒」，和两个侧栏那次是同一件事。
+              **这一行一个实心块都不留。**
+              带只有 40px，塞一个 32px 的实心块进去上下就各剩 4px —— 竖着看很堵，
+              而且不分开着关着：底色一填就堵。所以状态不再靠「填一块底色」表达。
+
+              开着 = 琥珀色的字 + 图标从「睁眼」换成「闭眼」，两个信号叠在一起，
+              比一块底色更好认，还不占竖向空间。
+              （和两个侧栏拆掉「盒中盒」是同一件事，这一行是最后一处。）
             */
-            className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-sm font-medium transition-colors ${
-              hideEnglish ? 'bg-amber-100 text-amber-800' : 'text-ink-muted hover:bg-stone-100'
+            className={`flex items-center gap-1 px-2 py-1 rounded-lg text-sm font-medium transition-colors hover:bg-stone-100 ${
+              hideEnglish ? 'text-amber-700' : 'text-ink-muted'
             }`}
           >
             {hideEnglish ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
@@ -330,8 +331,8 @@ function VocabularyDashboardInner({
             type="button"
             onClick={() => setHideChinese((v) => !v)}
             title={hideChinese ? '显示中文' : '隐藏中文'}
-            className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-sm font-medium transition-colors ${
-              hideChinese ? 'bg-amber-100 text-amber-800' : 'text-ink-muted hover:bg-stone-100'
+            className={`flex items-center gap-1 px-2 py-1 rounded-lg text-sm font-medium transition-colors hover:bg-stone-100 ${
+              hideChinese ? 'text-amber-700' : 'text-ink-muted'
             }`}
           >
             {hideChinese ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
@@ -348,31 +349,20 @@ function VocabularyDashboardInner({
             <button
               type="button"
               onClick={onOpenAutoFill}
-              /* 视觉微调：它和旁边三个按钮尺寸本来完全一致（32px），
-                 但实心底色让它读起来像一个「物体」，另外三个只是「文字」，
-                 于是显得更大更重。把盒子和图标各收一点，找回平衡。 */
               /*
-                补上 hover:text-amber-700 —— 从前这颗只有底色变、字不变，
-                和生词板那颗「AI 划词」凑不成一对。
+                **整块琥珀底去掉了。** 它是这一行里最重的一块 —— 30px 的实心块塞在
+                40px 的带里上下各剩 5px，用户说的「显挤」主要就是它。
 
-                按下去的反馈不写在这儿：`hover:` 这个变体本身已经被改成
-                「鼠标悬停 **或** 正按着」两条都出（见 tailwind.config.js），
-                所以这几行同时也是手指按住时的样子 —— 平时白底琥珀字，
-                有空白卡片时琥珀底再深一格。
+                但「还差几条没填全」这个信号不能丢，所以搬到一枚**小圆点**上：
+                圆点只有 18px，在 40px 的带里绰绰有余，而它是整行唯一的实心色块，
+                反倒比从前一整块琥珀更抓眼（从前旁边还有英、中两块底色跟它抢）。
 
-                **弹窗开着期间保持按下的样子，只给「没有空白卡片」那一档。**
-                和「AI 划词」同理：点完就弹窗，光靠「正按着」只会唰地亮一下又暗回去。
-                而这一档本来就和「AI 划词」长得一模一样，理应一起动。
-
-                有空白卡片那一档不掺和 —— 它亮着琥珀色另有含义（还差几条没填全），
-                再叠一层「弹窗开着」就读不清是哪个意思了。
+                按下去的反馈和「弹窗开着一直亮」都还在，只是都改成文字变色，
+                不再靠填底色（`hover:` 这个变体已经被改成「悬停 **或** 正按着」，
+                见 tailwind.config.js）。
               */
-              className={`flex items-center gap-1 px-2 py-[5px] rounded-lg text-sm font-medium transition-colors ${
-                autoFillCount > 0
-                  ? 'bg-amber-600 text-white hover:bg-amber-700'
-                  : `hover:bg-stone-100 hover:text-amber-700 ${
-                      autoFillOpen ? 'bg-stone-100 text-amber-700' : 'text-ink-muted'
-                    }`
+              className={`flex items-center gap-1 px-2 py-1 rounded-lg text-sm font-medium transition-colors hover:bg-stone-100 hover:text-amber-700 ${
+                autoFillCount > 0 || autoFillOpen ? 'text-amber-700' : 'text-ink-muted'
               }`}
               title={
                 autoFillCount > 0
@@ -388,13 +378,18 @@ function VocabularyDashboardInner({
                 量过：375px 窄屏上这一排左右两组之间空着 123px，
                 多出来的「AI 」只占 17px，带上数字最坏也只多 39px，不会挤到第二行。
               */}
-              AI 填充{autoFillCount > 0 ? ` ${autoFillCount}` : ''}
+              AI 填充
+              {autoFillCount > 0 && (
+                <span className="ml-0.5 inline-flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-amber-600 px-1 text-[11px] font-medium leading-none text-white">
+                  {autoFillCount}
+                </span>
+              )}
             </button>
           )}
           <button
             type="button"
             onClick={() => setReviewMode((v) => (v === 'vocab' ? 'sentence' : 'vocab'))}
-            className="px-3 py-1.5 rounded-lg text-sm font-medium text-ink-muted hover:bg-stone-100 focus:bg-stone-100 focus:outline-none transition-colors"
+            className="px-2 py-1 rounded-lg text-sm font-medium text-ink-muted hover:bg-stone-100 focus:bg-stone-100 focus:outline-none transition-colors"
           >
             {reviewMode === 'vocab' ? '词' : '句'}
           </button>
