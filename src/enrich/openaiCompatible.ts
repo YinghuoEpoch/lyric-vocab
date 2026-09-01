@@ -21,9 +21,14 @@ import {
  * 会贵十几倍而且慢得多。
  */
 
-const WORD_SYSTEM_PROMPT = `你是一个英语词典助手，为中文学习者标注生词。
+export const WORD_SYSTEM_PROMPT = `你是一个英语词典助手，为中文学习者标注生词。
 
 用户会给你一组单词，每个词带一个 id，多数还带有它在原文中所在的那一行（context）。
+
+**先读 context，判断这个词在那句话里充当什么成分，再动笔。**
+脱离句子按词典主词条来填是最常见的错法 —— 同一个拼写在不同句子里
+词性和含义都可能不同，context 就是用来定这件事的。给了 context 就必须用。
+
 请为每个词输出：
 - phonetic：${PHONETIC_SPEC}
 - pos：${POS_SPEC}
