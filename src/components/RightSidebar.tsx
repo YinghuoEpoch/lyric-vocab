@@ -31,7 +31,7 @@ interface SentenceCardProps {
   /** 当前卡片是否处于激活/展开状态（由父级控制，保证同一时间只有一个） */
   isActive: boolean
   onToggle: () => void
-  onEdit: (sentence: Sentence) => void
+  onJump: (sentence: Sentence) => void
   onDelete: (id: string) => void
 }
 
@@ -40,7 +40,7 @@ function SentenceCard({
   alt,
   isActive,
   onToggle,
-  onEdit,
+  onJump,
   onDelete
 }: SentenceCardProps) {
   /*
@@ -122,13 +122,22 @@ function SentenceCard({
         )}
       </div>
 
-      {/* 右侧固定编辑按钮 */}
+      {/*
+        右侧那条窄箭头：跳到这句话在正文里的位置。
+
+        从前它是「编辑」—— 跳过去、收起面板、再弹出底部抽屉改语法和翻译。
+        现在只跳，面板留着，抽屉也不弹，和生词卡点词那边一个规矩：
+        **生词板是一张清单，点条目是去看它在哪，不是去改它。**
+        改语法和翻译在复习页的句摘卡里（编辑模式），那边两格都能改。
+      */}
       <button
         type="button"
         onClick={(e) => {
           e.stopPropagation()
-          onEdit(sentence)
+          onJump(sentence)
         }}
+        title={`跳到这句话在文中的位置`}
+        aria-label="跳到这句话在文中的位置"
         className={`
           w-4 flex items-center justify-center hover:bg-stone-50 rounded-r-lg
           ${alt ? 'bg-gray-50' : 'bg-white'}
@@ -145,7 +154,7 @@ interface RightSidebarProps {
   vocab: VocabItem[]
   sentences: Sentence[]
   onScrollToWord: (pageId: string, anchorId: string) => void
-  onEditSentence: (sentence: Sentence) => void
+  onScrollToSentence: (sentence: Sentence) => void
   /** 删除一条单词笔记。目前只给「原文已删除」的条目用 —— 正常单词在正文里长按即可删，
    *  而孤儿在正文里已经没有对应的词，不给入口就永远删不掉。 */
   onDeleteVocab: (pageId: string, anchorId: string) => void
@@ -307,7 +316,7 @@ function RightSidebarInner({
   vocab,
   sentences,
   onScrollToWord,
-  onEditSentence,
+  onScrollToSentence,
   onDeleteVocab,
   onDeleteSentence,
   currentPageId,
@@ -520,9 +529,7 @@ function RightSidebarInner({
                   onToggle={() =>
                     setActiveSentenceId((prev) => (prev === s.id ? null : s.id))
                   }
-                  onEdit={() => {
-                    onEditSentence(s)
-                  }}
+                  onJump={() => onScrollToSentence(s)}
                   onDelete={onDeleteSentence}
                 />
               </li>
