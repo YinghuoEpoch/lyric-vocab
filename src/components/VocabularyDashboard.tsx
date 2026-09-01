@@ -353,9 +353,9 @@ function VocabularyDashboardInner({
                 **整块琥珀底去掉了。** 它是这一行里最重的一块 —— 30px 的实心块塞在
                 40px 的带里上下各剩 5px，用户说的「显挤」主要就是它。
 
-                但「还差几条没填全」这个信号不能丢，所以搬到一枚**小圆点**上：
-                圆点只有 18px，在 40px 的带里绰绰有余，而它是整行唯一的实心色块，
-                反倒比从前一整块琥珀更抓眼（从前旁边还有英、中两块底色跟它抢）。
+                「还差几条没填全」改成**琥珀色的字 + 后面直接跟个数字**。
+                中间试过把数字装进一枚小圆点，用户说不用 —— 直接挂着就行，
+                少一层东西也少一处要对齐的地方。
 
                 按下去的反馈和「弹窗开着一直亮」都还在，只是都改成文字变色，
                 不再靠填底色（`hover:` 这个变体已经被改成「悬停 **或** 正按着」，
@@ -378,12 +378,7 @@ function VocabularyDashboardInner({
                 量过：375px 窄屏上这一排左右两组之间空着 123px，
                 多出来的「AI 」只占 17px，带上数字最坏也只多 39px，不会挤到第二行。
               */}
-              AI 填充
-              {autoFillCount > 0 && (
-                <span className="ml-0.5 inline-flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-amber-600 px-1 text-[11px] font-medium leading-none text-white">
-                  {autoFillCount}
-                </span>
-              )}
+              AI 填充{autoFillCount > 0 ? ` ${autoFillCount}` : ''}
             </button>
           )}
           <button
