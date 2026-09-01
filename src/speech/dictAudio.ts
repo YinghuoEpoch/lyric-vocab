@@ -1,6 +1,7 @@
 import { Capacitor } from '@capacitor/core'
 import { cacheKey, getCached, isCached, putCached } from './audioCache'
 import { fetchAudioBytes, NoRecording } from './fetchAudio'
+import { stripEdgePunctuation } from '../utils/punctuation'
 import type { DictPlayer } from './types'
 
 /**
@@ -55,7 +56,9 @@ export function isLookupWorthy(text: string): boolean {
  * 是查词典这段漏了。
  */
 export function normalizeWord(word: string): string {
-  return word.trim().replace(/[’ʼ՚]/g, "'")
+  // 两头的标点也去掉：`he said.` 词典是查不到的。新存的短语已经不带标点了，
+  // 这里是给旧数据兜底 —— 存进去的时候还没有这道剥离
+  return stripEdgePunctuation(word.trim()).replace(/[’ʼ՚]/g, "'")
 }
 
 /** 播放用的地址：audio 标签放外站的声音不受跨域限制，一直用真地址 */
