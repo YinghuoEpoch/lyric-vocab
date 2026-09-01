@@ -98,6 +98,40 @@ function getAnchorId(lineIndex: number, wordIndex: number): string {
   return `L${lineIndex}W${wordIndex}`
 }
 
+/**
+ * 要让第 n 行贴着 textarea 的顶边，scrollTop 该是多少。
+ *
+ * 克隆一个同款 textarea（同样的 class、同样的宽度）塞进前 n 行，量它有多高 ——
+ * 折行位置和字体度量交给浏览器自己算，比「行高 × 行数」准得多：正文里长短行都有，
+ * 一行常常折成两三行。量完就删，用户看不见。
+ *
+ * 对过一次：40 行处这个算法得 4089px，另用一面「镜子」逐行量得 4093px，
+ * 差 4px（行高 28.8px 的七分之一），两种算法互相印证。
+ *
+ * 加上 paddingTop 才是贴顶：不加的话那一行会落在离顶边约一整行的地方，
+ * 上面挂着前一行的尾巴。第 0 行是例外 —— 文首就该看见上面那圈留白。
+ */
+function scrollTopForLine(ta: HTMLTextAreaElement, text: string, n: number): number {
+  if (n <= 0) return 0
+  const clone = ta.cloneNode() as HTMLTextAreaElement
+  clone.style.position = 'absolute'
+  clone.style.visibility = 'hidden'
+  clone.style.top = '0'
+  clone.style.left = '0'
+  // 宽度必须钉死：class 里是 w-full，脱离文档流之后撑不出原来的宽度，
+  // 折行位置就全变了
+  clone.style.width = `${ta.offsetWidth}px`
+  clone.style.height = '0'
+  clone.style.minHeight = '0'
+  clone.value = text.split('\n').slice(0, n).join('\n')
+  ta.parentElement?.appendChild(clone)
+  const cs = getComputedStyle(clone)
+  // scrollHeight 含上下 padding：减掉下边的，剩下的正好是「上留白 + 前 n 行」
+  const top = clone.scrollHeight - parseFloat(cs.paddingBottom)
+  clone.remove()
+  return top
+}
+
 function LyricEditorInner({
   content,
   pageId,
@@ -161,6 +195,32 @@ function LyricEditorInner({
         : "'Inter', '-apple-system', 'BlinkMacSystemFont', 'PingFang SC', 'Microsoft YaHei', sans-serif"
   const scrollContainerRef = useRef<HTMLDivElement>(null)
   const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const textareaRef = useRef<HTMLTextAreaElement>(null)
+
+  /**
+   * 点「编辑全文」那一刻，屏幕最上面是第几行 —— 趁阅读容器还没卸载先算好存这儿。
+   *
+   * 阅读和编辑是**两个各自独立的滚动容器**，位置接不上，只能靠「第几行」这个
+   * 两边都认得的坐标搬过去。而且编辑模式里真正在滚的是 textarea 自己，不是外面
+   * 那层 div —— 量出来的：外层 scrollHeight 692 = clientHeight，根本不滚。
+   * 光看 class 里那个 min-h-full 会以为是外层在滚，滚给它也没用。
+   */
+  const pendingEditLineRef = useRef<number | null>(null)
+
+  /** 阅读页里，屏幕最上面露出来的是第几行（正文一行一个 <p>，带着行号） */
+  const topVisibleLine = useCallback((): number => {
+    const el = scrollContainerRef.current
+    if (!el) return 0
+    const top = el.getBoundingClientRect().top
+    const paragraphs = el.querySelectorAll<HTMLElement>('[data-line-index]')
+    for (const p of paragraphs) {
+      // 露出一点点就算它：卡在屏幕顶上被切掉半截的那段，用户读的就是它
+      if (p.getBoundingClientRect().bottom > top + 1) {
+        return Number(p.dataset.lineIndex)
+      }
+    }
+    return 0
+  }, [])
 
   const reportProgress = useCallback(() => {
     const el = scrollContainerRef.current
@@ -218,6 +278,22 @@ function LyricEditorInner({
     if (editMode) setDraft(content)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editMode, pageId])
+
+  /**
+   * 进编辑模式时，把 textarea 滚到刚才读到的那一行。
+   *
+   * 用 useLayoutEffect 是为了在这一帧画出来之前就滚好，不让用户看见「先闪一下文首
+   * 再跳过去」。等 `ta.value === content` 才动手 —— 草稿是在上面那个 useEffect 里
+   * 灌的，比这里晚一拍，抢在它前面量的是上一份文字。
+   */
+  useLayoutEffect(() => {
+    const line = pendingEditLineRef.current
+    if (!editMode || line === null) return
+    const ta = textareaRef.current
+    if (!ta || ta.value !== content) return
+    pendingEditLineRef.current = null
+    ta.scrollTop = scrollTopForLine(ta, content, line)
+  }, [editMode, draft, content])
 
   const [selection, setSelection] = useState<Selection | null>(null)
   const [bubbleForm, setBubbleForm] = useState<WordNote>({ word: '' })
@@ -575,6 +651,7 @@ function LyricEditorInner({
           }}
         >
           <textarea
+            ref={textareaRef}
             className={`w-full min-h-full p-6 bg-transparent resize-none focus:outline-none block placeholder:opacity-60 antialiased ${themeStyles.text}`}
             style={{
               textRendering: 'optimizeSpeed',
@@ -600,7 +677,11 @@ function LyricEditorInner({
         <span className="text-sm opacity-80">{interactionHint}</span>
         <button
           type="button"
-          onClick={() => onEditModeChange(true)}
+          onClick={() => {
+            // 趁阅读容器还在，先记下读到第几行；进去之后照这一行把 textarea 滚过去
+            pendingEditLineRef.current = topVisibleLine()
+            onEditModeChange(true)
+          }}
           className="text-sm opacity-80 hover:opacity-100"
         >
           编辑全文
@@ -794,7 +875,7 @@ function LyricEditorInner({
           }
 
           return (
-            <p key={lineIndex} className="mb-6">
+            <p key={lineIndex} data-line-index={lineIndex} className="mb-6">
               {lineChildren}
             </p>
           )
