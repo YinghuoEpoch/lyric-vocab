@@ -1,4 +1,5 @@
 import { isLookupWorthy } from './dictAudio'
+import { patchForMachineVoice } from './pronounceFix'
 import type { DictPlayer, Speaker } from './types'
 
 /**
@@ -40,7 +41,8 @@ export function createHumanFirstSpeaker(system: Speaker, player: DictPlayer): Sp
       }
 
       if (ticket !== mine) return
-      return system.speak(text, options)
+      // 到这儿说明要用机器音了 —— 先把这台引擎读不对的地方改掉再送出去
+      return system.speak(patchForMachineVoice(text), options)
     },
 
     cancel() {

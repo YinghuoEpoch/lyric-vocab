@@ -74,7 +74,24 @@ describe('先真人，不行再机器', () => {
     const f = fakes()
     await f.speaker.speak('He stumbled over a stone.', { lookup: false })
     expect(f.log.some((l) => l.startsWith('放:'))).toBe(false)
-    expect(f.log).toContain('念:He stumbled over a stone.')
+    // 念出去的不是原文：冠词 a 先被改写过，否则这台手机的引擎会念成字母名
+    expect(f.log).toContain('念:He stumbled over uh stone.')
+  })
+
+  it('退回机器音的那条路，也得先过一遍读音补丁', async () => {
+    const f = fakes()
+    const done = f.speaker.speak('with a thud', { lookup: true })
+    f.failPlay()
+    await done
+    expect(f.log).toContain('念:with uh thud')
+  })
+
+  it('走真人录音时一个字都不许改 —— 补丁只对机器音', async () => {
+    const f = fakes()
+    const done = f.speaker.speak('with a thud', { lookup: true })
+    f.finishPlay()
+    await done
+    expect(f.log).toContain('放:with a thud')
   })
 
   it('短语也去查词典 —— 词典里 give up 这类是有录音的', async () => {

@@ -44,9 +44,23 @@ export function isLookupWorthy(text: string): boolean {
   return t.split(/\s+/).length <= 5
 }
 
+/**
+ * 查词典之前先把词规整一下。
+ *
+ * **弯撇号必须换成直的。** 词典只认直撇号：`don't` 有录音，`don’t` 直接告诉你没有 ——
+ * 差别仅仅是那一个字符。而导入的电子书里基本全是弯的，不换的话
+ * `don't` `it's` `can't` `I'd` 这一整类**本来有真人录音的词会白白落回机器音**。
+ *
+ * 这个项目别处早就在统一两种撇号了（分词、对账、划词都特意处理过），
+ * 是查词典这段漏了。
+ */
+export function normalizeWord(word: string): string {
+  return word.trim().replace(/[’ʼ՚]/g, "'")
+}
+
 /** 播放用的地址：audio 标签放外站的声音不受跨域限制，一直用真地址 */
 export function dictAudioUrl(word: string, type: number = AMERICAN): string {
-  return `${BASE}?audio=${encodeURIComponent(word.trim())}&type=${type}`
+  return `${BASE}?audio=${encodeURIComponent(normalizeWord(word))}&type=${type}`
 }
 
 /**
@@ -57,7 +71,7 @@ export function dictAudioUrl(word: string, type: number = AMERICAN): string {
  */
 export function dictFetchUrl(word: string, type: number = AMERICAN): string {
   if (Capacitor.isNativePlatform()) return dictAudioUrl(word, type)
-  return `/dictvoice?audio=${encodeURIComponent(word.trim())}&type=${type}`
+  return `/dictvoice?audio=${encodeURIComponent(normalizeWord(word))}&type=${type}`
 }
 
 /**
@@ -67,7 +81,7 @@ export function dictFetchUrl(word: string, type: number = AMERICAN): string {
  * 取不到就算了：预取是锦上添花，失败不该惊动任何人。
  */
 export async function prefetchWord(word: string, type: number = AMERICAN): Promise<boolean> {
-  const key = cacheKey(word, type)
+  const key = cacheKey(normalizeWord(word), type)
   if (await isCached(key)) return true
   try {
     const bytes = await fetchAudioBytes(dictFetchUrl(word, type))
@@ -134,7 +148,7 @@ export function createDictPlayer(type: number = AMERICAN): DictPlayer {
     async play(word) {
       const mine = ++generation
       finishCurrent?.(true)
-      const key = cacheKey(word, type)
+      const key = cacheKey(normalizeWord(word), type)
       /** 等回来发现已经被顶掉了：当作正常结束，别播、也别让上层退回系统朗读 */
       const superseded = () => generation !== mine
 

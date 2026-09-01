@@ -1,5 +1,5 @@
 import { cacheKey, cachedKeySet, putCached } from './audioCache'
-import { AMERICAN, dictFetchUrl, isLookupWorthy } from './dictAudio'
+import { AMERICAN, dictFetchUrl, isLookupWorthy, normalizeWord } from './dictAudio'
 import { fetchAudioBytes } from './fetchAudio'
 
 /**
@@ -28,7 +28,7 @@ export async function prefetchWords(
   const stat = { 取了: 0, 跳过: 0, 失败: 0 }
 
   // 同一页里同一个词可能标过好几次，去重
-  const todo = [...new Set(words.map((w) => w.trim()).filter(isLookupWorthy))].slice(
+  const todo = [...new Set(words.map(normalizeWord).filter(isLookupWorthy))].slice(
     0,
     options.limit ?? PREFETCH_LIMIT
   )
