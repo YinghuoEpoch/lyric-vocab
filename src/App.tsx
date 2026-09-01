@@ -1297,6 +1297,7 @@ export default function App() {
             onVocabCountChange={setReviewVocabCount}
             onDeleteAnnotation={handleDeleteAnnotationById}
             onOpenAutoFill={autoFill.openDialog}
+            autoFillOpen={autoFill.open}
             autoFillCount={autoFill.pendingWords + autoFill.pendingPhrases + autoFill.pendingSentences}
           />
         )}
