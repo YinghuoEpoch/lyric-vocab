@@ -1,14 +1,17 @@
-import { isSingleWord } from './dictAudio'
+import { isLookupWorthy } from './dictAudio'
+import { patchForMachineVoice } from './pronounceFix'
 import type { DictPlayer, Speaker } from './types'
 
 /**
  * 「先真人，不行再机器」。
  *
- * 单个词先去取词典里人录的发音；取不到（生造词、不固定的组合、网络不通）
+ * 单词和短语先去取词典里人录的发音；取不到（生造词、不固定的组合、网络不通）
  * 就悄悄退回系统朗读 —— 用户拍板过：不弹提示、不做记号，照样出声就行。
  * 反正机器音本来就是从前的水平，退回去不算变差。
  *
- * 句子不查，直接走系统朗读：词典里没有整句，查了也是白跑一趟。
+ * **查不查由调用处传 `lookup` 说了算**：词卡和短语卡查，句摘卡不查。
+ * 一开始这里是自己数空格判断的，短语接进来以后就不成立了 ——
+ * 界面本来就知道点的是哪种卡片，没必要在这儿猜。
  */
 export function createHumanFirstSpeaker(system: Speaker, player: DictPlayer): Speaker {
   /**
@@ -28,7 +31,7 @@ export function createHumanFirstSpeaker(system: Speaker, player: DictPlayer): Sp
       system.cancel()
 
       const word = text.trim()
-      if (isSingleWord(word)) {
+      if (options?.lookup && isLookupWorthy(word)) {
         try {
           await player.play(word)
           return
@@ -38,7 +41,8 @@ export function createHumanFirstSpeaker(system: Speaker, player: DictPlayer): Sp
       }
 
       if (ticket !== mine) return
-      return system.speak(text, options)
+      // 到这儿说明要用机器音了 —— 先把这台引擎读不对的地方改掉再送出去
+      return system.speak(patchForMachineVoice(text), options)
     },
 
     cancel() {
