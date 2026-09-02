@@ -21,6 +21,16 @@ import { Capacitor, registerPlugin } from '@capacitor/core'
 /** 顶部保底：万一两条路都没报上来值，也不能让正文顶到时钟上去。状态栏本来就是 24dp 上下 */
 const MIN_TOP = 24
 
+/**
+ * 打包时刻（vite.config.ts 里 define 进来的）。
+ *
+ * ⚠️ **必须带兜底。** 改了 vite.config 开发服务器不会自动生效、得重启，
+ * 而没重启时这个名字压根不存在 —— 直接引用会抛 ReferenceError，
+ * 在模块顶层抛就是整个 app 白屏。栽过一次：一个只用来显示的时间戳，
+ * 不该有把界面弄没的能力。
+ */
+const BUILD_STAMP = typeof __BUILD_STAMP__ === 'undefined' ? '开发中' : __BUILD_STAMP__
+
 type NativeInsets = {
   available?: boolean
   top?: number
@@ -62,7 +72,7 @@ let report: SafeAreaReport = {
   right: 0,
   bottom: 0,
   left: 0,
-  build: __BUILD_STAMP__
+  build: BUILD_STAMP
 }
 
 /** 读一眼这次的取值情况。给设置页里「开发者 → 系统栏参数」那一屏用 */
@@ -169,7 +179,7 @@ export async function initSafeArea(): Promise<void> {
         navMode: v.navMode,
         sdk: v.sdk,
         density: v.density,
-        build: __BUILD_STAMP__
+        build: BUILD_STAMP
       }
       return
     }
@@ -184,7 +194,7 @@ export async function initSafeArea(): Promise<void> {
       navMode: v.navMode,
       sdk: v.sdk,
       density: v.density,
-      build: __BUILD_STAMP__
+      build: BUILD_STAMP
     }
   } catch (e) {
     const env = readEnvInsets()
@@ -194,7 +204,7 @@ export async function initSafeArea(): Promise<void> {
       ...env,
       tappableBottom: env.bottom,
       error: e instanceof Error ? e.message : String(e),
-      build: __BUILD_STAMP__
+      build: BUILD_STAMP
     }
   }
 }
