@@ -1,5 +1,12 @@
 import { describe, it, expect } from 'vitest'
-import { asBookFile, looksLikeEpub, looksLikeText, parseTotal } from './download'
+import {
+  asBookFile,
+  looksLikeEpub,
+  looksLikeText,
+  parseTotal,
+  US_HOSTS,
+  AUS_HOSTS
+} from './download'
 import type { CatalogBook } from './catalog'
 
 function bytes(...vals: number[]): ArrayBuffer {
@@ -116,5 +123,28 @@ describe('parseTotal', () => {
     expect(parseTotal({ 'content-type': 'application/epub+zip' })).toBeNull()
     expect(parseTotal(undefined)).toBeNull()
     expect(parseTotal({})).toBeNull()
+  })
+})
+
+/**
+ * 安卓从 9 开始默认禁止明文流量，`http://` 的源在真机上一个字节都取不到
+ * （报 `Cleartext HTTP traffic to xxx not permitted`）。
+ *
+ * 这条钉住的是**只在真机上才会暴露的错误** —— 浏览器里走开发转发，
+ * 用什么协议都看不出问题，所以单测得替真机把这一关守住。
+ * 2026-09-02 澳洲站就是这么栽的，每一本都下不了。
+ */
+describe('备用源一律走 https', () => {
+  it('美国站的每一个源都是 https', () => {
+    for (const h of US_HOSTS) expect(h.startsWith('https://')).toBe(true)
+  })
+
+  it('澳洲站也是 https', () => {
+    for (const h of AUS_HOSTS) expect(h.startsWith('https://')).toBe(true)
+  })
+
+  it('两边都不为空 —— 列表被清空的话下载会一声不响地全失败', () => {
+    expect(US_HOSTS.length).toBeGreaterThan(0)
+    expect(AUS_HOSTS.length).toBeGreaterThan(0)
   })
 })

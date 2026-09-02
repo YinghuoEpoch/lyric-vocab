@@ -34,20 +34,24 @@ const RETRIES = 3
 const MAX_CHUNKS = 400
 
 /**
- * 备用源。主站不通时依次往下试。
- *
- * 三个都实测过：同一本书返回的字节数完全一致，且都支持分段取。
- * （另有 `gutenberg.nabasny.com` 也能连，但同一本书大小对不上，
+ * 备用源。主站不通时依次往下试。都实测过：同一本书返回的字节数完全一致，
+ * 且都支持分段取。（另有 `gutenberg.nabasny.com` 也能连，但同一本书大小对不上，
  * 内容版本不一样，故意不用。）
+ *
+ * ⚠️ **一律用 https，不能有 http。**
+ *
+ * 安卓从 9 开始默认禁止明文流量，真机上直接报
+ * `Cleartext HTTP traffic to xxx not permitted`，一个字节都取不到。
+ * 第一版这里放了 `http://aleph.gutenberg.org` 和 `http://gutenberg.net.au`，
+ * 澳洲站因此**每一本都下不了**（用户报的）。
+ *
+ * `aleph.gutenberg.org` 只有 http（试过 https，连不上），
+ * 所以它在安卓上永远用不了，直接去掉 —— 留着只会白白多等一轮超时。
  */
-const US_HOSTS = [
-  'https://www.gutenberg.org',
-  'https://gutenberg.pglaf.org',
-  'http://aleph.gutenberg.org'
-]
+export const US_HOSTS = ['https://www.gutenberg.org', 'https://gutenberg.pglaf.org']
 
-/** 澳洲站只有这一处，没有镜像 */
-const AUS_HOSTS = ['http://gutenberg.net.au']
+/** 澳洲站只有这一处，没有镜像。它支持 https，验过同一本书字节数一致 */
+export const AUS_HOSTS = ['https://gutenberg.net.au']
 
 /**
  * 美国站的路径直接用 `/cache/epub/{id}/pg{id}.epub`，不用会 302 跳转的

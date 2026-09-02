@@ -32,7 +32,7 @@ export default defineConfig({
       },
       /** 澳洲站。前缀比上面那条长，vite 按最长匹配，不会打架 */
       '/gutenberg-au/': {
-        target: 'http://gutenberg.net.au',
+        target: 'https://gutenberg.net.au',
         changeOrigin: true,
         rewrite: (p) => p.replace(/^\/gutenberg-au/, '')
       }

@@ -171,11 +171,7 @@ export function LibraryDialog({ open, onClose, onImport }: LibraryDialogProps) {
                   <br />
                   来自古登堡计划的美国站与澳洲站
                   <br />
-                  <span className="mt-2 inline-block">
-                    澳洲站按「作者去世满 50 年」算，有二十世纪的书
-                    <br />
-                    建议连 Wi-Fi 下载，流量会慢很多
-                  </span>
+                  <span className="mt-2 inline-block">建议连 Wi-Fi 下载，流量会慢很多</span>
                 </p>
               ) : results.length === 0 ? (
                 <p className="py-6 text-center text-sm text-ink-muted">没搜到</p>
