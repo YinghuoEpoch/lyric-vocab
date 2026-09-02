@@ -1,4 +1,5 @@
 import { memo, useCallback, useEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { BookOpen, FileText, Eye, EyeOff, Sparkles, GripVertical, X } from 'lucide-react'
 import {
   DndContext,
@@ -29,6 +30,7 @@ import { AutoTextarea } from './AutoTextarea'
 import { getFolderReviewData } from '../hooks/getFolderReviewData'
 import { useSpeak } from '../hooks/useSpeak'
 import { usePrefetchAudio } from '../hooks/usePrefetchAudio'
+import { useBackHandler, BackPriority } from '../hooks/useBackHandler'
 import { SwipeToDelete } from './SwipeToDelete'
 
 export type ReviewTarget =
@@ -116,7 +118,13 @@ function VocabularyDashboardInner({
   const [hideChinese, setHideChinese] = useState(false)
   const [reviewMode, setReviewMode] = useState<'vocab' | 'sentence'>('vocab')
   /** 左滑露出删除的那张卡。同时只开一张，不然满屏都是红按钮 */
-  const [swipedId, setSwipedId] = useState<string | null>(null)
+  /**
+   * 划到位之后要问的那一条。
+   *
+   * 从前这里存的是「哪张卡滑开着」—— 现在没有滑开这回事了，
+   * 划到位就直接弹确认框，所以存的是「正在问哪一条」。
+   */
+  const [pendingDelete, setPendingDelete] = useState<{ id: string; label: string } | null>(null)
 
   /**
    * 点词 / 点句读出来。这台手机不支持朗读时 canSpeak 为 false，喇叭就不画。
@@ -289,10 +297,10 @@ function VocabularyDashboardInner({
     onVocabCountChange?.(reviewMode === 'vocab' ? totalCards : totalSentenceCards)
   }, [totalCards, totalSentenceCards, reviewMode, onVocabCountChange])
 
-  // 退出编辑模式、换一篇、切到句摘那边：滑开的那张收回去，
-  // 不然红按钮会一直挂在那儿，下次进来还开着
+  // 退出编辑模式、换一篇、切到句摘那边：还开着的确认框收掉。
+  // 卡片已经换了一批，再点「删除」删的就不是当初划的那一条了
   useEffect(() => {
-    setSwipedId(null)
+    setPendingDelete(null)
   }, [isEditMode, reviewTarget?.id, reviewMode])
 
   /**
@@ -303,6 +311,9 @@ function VocabularyDashboardInner({
     grouped.flatMap((g) => g.items.map((i) => i.word)),
     canSpeak && reviewMode === 'vocab'
   )
+
+  // 安卓返回键先关这个框。和左侧栏的「彻底删除」同一档 —— 问的是同一件事
+  useBackHandler(!!pendingDelete, BackPriority.confirmDelete, () => setPendingDelete(null))
 
   if (!reviewTarget) {
     return (
@@ -454,11 +465,9 @@ function VocabularyDashboardInner({
                       {(handle) => (
                         <MaybeSwipe
                           swipable={swipable}
-                          id={item.id}
-                          deleteLabel={`删除「${item.word}」这条笔记`}
-                          openId={swipedId}
-                          onOpenIdChange={setSwipedId}
-                          onDelete={(id) => onDeleteAnnotation?.(id)}
+                          onRequestDelete={() =>
+                            setPendingDelete({ id: item.id, label: `「${item.word}」这条笔记` })
+                          }
                         >
                           <VocabCard
                             item={item}
@@ -499,11 +508,9 @@ function VocabularyDashboardInner({
                       {(handle) => (
                         <MaybeSwipe
                           swipable={swipable}
-                          id={item.id}
-                          deleteLabel="删除这条句摘"
-                          openId={swipedId}
-                          onOpenIdChange={setSwipedId}
-                          onDelete={(id) => onDeleteAnnotation?.(id)}
+                          onRequestDelete={() =>
+                            setPendingDelete({ id: item.id, label: '这条句摘' })
+                          }
                         >
                           <SentenceCard
                             item={item}
@@ -526,6 +533,47 @@ function VocabularyDashboardInner({
           </div>
         )}
       </div>
+
+      {/*
+        划到位之后问这一句。挂到 body 上，否则遮罩只盖得住看板这一块。
+        样子和左侧栏那个「彻底删除」保持一致 —— 问的是同一件事：删了就找不回来。
+        点框外面能关（第四十节定的规矩）。
+      */}
+      {pendingDelete && createPortal(
+        <div
+          className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/40"
+          onClick={() => setPendingDelete(null)}
+        >
+          <div
+            className="bg-white rounded-xl shadow-xl border border-paper-border p-4 max-w-sm w-full"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <p className="text-sm leading-relaxed text-ink mb-4">
+              确定要删除{pendingDelete.label}吗？此操作不可恢复。
+            </p>
+            <div className="flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setPendingDelete(null)}
+                className="px-3 py-2 rounded-lg text-sm text-ink-muted hover:bg-stone-100"
+              >
+                取消
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  onDeleteAnnotation?.(pendingDelete.id)
+                  setPendingDelete(null)
+                }}
+                className="px-3 py-2 rounded-lg text-sm bg-red-600 text-white hover:bg-red-700"
+              >
+                删除
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
     </div>
   )
 }
@@ -607,32 +655,15 @@ function CardGrid({
  */
 function MaybeSwipe({
   swipable,
-  id,
-  deleteLabel,
-  openId,
-  onOpenIdChange,
-  onDelete,
+  onRequestDelete,
   children
 }: {
   swipable: boolean
-  id: string
-  deleteLabel: string
-  openId: string | null
-  onOpenIdChange: (id: string | null) => void
-  onDelete: (id: string) => void
+  onRequestDelete: () => void
   children: React.ReactNode
 }) {
   if (!swipable) return <>{children}</>
-  return (
-    <SwipeToDelete
-      open={openId === id}
-      onOpenChange={(open) => onOpenIdChange(open ? id : null)}
-      onDelete={() => onDelete(id)}
-      deleteLabel={deleteLabel}
-    >
-      {children}
-    </SwipeToDelete>
-  )
+  return <SwipeToDelete onRequestDelete={onRequestDelete}>{children}</SwipeToDelete>
 }
 
 /**
