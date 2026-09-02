@@ -75,3 +75,66 @@ describe('stripGutenbergBoilerplate', () => {
     expect(out[0].content).toBe('正文')
   })
 })
+
+/**
+ * 澳洲站（gutenberg.net.au）是另一套格式，没有 *** 界桩。
+ * 头部固定以「To contact Project Gutenberg of Australia...」收尾，
+ * 结尾是一行光秃秃的站名。抽查过《1984》《动物农场》《缅甸岁月》
+ * 和一本澳洲地方志，四本格式一致。
+ */
+const AUS_HEAD = 'To contact Project Gutenberg of Australia go to gutenberg.net.au'
+
+describe('stripGutenbergBoilerplate - 澳洲站', () => {
+  it('切掉头部声明，连后面重复的 Title / Author 一起', () => {
+    const out = stripGutenbergBoilerplate([
+      ch(
+        '全文',
+        [
+          'Project Gutenberg Australia',
+          'Title:      Animal Farm',
+          'Author:     George Orwell',
+          '这里是一大段许可条款',
+          AUS_HEAD,
+          '',
+          'Title:      Animal Farm',
+          'Author:     George Orwell',
+          '',
+          'Chapter I',
+          'Mr. Jones, of the Manor Farm...'
+        ].join('\n')
+      )
+    ])
+    expect(out[0].content).toBe(['Chapter I', 'Mr. Jones, of the Manor Farm...'].join('\n'))
+  })
+
+  it('切掉结尾那行站名', () => {
+    const out = stripGutenbergBoilerplate([
+      ch(
+        '全文',
+        ['头部', AUS_HEAD, '正文', 'THE END', '', 'Project Gutenberg Australia', ''].join('\n')
+      )
+    ])
+    expect(out[0].content).toBe(['正文', 'THE END'].join('\n'))
+  })
+
+  it('正文中间提到站名不受影响 —— 只在末尾附近找', () => {
+    const body = ['正文里提到 Project Gutenberg Australia 这个名字'].concat(
+      Array(20).fill('后面还有很多正文')
+    )
+    const out = stripGutenbergBoilerplate([ch('全文', ['头', AUS_HEAD].concat(body).join('\n'))])
+    expect(out[0].content).toContain('正文里提到 Project Gutenberg Australia 这个名字')
+    expect(out[0].content.split('\n')).toHaveLength(21)
+  })
+
+  it('没有澳洲头部的照样原样返回', () => {
+    const input = [ch('随手记', '今天天气不错')]
+    expect(stripGutenbergBoilerplate(input)).toEqual(input)
+  })
+
+  it('美国站那套界桩优先，不会被澳洲规则抢走', () => {
+    const out = stripGutenbergBoilerplate([
+      ch('全文', ['声明', START, '正文', END, '协议'].join('\n'))
+    ])
+    expect(out[0].content).toBe('正文')
+  })
+})

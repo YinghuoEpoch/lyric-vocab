@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
-import { asEpubFile, looksLikeEpub, parseTotal } from './download'
+import { asBookFile, looksLikeEpub, looksLikeText, parseTotal } from './download'
+import type { CatalogBook } from './catalog'
 
 function bytes(...vals: number[]): ArrayBuffer {
   return new Uint8Array(vals).buffer
@@ -28,24 +29,63 @@ describe('looksLikeEpub', () => {
   })
 })
 
-describe('asEpubFile', () => {
-  const buf = bytes(0x50, 0x4b, 0x03, 0x04)
+/**
+ * 澳洲站给的是纯文本，没有文件头可认。要防的东西还是一样：
+ * 别把运营商插页、WiFi 登录页那种 200 的 HTML 当成书收下来。
+ */
+describe('looksLikeText', () => {
+  const of = (str: string) => new TextEncoder().encode(str).buffer
 
-  it('用书名当文件名，导入器据此取默认书名', () => {
-    expect(asEpubFile(buf, 'Pride and Prejudice').name).toBe('Pride and Prejudice.epub')
+  it('正常的书开头认得出来', () => {
+    expect(looksLikeText(of('\n\nProject Gutenberg Australia\n\nTitle: Animal Farm\n'))).toBe(true)
+  })
+
+  it('一段 HTML 不认', () => {
+    expect(looksLikeText(of('<!DOCTYPE html>\n<html><head><title>404</title>'))).toBe(false)
+    expect(looksLikeText(of('  <html lang="en">此处省略一大段网页'))).toBe(false)
+    expect(looksLikeText(of('<?xml version="1.0"?><rss>这是个订阅源不是书'))).toBe(false)
+  })
+
+  it('二进制（含 0 字节）不认 —— 那多半是拿错了格式', () => {
+    const b = new Uint8Array(40)
+    b.set(new TextEncoder().encode('Title: something'), 0)
+    expect(looksLikeText(b.buffer)).toBe(false)
+  })
+
+  it('太短的不认', () => {
+    expect(looksLikeText(of('hi'))).toBe(false)
+  })
+})
+
+describe('asBookFile', () => {
+  const buf = bytes(0x50, 0x4b, 0x03, 0x04)
+  const us = (title: string): CatalogBook => ({ source: 'g', ref: '1342', title, author: '' })
+  const aus = (title: string): CatalogBook => ({
+    source: 'a',
+    ref: 'ebooks01/0100021.txt',
+    title,
+    author: ''
+  })
+
+  it('美国站包成 epub，导入器据此走 zip 那条路', () => {
+    const f = asBookFile(buf, us('Pride and Prejudice'))
+    expect(f.name).toBe('Pride and Prejudice.epub')
+    expect(f.type).toBe('application/epub+zip')
+  })
+
+  it('澳洲站包成 txt —— 拿到的本来就是纯文本，包错了解析会当场炸', () => {
+    const f = asBookFile(buf, aus('Nineteen eighty-four'))
+    expect(f.name).toBe('Nineteen eighty-four.txt')
+    expect(f.type).toBe('text/plain')
   })
 
   it('书名里的路径符号换成空格，免得节外生枝', () => {
     // 古登堡的书名里 : / ? 都很常见，例如「Moby Dick; Or, The Whale」这类还算温和的
-    expect(asEpubFile(buf, 'A/B:C*D?E"F<G>H|I').name).toBe('A B C D E F G H I.epub')
+    expect(asBookFile(buf, us('A/B:C*D?E"F<G>H|I')).name).toBe('A B C D E F G H I.epub')
   })
 
   it('书名全是符号时兜底，不生成一个只有扩展名的文件', () => {
-    expect(asEpubFile(buf, '///').name).toBe('book.epub')
-  })
-
-  it('标成 epub 类型，导入器靠它认格式', () => {
-    expect(asEpubFile(buf, 'x').type).toBe('application/epub+zip')
+    expect(asBookFile(buf, us('///')).name).toBe('book.epub')
   })
 })
 

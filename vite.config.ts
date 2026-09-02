@@ -29,6 +29,12 @@ export default defineConfig({
         target: 'https://www.gutenberg.org',
         changeOrigin: true,
         rewrite: (p) => p.replace(/^\/gutenberg/, '')
+      },
+      /** 澳洲站。前缀比上面那条长，vite 按最长匹配，不会打架 */
+      '/gutenberg-au/': {
+        target: 'http://gutenberg.net.au',
+        changeOrigin: true,
+        rewrite: (p) => p.replace(/^\/gutenberg-au/, '')
       }
     }
   },

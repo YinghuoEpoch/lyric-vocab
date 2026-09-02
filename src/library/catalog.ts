@@ -13,9 +13,22 @@ import { gunzipSync, strFromU8 } from 'fflate'
  * 砍成「编号 + 书名 + 作者」的英文正文书，6.1 万条，gz 后不到 2MB。
  */
 
+/** 书从哪个站来。两个站的地址规则和文件格式都不一样，下载时要分开处理 */
+export type BookSource = 'g' | 'a'
+
 export interface CatalogBook {
-  /** 古登堡编号，下载地址由它拼出来 */
-  id: number
+  /**
+   * 哪个源：
+   * - `g` 美国站（gutenberg.org），版权按「1929 年以前」算，给 epub
+   * - `a` 澳洲站（gutenberg.net.au），版权按「作者去世满 50 年」算，
+   *   所以有二十世纪的书（《1984》《动物农场》都在），给 txt
+   */
+  source: BookSource
+  /**
+   * 怎么找到它。美国站是书的编号（地址能拼出来），
+   * 澳洲站是站内路径（它的地址没规律，只能整条存着）。
+   */
+  ref: string
   title: string
   author: string
 }
@@ -23,7 +36,7 @@ export interface CatalogBook {
 /**
  * 读进内存的目录。
  *
- * `lines` 是原始文本行（`编号\t书名\t作者`），要用时才解析成对象 ——
+ * `lines` 是原始文本行（`源\t定位\t书名\t作者`），要用时才解析成对象 ——
  * 6 万条一上来就全建成对象，白白多占十几兆内存。
  * `folded` 是一一对应的小写版，省得每次搜索都把整份目录转一遍大小写。
  */
@@ -39,7 +52,23 @@ let loading: Promise<void> | null = null
 
 export function parseCatalog(text: string): Catalog {
   const lines = text.split('\n').filter(Boolean)
-  return { lines, folded: lines.map((l) => l.toLowerCase()) }
+  return { lines, folded: lines.map(searchableOf) }
+}
+
+/**
+ * 一行里真正拿来搜的部分：**只有书名和作者**。
+ *
+ * 前两格（源、定位）绝不能算进去 —— 澳洲站的定位是
+ * `ebooks01/0100021.txt` 这样的路径，算进去的话搜「txt」会把 1786 本
+ * 澳洲书一次全捞出来，搜「ebooks」同理。这是加第二个源时当场撞到的。
+ */
+function searchableOf(line: string): string {
+  let at = -1
+  for (let i = 0; i < 2; i++) {
+    at = line.indexOf('\t', at + 1)
+    if (at === -1) return line.toLowerCase()
+  }
+  return line.slice(at + 1).toLowerCase()
 }
 
 const CATALOG_URL = 'gutenberg-catalog.bin'
@@ -68,9 +97,9 @@ function decode(buf: ArrayBuffer): string {
    * 界面上却一点错都不报 —— 这种静默失败最难查。
    * 同类风险还有 service worker 的兜底、公共 WiFi 的登录页。
    *
-   * 目录每行都是「数字 + 制表符」开头，认这个就够了。
+   * 目录每行都是「源的字母 + 制表符」开头，认这个就够了。
    */
-  if (!/^\d+\t/.test(text)) throw new Error('书目文件的内容不对（可能被网络中途换掉了）')
+  if (!/^[ga]\t/.test(text)) throw new Error('书目文件的内容不对（可能被网络中途换掉了）')
   return text
 }
 
@@ -100,8 +129,13 @@ export function catalogSize(): number {
 }
 
 function parse(line: string): CatalogBook {
-  const [id, title, author] = line.split('\t')
-  return { id: Number(id), title: title ?? '', author: author ?? '' }
+  const [source, ref, title, author] = line.split('\t')
+  return {
+    source: source === 'a' ? 'a' : 'g',
+    ref: ref ?? '',
+    title: title ?? '',
+    author: author ?? ''
+  }
 }
 
 /**

@@ -1,4 +1,5 @@
 import { Capacitor, CapacitorHttp } from '@capacitor/core'
+import type { CatalogBook } from './catalog'
 
 /**
  * 从古登堡把一本书的 epub 取回来。
@@ -39,20 +40,39 @@ const MAX_CHUNKS = 400
  * （另有 `gutenberg.nabasny.com` 也能连，但同一本书大小对不上，
  * 内容版本不一样，故意不用。）
  */
-const HOSTS = [
+const US_HOSTS = [
   'https://www.gutenberg.org',
   'https://gutenberg.pglaf.org',
   'http://aleph.gutenberg.org'
 ]
 
+/** 澳洲站只有这一处，没有镜像 */
+const AUS_HOSTS = ['http://gutenberg.net.au']
+
 /**
- * 路径直接用 `/cache/epub/{id}/pg{id}.epub`，不用会 302 跳转的
+ * 美国站的路径直接用 `/cache/epub/{id}/pg{id}.epub`，不用会 302 跳转的
  * `/ebooks/{id}.epub.noimages`。少一次跳转就少依赖一层
  * 「原生网络跟不跟随重定向」的行为 —— 这类跨平台差异正是这个项目栽过跟头的地方。
  * 抽查过 16 本（编号 1 到 70000），这个规律全部成立。
+ *
+ * 澳洲站的地址没有规律可循，所以目录里存的就是整条站内路径，这里直接用。
  */
-function bookPath(id: number): string {
-  return `/cache/epub/${id}/pg${id}.epub`
+function bookPath(book: CatalogBook): string {
+  return book.source === 'a' ? `/${book.ref}` : `/cache/epub/${book.ref}/pg${book.ref}.epub`
+}
+
+function hostsFor(book: CatalogBook): string[] {
+  return book.source === 'a' ? AUS_HOSTS : US_HOSTS
+}
+
+/** 开发时走 vite 转发；两个站各配了一条 */
+function devPrefix(book: CatalogBook): string {
+  return book.source === 'a' ? '/gutenberg-au' : '/gutenberg'
+}
+
+/** 这本书下下来是什么格式 —— 决定怎么校验、包成什么文件名 */
+function formatOf(book: CatalogBook): 'epub' | 'txt' {
+  return book.source === 'a' ? 'txt' : 'epub'
 }
 
 /** 这本书取不到 —— 和「网络不通」不是一回事，上层要分开提示 */
@@ -78,6 +98,28 @@ export function looksLikeEpub(bytes: ArrayBuffer | Uint8Array): boolean {
   const head = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes)
   if (head.length < 4) return false
   return head[0] === 0x50 && head[1] === 0x4b && head[2] === 0x03 && head[3] === 0x04
+}
+
+/**
+ * 澳洲站给的是纯文本，没有 epub 那种一眼认得出的文件头。
+ *
+ * 但要防的东西是一样的：**别把一段 HTML 当成书收下来**（运营商插页、
+ * 公共 WiFi 登录页、站点自己的错误页，全是 200 的 HTML）。
+ * 所以反过来查 —— 开头像网页就不要。
+ */
+export function looksLikeText(bytes: ArrayBuffer | Uint8Array): boolean {
+  const head = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes)
+  if (head.length < 16) return false
+  // 只看开头一小段，够判断了
+  let s = ''
+  for (let i = 0; i < Math.min(head.length, 400); i++) s += String.fromCharCode(head[i])
+  if (/^\s*(<!doctype|<html|<\?xml|<head|<body)/i.test(s)) return false
+  // 纯文本里不该出现 0 字节
+  return !head.slice(0, 400).includes(0)
+}
+
+function looksRight(bytes: ArrayBuffer | Uint8Array, format: 'epub' | 'txt'): boolean {
+  return format === 'epub' ? looksLikeEpub(bytes) : looksLikeText(bytes)
 }
 
 /** 一段的返回：字节，以及服务器说的整个文件有多大 */
@@ -153,19 +195,19 @@ export interface DownloadProgress {
  *
  * @param onProgress 每取到一段回调一次，用来显示进度
  */
-export async function fetchBookEpub(
-  id: number,
+export async function fetchBook(
+  book: CatalogBook,
   onProgress?: (p: DownloadProgress) => void
 ): Promise<ArrayBuffer> {
-  const path = bookPath(id)
+  const path = bookPath(book)
+  const format = formatOf(book)
   let lastError: unknown
 
-  for (const host of HOSTS) {
-    // 浏览器里走开发转发，只试主站那一条 —— 转发规则只配了这一个
-    const base = Capacitor.isNativePlatform() ? host + path : '/gutenberg' + path
+  for (const host of hostsFor(book)) {
+    // 浏览器里走开发转发，只试第一条 —— 转发规则每个站只配了一个
+    const base = Capacitor.isNativePlatform() ? host + path : devPrefix(book) + path
     try {
-      const bytes = await downloadFrom(base, onProgress)
-      return bytes
+      return await downloadFrom(base, format, onProgress)
     } catch (e) {
       lastError = e
       if (!Capacitor.isNativePlatform()) break
@@ -176,6 +218,7 @@ export async function fetchBookEpub(
 
 async function downloadFrom(
   url: string,
+  format: 'epub' | 'txt',
   onProgress?: (p: DownloadProgress) => void
 ): Promise<ArrayBuffer> {
   const parts: Uint8Array[] = []
@@ -185,8 +228,8 @@ async function downloadFrom(
   for (let n = 0; n < MAX_CHUNKS; n++) {
     const chunk = await fetchRangeWithRetry(url, loaded, loaded + CHUNK - 1)
 
-    // 第一段就要认出这是不是 epub，是 HTML 的话趁早停，别白下几百 KB
-    if (n === 0 && !looksLikeEpub(chunk.bytes)) throw new NoEpub('拿回来的不是 epub')
+    // 第一段就要认出对不对，是 HTML 的话趁早停，别白下几百 KB
+    if (n === 0 && !looksRight(chunk.bytes, format)) throw new NoEpub('拿回来的不是书')
 
     if (chunk.total !== null) total = chunk.total
     if (chunk.bytes.length === 0) break
@@ -206,7 +249,7 @@ async function downloadFrom(
     out.set(p, at)
     at += p.length
   }
-  if (!looksLikeEpub(out)) throw new NoEpub('拿回来的不是 epub')
+  if (!looksRight(out, format)) throw new NoEpub('拿回来的不是书')
   return out.buffer
 }
 
@@ -216,8 +259,10 @@ async function downloadFrom(
  * 这样「从书库下载」和「从手机里选文件」在导入层眼里没有区别 ——
  * 章节切分、编码处理、异常提示全都是现成的，一行都不用另写。
  */
-export function asEpubFile(bytes: ArrayBuffer, title: string): File {
+export function asBookFile(bytes: ArrayBuffer, book: CatalogBook): File {
   // 文件名只是给导入器取默认书名用的，去掉路径符号免得节外生枝
-  const safe = title.replace(/[\\/:*?"<>|]/g, ' ').trim() || 'book'
-  return new File([bytes], `${safe}.epub`, { type: 'application/epub+zip' })
+  const safe = book.title.replace(/[\\/:*?"<>|]/g, ' ').trim() || 'book'
+  return formatOf(book) === 'txt'
+    ? new File([bytes], `${safe}.txt`, { type: 'text/plain' })
+    : new File([bytes], `${safe}.epub`, { type: 'application/epub+zip' })
 }
