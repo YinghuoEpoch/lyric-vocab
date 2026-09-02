@@ -78,6 +78,8 @@ export function SwipeToDelete({
   const engaged = useRef<boolean | null>(null)
   /** 刚滑过，接下来那个 click 要吃掉，免得连带把卡片展开 */
   const swiped = useRef(false)
+  /** 会跟着手指走的那一层，松手时要直接改它的 transform，见 finish */
+  const moverRef = useRef<HTMLDivElement>(null)
 
   const offset = dragOffset ?? (open ? -REVEAL_PX : 0)
 
@@ -166,6 +168,37 @@ export function SwipeToDelete({
   )
 
   const finish = useCallback(() => {
+    /*
+     * **先把 DOM 摆到手指真正松手的那个位置，再交给过渡。**
+     *
+     * 快划一下的时候，浏览器把那几个 pointermove 和 pointerup **合在同一帧**送来，
+     * React 一帧都没来得及画 —— 屏幕上那张卡还停在 -88px（划开时的位置），
+     * 而下一次提交直接把它设成 0，还带着 180ms 的过渡。
+     * 结果就是：手指明明已经把卡片推回去了，松手后它又**从头演一遍那 88px**，
+     * 红色删除区跟着整块露出来再被抹掉 —— 用户报的「快速往回划红色会闪一下」就是它。
+     * （用 getAnimations() 抓到过：松手后生成的过渡是从一个很靠左的位置滑到 0，180ms。）
+     *
+     * 这里手动把 transform 写成手指最后到的位置、并把过渡临时关掉，再读一次
+     * offsetWidth 逼浏览器认下这个新起点。随后 React 提交最终位置时，
+     * 过渡只需要走「真正还剩下的那一小段」—— 手指已经推到位就等于不用动。
+     * 中途松手（比如只推回一半）不受影响，那时候确实还剩一段，红色也该露着。
+     */
+    const node = moverRef.current
+    if (node && engaged.current === true) {
+      node.style.transition = 'none'
+      node.style.transform = `translateX(${offsetRef.current}px)`
+      // 读一下强制结算，下一次改 transform 才是从这个位置开始动
+      void node.offsetWidth
+      /*
+       * **过渡必须自己恢复回去，不能指望 React 来补。**
+       * 快划时那一整串事件在同一帧里，React 只会提交一次渲染，
+       * 它记着的上一次 transition 和这一次是同一个字符串，于是根本不去动 DOM ——
+       * 上面那句 `none` 就永远留在了元素上，从此再也不会有滑动动画。
+       * 这里写回去的字符串和渲染里那句必须一模一样。
+       */
+      node.style.transition = `transform ${CLOSE_MS}ms ease-out`
+    }
+
     // 读 ref 不读 state，理由见 offsetRef 那段注释
     if (engaged.current === true) onOpenChange(shouldStayOpen(offsetRef.current))
     start.current = null
@@ -221,6 +254,7 @@ export function SwipeToDelete({
       </div>
 
       <div
+        ref={moverRef}
         // pan-y：竖着滚交给浏览器自己处理，横向的才到我们手里。
         // 写 none 的话整张卡都滚不动了，列表会卡住
         style={{
