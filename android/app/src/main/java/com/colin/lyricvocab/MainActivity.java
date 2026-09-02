@@ -68,8 +68,13 @@ public class MainActivity extends BridgeActivity {
                 WindowInsetsCompat.Type.systemBars() | WindowInsetsCompat.Type.displayCutout()
             );
             boolean imeVisible = insets.isVisible(WindowInsetsCompat.Type.ime());
-            // 放按钮要让多少，和底色要铺多少不是一回事 —— 缘由见 SafeAreaPlugin
-            int tappableBottom = insets.getInsets(WindowInsetsCompat.Type.tappableElement()).bottom;
+            /*
+             * 放按钮要让多少，和底色要铺多少不是一回事 —— 算法和插件那边共用一份
+             * （SafeAreaPlugin.buttonBottom），免得两条路一处改了另一处忘。
+             * ⚠️ 它出来的已经是 CSS 像素，下面 pushInsets 不要再除一次密度。
+             */
+            float density = getResources().getDisplayMetrics().density;
+            int buttonBottom = SafeAreaPlugin.buttonBottom(this, insets, density);
 
             // 键盘弹出来时底部不再让系统栏那一条 —— 那时候底边归键盘
             pushInsets(
@@ -77,7 +82,7 @@ public class MainActivity extends BridgeActivity {
                 systemBars.right,
                 imeVisible ? 0 : systemBars.bottom,
                 systemBars.left,
-                imeVisible ? 0 : tappableBottom
+                imeVisible ? 0 : buttonBottom
             );
 
             if (Build.VERSION.SDK_INT < Build.VERSION_CODES.VANILLA_ICE_CREAM) {
@@ -102,7 +107,8 @@ public class MainActivity extends BridgeActivity {
      * 免得一处改了另一处忘。钩子还没挂上（网页没起来）时这一句是空转，
      * 不要紧：启动那次的值是网页自己来问的。
      */
-    private void pushInsets(int top, int right, int bottom, int left, int tappableBottom) {
+    /** 前四个数是物理像素，最后那个 buttonBottom 已经是 CSS 像素了，别再除一次 */
+    private void pushInsets(int top, int right, int bottom, int left, int buttonBottomCss) {
         if (getBridge() == null || getBridge().getWebView() == null) return;
 
         float density = getResources().getDisplayMetrics().density;
@@ -113,7 +119,7 @@ public class MainActivity extends BridgeActivity {
             Math.round(right / density),
             Math.round(bottom / density),
             Math.round(left / density),
-            Math.round(tappableBottom / density)
+            buttonBottomCss
         );
 
         runOnUiThread(() -> {

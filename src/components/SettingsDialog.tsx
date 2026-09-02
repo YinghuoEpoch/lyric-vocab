@@ -433,12 +433,24 @@ export function SettingsDialog({
                   原生报的：上 {insetInfo?.report.top ?? '—'} / 右 {insetInfo?.report.right ?? '—'}{' '}
                   / 下 {insetInfo?.report.bottom ?? '—'} / 左 {insetInfo?.report.left ?? '—'}
                   <br />
-                  放按钮要让：{insetInfo?.report.tappableBottom ?? '—'}（0 = 手势条，不用让）
+                  放按钮要让：{insetInfo?.report.tappableBottom ?? '—'}（系统自报{' '}
+                  {insetInfo?.report.tappableRaw ?? '—'}）
+                  <br />
+                  导航方式：
+                  {insetInfo?.report.navMode === 2
+                    ? '手势（不用让）'
+                    : insetInfo?.report.navMode === 0
+                      ? '三颗键'
+                      : insetInfo?.report.navMode === 1
+                        ? '两颗键'
+                        : `读不到（${insetInfo?.report.navMode ?? '—'}）`}
                   <br />
                   实际生效：{insetInfo?.applied ?? '—'}
                   <br />
                   安卓 {insetInfo?.report.sdk ?? '—'} · 密度 {insetInfo?.report.density ?? '—'} ·
                   屏宽 {window.innerWidth}
+                  <br />
+                  网页打包于 {insetInfo?.report.build ?? '—'}
                   {insetInfo?.report.error ? (
                     <>
                       <br />

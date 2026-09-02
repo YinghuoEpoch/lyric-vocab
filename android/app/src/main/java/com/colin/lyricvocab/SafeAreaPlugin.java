@@ -1,6 +1,7 @@
 package com.colin.lyricvocab;
 
 import android.os.Build;
+import android.provider.Settings;
 import android.util.DisplayMetrics;
 import android.view.View;
 import androidx.core.graphics.Insets;
@@ -33,6 +34,41 @@ import com.getcapacitor.annotation.CapacitorPlugin;
  */
 @CapacitorPlugin(name = "SafeArea")
 public class SafeAreaPlugin extends Plugin {
+
+    /**
+     * 这台机器底下用的是哪种导航：0 = 三颗键，1 = 两颗键，2 = 手势。取不到是 -1。
+     *
+     * `navigation_mode` 不是公开 API 里的常量，但它就是系统设置里那个开关本身，
+     * 各家 ROM 都得写这一格，读它不需要任何权限。之所以还要读它 ——
+     * 本来 tappableElement 就该回答「放按钮要让多少」（手势模式下是 0），
+     * 但有 ROM 手势模式下照样报整条，于是 app 白让一条。
+     * 先信这一格，取不到再退回 tappableElement。
+     */
+    static int navigationMode(android.content.Context ctx) {
+        try {
+            return Settings.Secure.getInt(ctx.getContentResolver(), "navigation_mode", -1);
+        } catch (Exception e) {
+            return -1;
+        }
+    }
+
+    /**
+     * 放按钮要往上让多少（CSS 像素）。
+     *
+     * 手势条是透的、点得穿，不用让；三颗键是实心的，压在下面就点不着。
+     * ⚠️ 这个数和「底色要铺多少」不是一回事 —— 底色一律铺满整屏。
+     */
+    static int buttonBottom(android.content.Context ctx, WindowInsetsCompat insets, float density) {
+        int tappable = insets.getInsets(WindowInsetsCompat.Type.tappableElement()).bottom;
+        int mode = navigationMode(ctx);
+        if (mode == 2) return 0; // 手势
+        if (mode == 0 || mode == 1) {
+            // 按键模式：以系统栏为准，tappableElement 偶有报 0 的
+            int bars = insets.getInsets(WindowInsetsCompat.Type.navigationBars()).bottom;
+            return Math.round(Math.max(tappable, bars) / density);
+        }
+        return Math.round(tappable / density);
+    }
 
     /**
      * 四条边各要让出多少（已换算成 CSS 像素）。
@@ -88,7 +124,9 @@ public class SafeAreaPlugin extends Plugin {
         ret.put("right", Math.round(bars.right / density));
         ret.put("bottom", Math.round(bars.bottom / density));
         ret.put("left", Math.round(bars.left / density));
-        ret.put("tappableBottom", Math.round(tappable.bottom / density));
+        ret.put("tappableRaw", Math.round(tappable.bottom / density));
+        ret.put("navMode", navigationMode(getContext()));
+        ret.put("tappableBottom", buttonBottom(getContext(), insets, density));
         call.resolve(ret);
     }
 }

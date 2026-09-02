@@ -29,6 +29,10 @@ type NativeInsets = {
   left?: number
   /** 放按钮要往上让多少。手势条是 0，三颗导航键才是整条 —— 缘由见 SafeAreaPlugin */
   tappableBottom?: number
+  /** tappableElement 原样报的数 —— 和上面那个不一样时，说明这台 ROM 报得不对 */
+  tappableRaw?: number
+  /** 0 = 三颗键，1 = 两颗键，2 = 手势，-1 = 读不到 */
+  navMode?: number
   sdk?: number
   density?: number
 }
@@ -43,12 +47,23 @@ export type SafeAreaReport = {
   bottom: number
   left: number
   tappableBottom?: number
+  tappableRaw?: number
+  navMode?: number
   sdk?: number
   density?: number
   error?: string
+  /** 这份网页是什么时候打的 —— 用来确认手机上跑的不是上一版 */
+  build: string
 }
 
-let report: SafeAreaReport = { source: 'env()', top: 0, right: 0, bottom: 0, left: 0 }
+let report: SafeAreaReport = {
+  source: 'env()',
+  top: 0,
+  right: 0,
+  bottom: 0,
+  left: 0,
+  build: __BUILD_STAMP__
+}
 
 /** 读一眼这次的取值情况。⚠️ 临时的，验完这一版就删（设置页那一行也一起删） */
 export function getSafeAreaReport(): SafeAreaReport {
@@ -150,8 +165,11 @@ export async function initSafeArea(): Promise<void> {
         bottom,
         left,
         tappableBottom,
+        tappableRaw: v.tappableRaw,
+        navMode: v.navMode,
         sdk: v.sdk,
-        density: v.density
+        density: v.density,
+        build: __BUILD_STAMP__
       }
       return
     }
@@ -163,8 +181,10 @@ export async function initSafeArea(): Promise<void> {
       source: gotSomething ? 'env()' : '没拿到（用保底）',
       ...env,
       tappableBottom: env.bottom,
+      navMode: v.navMode,
       sdk: v.sdk,
-      density: v.density
+      density: v.density,
+      build: __BUILD_STAMP__
     }
   } catch (e) {
     const env = readEnvInsets()
@@ -173,7 +193,8 @@ export async function initSafeArea(): Promise<void> {
       source: env.top > 0 || env.bottom > 0 ? 'env()' : '没拿到（用保底）',
       ...env,
       tappableBottom: env.bottom,
-      error: e instanceof Error ? e.message : String(e)
+      error: e instanceof Error ? e.message : String(e),
+      build: __BUILD_STAMP__
     }
   }
 }
