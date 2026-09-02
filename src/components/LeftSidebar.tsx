@@ -235,7 +235,7 @@ function LeftSidebarInner({
   )
 
   /**
-   * 退出整理模式：把进入前展开着的文件夹恢复回去。
+   * 退出整理模式：把进入前展开着的文库恢复回去。
    *
    * 拆成单独一个函数，是因为退出有两条路 —— 手动点「整理」，
    * 以及侧栏被收起时自动退出。两条路必须做同样的善后。
@@ -262,7 +262,7 @@ function LeftSidebarInner({
     setMenuOpen(null)
 
     if (!organizeMode) {
-      // 进入整理模式：记录当前展开的文件夹，并折叠全部
+      // 进入整理模式：记录当前展开的文库，并折叠全部
       const openIds = books.filter((b) => !collapsedBooks[b.id]).map((b) => b.id)
       preEditOpenFoldersRef.current = openIds
 
@@ -441,7 +441,7 @@ function LeftSidebarInner({
         return
       }
 
-       // 实时乐观更新：文档拖到其他文档或文件夹时，立即调整 pageLayout
+       // 实时乐观更新：文档拖到其他文档或文库时，立即调整 pageLayout
        if (activeData.type === 'page' && overData.type === 'page') {
          const activePageId = activeData.id
          const overPageId = overData.id
@@ -514,7 +514,7 @@ function LeftSidebarInner({
 
       // 文档拖拽：
       // - 在拖拽过程中已通过 handleDragOver 实时更新 pageLayout
-      // - 这里无论最终落点是文档还是文件夹标题行，统一根据「最终的 pageLayout」持久化顺序
+      // - 这里无论最终落点是文档还是文库标题行，统一根据「最终的 pageLayout」持久化顺序
       if (activeData.type === 'page') {
         const entries: Array<{ id: string; bookId: string | null }> = pageLayout
           .filter((p) => !p.deletedAt)
@@ -810,7 +810,7 @@ function LeftSidebarInner({
                           isDragOver ? 'ring-2 ring-accent-400' : ''
                         }`}
                       >
-                        {/* 折叠小三角，仅控制展开/折叠，不触发进入文件夹 */}
+                        {/* 折叠小三角，仅控制展开/折叠，不触发进入文库 */}
                         <button
                           type="button"
                           onClick={() => toggleBookCollapsed(book.id)}
@@ -821,7 +821,7 @@ function LeftSidebarInner({
                             className={`w-3 h-3 transition-transform ${collapsed ? '' : 'rotate-90'}`}
                           />
                         </button>
-                        {/* 文件夹文字区域：保持原有点击逻辑 */}
+                        {/* 文库文字区域：保持原有点击逻辑 */}
                         <button
                           type="button"
                           onClick={() => !isEditingBook && handleBookClick(book)}

@@ -9,9 +9,16 @@ import type { PhraseView } from '../utils/annotationViews'
 import { X, Trash2 } from 'lucide-react'
 import { useWordInteraction } from '../hooks/useWordInteraction'
 import { useBackHandler, BackPriority } from '../hooks/useBackHandler'
+import { useIsWide } from '../hooks/useWideLayout'
 import { buildWordList, getRangeText as sliceRangeText } from '../utils/reconcile'
 
 const PROGRESS_DEBOUNCE_MS = 700
+
+/** 宽屏上那个小弹窗有多宽，以及离屏幕边缘至少留多少 */
+const POPUP_W = 320
+const POPUP_MARGIN = 12
+/** 再挤也不把小窗压得比这还矮，否则里面那几格没法填 */
+const MIN_POPUP_H = 200
 
 /**
  * 正文里三种标记的线。
@@ -24,6 +31,11 @@ const PROGRESS_DEBOUNCE_MS = 700
  * 范围越大线越靠下：单词 < 短语 < 句摘，三者叠在一起时都看得见。
  * 线型也各不相同：直实线 / 波浪线 / 虚线，不必靠长短去分辨。
  *
+ * **只有句摘那条是例外：它不走 text-decoration，改成背景条纹（见 index.css
+ * 的 .sentence-line）。** 一段句摘里套着几十个单词 span，而浏览器画下划线是
+ * 一个子元素一段地画的，虚线在每个词的接缝处都重新起头，看着深一截浅一截。
+ * 单词和短语那两条各自只画在一个元素上，没有这个毛病，照旧。
+ *
  * 这几个数是量出来的，不是估的（18px 字号、行距 1.8 时）：
  * 基线往下 4px 是内容盒底部（从前两条 border-b 都落在这儿，所以会重叠），
  * 9.7px 是行盒底部，再往下还有 5.7px 行间空气才碰到下一行的字顶 ——
@@ -34,8 +46,7 @@ const WORD_LINE_CLASS =
   'underline decoration-solid decoration-accent-600 decoration-2 underline-offset-2'
 const PHRASE_LINE_CLASS =
   'underline decoration-wavy decoration-accent-600/90 decoration-1 underline-offset-[0.36em]'
-const SENTENCE_LINE_CLASS =
-  'underline decoration-dashed decoration-accent-600 decoration-1 underline-offset-[0.6em]'
+const SENTENCE_LINE_CLASS = 'sentence-line'
 
 /** 单词选择：仅一个词 */
 type WordSelection = { type: 'word'; anchorId: string; word: string }
@@ -299,6 +310,30 @@ function LyricEditorInner({
   const [phraseForm, setPhraseForm] = useState({ definition: '', usage: '' })
   // 底部抽屉当前模式：单词 or 范围（短语/句摘）；null 表示不显示
   const [fullMode, setFullMode] = useState<'word' | 'sentence' | null>(null)
+
+  /**
+   * 宽屏上，这一格不再是横贯屏幕的底部抽屉，而是**贴着那个词弹出来的小窗**。
+   *
+   * 这件事从前就有：2026-08-28 那次「改为纯触摸交互」把桌面端的小气泡连同双击
+   * 一起删了（`git show d54ebe4`），当时它是跟着鼠标点击走的，手机上从来不显示。
+   * 删得对 —— 但平板出现之后，横屏上一个 1280 宽的抽屉横在底下、还盖住左边的文库列表，
+   * 就成了「手机应用拉大了用」。所以把小窗接回来，这回改三点：
+   *
+   * 1. **跟着长按走**，不再有第二套手势 —— 全平台仍旧只有长按取词这一种
+   * 2. **按可用宽度决定**（useWideLayout），不按设备种类。从前那个 useIsMobile 删得对
+   * 3. **会自己躲边界**：右边放不下就往左收，下边放不下就翻到词的上面。
+   *    老版本是硬套 `left: rect.left, top: rect.bottom + 6`，会跑出屏幕，
+   *    那次提交里也写着它「会被软键盘盖住」
+   *
+   * 窄屏（手机、平板竖屏）一律还是底部抽屉，那套是验熟的。
+   */
+  const isWide = useIsWide()
+  const popupRef = useRef<HTMLDivElement>(null)
+  const [popupPos, setPopupPos] = useState<{
+    left: number
+    top: number
+    maxHeight: number
+  } | null>(null)
   /**
    * 选中一段之后，它算短语还是句子。
    *
@@ -374,6 +409,85 @@ function LyricEditorInner({
 
   // 安卓返回键：先收起抽屉，保留选区；再按一次才清掉选区。
   // 和「点空白处」的行为保持一致。
+  /**
+   * 算小窗摆在哪。只在宽屏、且抽屉真的开着时算。
+   *
+   * 摆在选区**最后一行的下面**（而不是第一行下面）—— 划句子时选区可能跨两行，
+   * 摆在第一行下面会把自己划的那句盖住一半。
+   *
+   * 用 useLayoutEffect 是为了在浏览器画之前就把位置定下来，否则会先在屏幕底下
+   * 闪一帧抽屉再跳上去。高度要等它真的渲染出来才知道，所以下一拍再量一次校正。
+   */
+  useLayoutEffect(() => {
+    if (!isWide || !fullMode || !selection) {
+      setPopupPos(null)
+      return
+    }
+
+    const place = () => {
+      const startId = selection.type === 'word' ? selection.anchorId : selection.startAnchorId
+      const endId = selection.type === 'word' ? selection.anchorId : selection.endAnchorId
+      const startEl = document.getElementById(startId)
+      const endEl = document.getElementById(endId) ?? startEl
+      // 那个词被正文重排冲掉了（改过正文、翻了页）：退回底部抽屉，别硬摆一个错位置
+      if (!startEl || !endEl) {
+        setPopupPos(null)
+        return
+      }
+      const a = startEl.getBoundingClientRect()
+      const b = endEl.getBoundingClientRect()
+      const h = popupRef.current?.offsetHeight ?? 280
+
+      // 左右：贴着选区左边缘，但不许越过屏幕两侧
+      const left = Math.min(
+        Math.max(a.left, POPUP_MARGIN),
+        Math.max(POPUP_MARGIN, window.innerWidth - POPUP_W - POPUP_MARGIN)
+      )
+
+      /*
+       * 上下：**宁可把自己压矮，也不要盖住那个词。**
+       *
+       * 摆在选区最后一行的下面；下面塞不下就翻到上面。两边都塞不下时，选空间大的那边，
+       * 并把最大高度压到那一边的净空 —— 让它自己内部滚动。
+       * 早一版是「塞不下就贴着屏幕顶端」，结果 800 高的横屏上，
+       * 一个 387px 高的句摘窗直接盖在划中的句子上，等于看不见自己划了什么。
+       * 净空实在太小（比如 180px）就不再压了，那时候盖住一点也比挤成一条缝强。
+       */
+      const bottomEdge = Math.max(a.bottom, b.bottom) + 8
+      const topEdge = Math.min(a.top, b.top) - 8
+      const spaceBelow = window.innerHeight - bottomEdge - POPUP_MARGIN
+      const spaceAbove = topEdge - POPUP_MARGIN
+      const putBelow = h <= spaceBelow || spaceBelow >= spaceAbove
+      const maxHeight = Math.max(MIN_POPUP_H, putBelow ? spaceBelow : spaceAbove)
+      const wanted = putBelow
+        ? bottomEdge
+        : Math.max(POPUP_MARGIN, topEdge - Math.min(h, maxHeight))
+      /*
+       * 最后再夹一道：**无论如何都得留在屏幕里。**
+       * 那个词可能根本不在视野内（正文滚走了，或者是从别处跳过来选中的），
+       * 照它算出来的位置会把小窗顶到屏幕外面 —— 开着却看不见，比盖住还糟。
+       * 量到过一次：词在 y=1029、屏幕才 800 高，小窗被摆到了 795。
+       */
+      const top = Math.min(
+        Math.max(wanted, POPUP_MARGIN),
+        Math.max(POPUP_MARGIN, window.innerHeight - Math.min(h, maxHeight) - POPUP_MARGIN)
+      )
+      setPopupPos({ left, top, maxHeight })
+    }
+
+    place()
+    // 渲染出来之后再量一次真实高度校正（第一次只能按估值算）
+    const settle = window.setTimeout(place, 0)
+    // 转屏、滚正文时跟着那个词走
+    window.addEventListener('resize', place)
+    window.addEventListener('scroll', place, true)
+    return () => {
+      window.clearTimeout(settle)
+      window.removeEventListener('resize', place)
+      window.removeEventListener('scroll', place, true)
+    }
+  }, [isWide, fullMode, selection])
+
   useBackHandler(!!fullMode || !!selection, BackPriority.wordDrawer, () => {
     if (fullMode) setFullMode(null)
     else clearAll()
@@ -843,12 +957,12 @@ function LyricEditorInner({
             }
 
             if (kind) {
-              // 三条线共用一套画法（text-decoration）：都从基线往下量，
-              // 位置一律用 em，字号调大时跟着一起长，不会挤到下一行去。
-              // 范围越大，线越靠下：单词(2px) < 短语(0.3em) < 句摘(0.55em)，
+              // 三条线的位置一律用 em，字号调大时跟着一起长，不会挤到下一行去。
+              // 范围越大，线越靠下：单词(2px) < 短语(0.3em) < 句摘(0.6em)，
               // 叠在一起时三条都看得见 —— 从前短语用 border-b，
               // 和句摘的 border-b 落在同一条水平线上，虚线整条被实线盖住。
               // 线型也各不相同：单词直实线、短语波浪线、句摘虚线，一眼可分。
+              // 句摘那条是背景条纹不是下划线，缘由见文件开头。
               const inner = phraseSegmentMask[segIdx] ? (
                 <span className={PHRASE_LINE_CLASS}>{chunkElems}</span>
               ) : (
@@ -909,12 +1023,31 @@ function LyricEditorInner({
             可抽屉根本拖不动 —— 与其留一个骗人的手势提示，不如去掉。
           */}
           <div
+            ref={popupRef}
             data-full-popup="true"
-            className="fixed z-20 bg-white border-t border-paper-border p-4 left-0 right-0 bottom-0 w-full rounded-t-2xl max-h-[70vh] overflow-y-auto"
-            style={{
-              paddingBottom: 'max(env(safe-area-inset-bottom), 16px)',
-              boxShadow: '0 -10px 28px -12px rgba(44, 44, 44, 0.22)'
-            }}
+            className={
+              popupPos
+                ? // 宽屏：贴着那个词的一扇小窗。四边都有边框和影子，是「浮在纸上的一张便签」
+                  // 宽度和最高多高都写在 style 里，不写成类名 ——
+                  // 拼出来的类名 Tailwind 扫不到，不会生成
+                  'fixed z-20 bg-white border border-paper-border p-4 rounded-2xl overflow-y-auto'
+                : // 窄屏：横贯屏幕的底部抽屉，手机上验熟的那套
+                  'fixed z-20 bg-white border-t border-paper-border p-4 left-0 right-0 bottom-0 w-full rounded-t-2xl max-h-[70vh] overflow-y-auto'
+            }
+            style={
+              popupPos
+                ? {
+                    left: popupPos.left,
+                    top: popupPos.top,
+                    width: POPUP_W,
+                    maxHeight: popupPos.maxHeight,
+                    boxShadow: '0 12px 32px -12px rgba(44, 44, 44, 0.3)'
+                  }
+                : {
+                    paddingBottom: 'max(env(safe-area-inset-bottom), 16px)',
+                    boxShadow: '0 -10px 28px -12px rgba(44, 44, 44, 0.22)'
+                  }
+            }
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-start justify-between gap-3 mb-3">

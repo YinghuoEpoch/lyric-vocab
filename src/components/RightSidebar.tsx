@@ -374,7 +374,7 @@ function RightSidebarInner({
 
   return (
     <aside
-      className={`w-[260px] md:w-[350px] h-full shrink-0 border-l border-paper-border bg-white/80 flex flex-col overflow-hidden safe-area-padding ${className}`}
+      className={`w-[260px] wide:w-[350px] h-full shrink-0 border-l border-paper-border bg-white/80 flex flex-col overflow-hidden safe-area-padding ${className}`}
     >
       <div className={BAND_TOP}>
           <span className="text-sm font-medium text-ink-muted flex items-center gap-2">
@@ -429,8 +429,10 @@ function RightSidebarInner({
             <button
               type="button"
               onClick={onClose}
-              className="hidden md:inline-flex p-1.5 rounded-lg hover:bg-stone-100 text-ink-muted hover:text-ink"
+              className="hidden wide:inline-flex p-1.5 rounded-lg hover:bg-stone-100 text-ink-muted hover:text-ink"
               title="关闭笔记"
+              /* 只有图标，没有文字。不写 aria-label 的话读屏软件念不出来 */
+              aria-label="关闭笔记"
             >
               <PanelRightClose className="w-4 h-4" />
             </button>

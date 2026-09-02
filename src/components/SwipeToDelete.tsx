@@ -1,23 +1,45 @@
-import { useCallback, useRef, useState } from 'react'
-import { Trash2 } from 'lucide-react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 
 /**
- * 左滑露出「删除」。
+ * 左滑删除：**划到底就问一句，不留常驻的红按钮**。
  *
- * **两步才删**：滑开只是把按钮露出来，还要再点一下才真删。
+ * **两步才删**：划到位只是把「确定要删吗」问出来，还要在弹窗上再点一下才真删。
  * 这是用户拍板的，理由很硬 —— **笔记删了是真没了**，标注不进回收站
  * （回收站只管文档和文库），误滑一下，那条的音标、词性、释义一起没。
  *
  * 只在**单篇文档**的复习里开放。文库复习的一张卡是按拼写把好几条标注合并出来的
  * （同一个词在三篇里各标过一次，那儿只显示一条、频次记 3），
  * 滑掉它等于一次删好几条，而且看不见删了哪几条 —— 和拖拽排序在那边被禁掉同一个理由。
+ *
+ * ## 为什么不再是「滑开露出红按钮」
+ *
+ * 从前的做法是：一块红色**铺在卡片底下**，靠显示/隐藏控制，卡片用 transform 移开来露出它。
+ * 用户接连报了三次毛病，一次比一次难缠：
+ *
+ * 1. 快速划回时红色**凭空消失** —— 卡片还在往回滑，红色已经不画了
+ * 2. 让红色多留 180ms 之后，两块同样圆角的方块叠着，边角**透出一圈红边**
+ * 3. 红层内收 1px 躲开红边、又把「快划时那 88px 被重演一遍」也修掉之后，**仍然闪**
+ *
+ * 第三次之后就该承认：**这是结构的问题，不是参数的问题。**
+ * 红色的显隐走主线程绘制，卡片的位移走合成器，两条路只要差一帧，
+ * 就会有「卡片还没归位、红色已经整块画出来」的那一帧。调时间只是在赌哪一帧。
+ *
+ * 现在整块红色没有了，也就没有任何东西需要「露出来又收回去」：
+ * 手指划的时候卡片跟着走，松手一律弹回原位，划得够远就弹确认框。
+ * 屏幕上自始至终只有一个会动的东西 —— 卡片自己。
  */
-
-/** 露出来的删除区有多宽 */
-export const REVEAL_PX = 88
 
 /** 先分清楚是横滑还是竖着滚页面，分清之前什么都不做 */
 export const DIRECTION_SLOP = 8
+
+/** 划过这么远（px），松手就问「确定要删吗」 */
+export const TRIGGER_PX = 72
+
+/** 手指最多能把卡片拉走这么远，再用力也不动了 */
+export const MAX_PULL_PX = 96
+
+/** 松手弹回原位要多久 */
+export const SPRING_MS = 180
 
 /**
  * 这一下算不算「横向滑动」。
@@ -30,50 +52,68 @@ export function isHorizontalSwipe(dx: number, dy: number, slop = DIRECTION_SLOP)
   return Math.abs(dx) > slop && Math.abs(dx) > Math.abs(dy)
 }
 
-/** 松手之后停在哪：拉过一半就当要开着 */
-export function shouldStayOpen(offset: number, reveal = REVEAL_PX): boolean {
-  return -offset > reveal / 2
+/**
+ * 手指走了 dx，卡片实际挪多少。
+ *
+ * 往右拉不出头（卡片本来就在原位）。往左**过了触发线之后越拉越沉**：
+ * 多出来的那一段只按三分之一算，到 MAX_PULL_PX 为止。
+ * 这是这套做法里唯一的「已经划够了」的提示 —— 没有红色可看，只能靠手感：
+ * 手指忽然变沉，就是划到位了。
+ */
+export function pullOffset(dx: number, trigger = TRIGGER_PX, max = MAX_PULL_PX): number {
+  if (dx >= 0) return 0
+  const pulled = -dx
+  if (pulled <= trigger) return -pulled
+  return -Math.min(max, trigger + (pulled - trigger) / 3)
 }
 
-/** 把位移夹在 0 到 -REVEAL 之间 —— 往右拉不出头，往左也不无限拉 */
-export function clampOffset(raw: number, reveal = REVEAL_PX): number {
-  return Math.max(-reveal, Math.min(0, raw))
+/** 松手时划得够不够远 —— 够远就问一句 */
+export function shouldAskDelete(offset: number, trigger = TRIGGER_PX): boolean {
+  return -offset >= trigger
 }
 
 interface SwipeToDeleteProps {
-  /** 关掉的时候传 false；由外面统一管，保证同时只开一张 */
-  open: boolean
-  onOpenChange: (open: boolean) => void
-  onDelete: () => void
-  /** 删除按钮的无障碍说明，例如「删除 stumble 这条笔记」 */
-  deleteLabel: string
+  /** 划到位了：把「确定要删吗」问出来。真删与否由外面那个弹窗决定 */
+  onRequestDelete: () => void
   children: React.ReactNode
 }
 
-export function SwipeToDelete({
-  open,
-  onOpenChange,
-  onDelete,
-  deleteLabel,
-  children
-}: SwipeToDeleteProps) {
+export function SwipeToDelete({ onRequestDelete, children }: SwipeToDeleteProps) {
   const [dragOffset, setDragOffset] = useState<number | null>(null)
   /**
    * 手指现在拉到哪 —— **这一份才是准的**，state 那份只负责画出来。
    *
    * 松手时不能去读 state：浏览器会把好几个 pointermove 和 pointerup **合在同一帧**
    * 送来（快速一划就是这样），这时候 React 还没来得及重画，state 里还是上一帧的值，
-   * 甚至还是初始的 null。照它判「滑够了没」，就会把一次利落的快划判成没滑够、
-   * 又弹回去 —— 手感上就是「划了没反应」，而慢慢拖却是好的。
+   * 甚至还是初始的 null。照它判「滑够了没」，就会把一次利落的快划判成没滑够 ——
+   * 手感上就是「划了没反应」，而慢慢拖却是好的。
    */
   const offsetRef = useRef(0)
   const start = useRef<{ x: number; y: number } | null>(null)
   /** null = 还没分清方向；true = 这一下归我们；false = 让给页面滚动 */
   const engaged = useRef<boolean | null>(null)
-  /** 刚滑过，接下来那个 click 要吃掉，免得连带把卡片展开 */
+  /** 刚滑过，接下来那个 click 要吃掉，免得连带把卡片翻开 */
   const swiped = useRef(false)
+  /** 跟着手指走的那一层。松手时要直接改它的 transform，见 finish */
+  const moverRef = useRef<HTMLDivElement>(null)
+  /**
+   * 「等卡片回到位再问」的那个等待。
+   *
+   * 一松手就弹确认框的话，框是压在一张还在动的卡片上出来的，两件事叠在一起看着乱。
+   * 等这 180ms 走完，卡片已经稳稳回到原位，再把框弹出来 —— 用户要的就是这个顺序。
+   *
+   * 卡片可能在这 180ms 里被卸掉（换文档、退出编辑模式），所以要留着句柄好取消，
+   * 否则会为一张已经不在的卡片弹框。
+   */
+  const askTimer = useRef<number | null>(null)
+  useEffect(
+    () => () => {
+      if (askTimer.current !== null) window.clearTimeout(askTimer.current)
+    },
+    []
+  )
 
-  const offset = dragOffset ?? (open ? -REVEAL_PX : 0)
+  const offset = dragOffset ?? 0
 
   const onPointerDown = useCallback((e: React.PointerEvent) => {
     const target = e.target as HTMLElement
@@ -101,50 +141,81 @@ export function SwipeToDelete({
     start.current = { x: e.clientX, y: e.clientY }
     engaged.current = null
     swiped.current = false
-    offsetRef.current = open ? -REVEAL_PX : 0
-  }, [open])
+    offsetRef.current = 0
+  }, [])
 
-  const onPointerMove = useCallback(
-    (e: React.PointerEvent) => {
-      if (!start.current || engaged.current === false) return
-      const dx = e.clientX - start.current.x
-      const dy = e.clientY - start.current.y
+  const onPointerMove = useCallback((e: React.PointerEvent) => {
+    if (!start.current || engaged.current === false) return
+    const dx = e.clientX - start.current.x
+    const dy = e.clientY - start.current.y
 
-      if (engaged.current === null) {
-        // 纵向先跑出去了：这是在滚页面，撒手
-        if (Math.abs(dy) > DIRECTION_SLOP && Math.abs(dy) >= Math.abs(dx)) {
-          engaged.current = false
-          return
-        }
-        if (!isHorizontalSwipe(dx, dy)) return
-        engaged.current = true
-        // 有的浏览器对「不是当前活动指针」的 id 会直接抛错，抓住就好，
-        // 捕获不到顶多是手指划出卡片外时跟丢，不该让整个手势崩掉
-        try {
-          e.currentTarget.setPointerCapture?.(e.pointerId)
-        } catch {
-          /* 捕获不到就算了 */
-        }
+    if (engaged.current === null) {
+      // 纵向先跑出去了：这是在滚页面，撒手
+      if (Math.abs(dy) > DIRECTION_SLOP && Math.abs(dy) >= Math.abs(dx)) {
+        engaged.current = false
+        return
       }
+      if (!isHorizontalSwipe(dx, dy)) return
+      engaged.current = true
+      // 有的浏览器对「不是当前活动指针」的 id 会直接抛错，抓住就好，
+      // 捕获不到顶多是手指划出卡片外时跟丢，不该让整个手势崩掉
+      try {
+        e.currentTarget.setPointerCapture?.(e.pointerId)
+      } catch {
+        /* 捕获不到就算了 */
+      }
+    }
 
-      swiped.current = true
-      const next = clampOffset((open ? -REVEAL_PX : 0) + dx)
-      offsetRef.current = next
-      setDragOffset(next)
-    },
-    [open]
-  )
+    swiped.current = true
+    const next = pullOffset(dx)
+    offsetRef.current = next
+    setDragOffset(next)
+  }, [])
 
   const finish = useCallback(() => {
-    // 读 ref 不读 state，理由见 offsetRef 那段注释
-    if (engaged.current === true) onOpenChange(shouldStayOpen(offsetRef.current))
+    const wasEngaged = engaged.current === true
+    const released = offsetRef.current
+
+    /*
+     * **先把 DOM 摆到手指真正松手的那个位置，再交给弹回的动画。**
+     *
+     * 快划一下的时候，浏览器把那几个 pointermove 和 pointerup **合在同一帧**送来，
+     * React 一帧都没来得及画 —— 屏幕上那张卡还停在上一帧的位置，
+     * 而下一次提交直接把它设成 0，还带着 180ms 的过渡，于是会凭空多演一段滑动。
+     *
+     * 这里手动把 transform 写成手指最后到的位置、把过渡临时关掉，再读一次
+     * offsetWidth 逼浏览器认下这个新起点；随后 React 提交 0，弹回的动画就只走
+     * 「真正还剩下的那一段」。
+     *
+     * ⚠️ **最后那两句得自己写回去，不能指望 React 来补。**
+     * 一整串事件都在同一帧里，React 只提交一次渲染，而这一次和手势开始之前
+     * 是同一份内容（都是「停在原位、带过渡」）—— 它认为什么都没变，
+     * 于是一个字都不往 DOM 上写。上面临时写进去的 `none` 和那个位移就留在了元素上：
+     * 卡片会**歪在半路不回来**。浏览器里当场撞见过一次，务必两句都补上。
+     */
+    const node = moverRef.current
+    if (node && wasEngaged) {
+      node.style.transition = 'none'
+      node.style.transform = `translateX(${released}px)`
+      void node.offsetWidth
+      node.style.transition = `transform ${SPRING_MS}ms ease-out`
+      node.style.transform = 'translateX(0px)'
+    }
+
     start.current = null
     engaged.current = null
+    offsetRef.current = 0
     setDragOffset(null)
-  }, [onOpenChange])
 
-  /** 静止收着的时候根本不画红色那层 —— 画了也只会从圆角缝里透出来 */
-  const revealing = open || dragOffset !== null
+    // 读 ref 不读 state，理由见 offsetRef 那段注释
+    if (wasEngaged && shouldAskDelete(released)) {
+      if (askTimer.current !== null) window.clearTimeout(askTimer.current)
+      askTimer.current = window.setTimeout(() => {
+        askTimer.current = null
+        onRequestDelete()
+      }, SPRING_MS)
+    }
+  }, [onRequestDelete])
 
   return (
     /*
@@ -158,38 +229,13 @@ export function SwipeToDelete({
      * 所以那边仍旧裁。
      */
     <div className="relative overflow-visible sm:overflow-hidden rounded-xl">
-      {/*
-        红色这层**铺满整张卡底下**，不是只占右边那 88px。
-
-        只占右边的话，卡片滑开时它的**圆角**会在接缝处露出一弯底色 ——
-        卡片是 rounded-xl，右边缘是弧的，而红块的左边是直的，两者贴不上。
-        铺满就没有接缝可言：卡片让开多少，露出来的就是多少红色。
-
-        自己带 `rounded-xl`，不靠外层去裁 —— 手机上外层是不裁的（见上面）。
-
-        **静止时干脆不画。** 两个同样大小、同样圆角的方块叠在一起，
-        边角上总会因为抗锯齿透出一丝红边（用户报的「边角没被盖全」就是它）。
-        与其去凑那一个像素，不如没在滑的时候根本不画。
-      */}
-      <div className={`absolute inset-0 flex justify-end rounded-xl bg-red-500 ${revealing ? '' : 'hidden'}`}>
-        <button
-          type="button"
-          onClick={onDelete}
-          aria-label={deleteLabel}
-          style={{ width: REVEAL_PX }}
-          className="flex flex-col items-center justify-center gap-1 text-white text-xs font-medium active:bg-red-600"
-        >
-          <Trash2 className="w-4 h-4" />
-          删除
-        </button>
-      </div>
-
       <div
+        ref={moverRef}
         // pan-y：竖着滚交给浏览器自己处理，横向的才到我们手里。
         // 写 none 的话整张卡都滚不动了，列表会卡住
         style={{
           transform: `translateX(${offset}px)`,
-          transition: dragOffset === null ? 'transform 180ms ease-out' : 'none',
+          transition: dragOffset === null ? `transform ${SPRING_MS}ms ease-out` : 'none',
           touchAction: 'pan-y'
         }}
         onPointerDown={onPointerDown}
@@ -197,15 +243,10 @@ export function SwipeToDelete({
         onPointerUp={finish}
         onPointerCancel={finish}
         onClickCapture={(e) => {
-          // 刚滑完的那一下点击不算数；已经滑开时，点卡片本体是「收回去」
+          // 刚滑完的那一下点击不算数，否则划一下就把答案翻开了
           if (swiped.current) {
             e.stopPropagation()
             swiped.current = false
-            return
-          }
-          if (open) {
-            e.stopPropagation()
-            onOpenChange(false)
           }
         }}
       >
@@ -214,3 +255,4 @@ export function SwipeToDelete({
     </div>
   )
 }
+

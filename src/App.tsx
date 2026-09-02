@@ -34,6 +34,7 @@ import { migratePage } from './utils/migrateTokenizer'
 import { importFile } from './importers'
 import { AGREEMENT_CLAUSES, AGREEMENT_TITLE } from './agreement'
 import { useBackHandler, handleBackPress, BackPriority } from './hooks/useBackHandler'
+import { useIsWide } from './hooks/useWideLayout'
 import { useAutoFill } from './hooks/useAutoFill'
 import { useAutoMark } from './hooks/useAutoMark'
 import { AutoMarkDialog } from './components/AutoMarkDialog'
@@ -173,7 +174,25 @@ export default function App() {
 
   const [editMode, setEditMode] = useState(false)
   const [reviewEditMode, setReviewEditMode] = useState(false)
+
+  /**
+   * 离开复习模式就把生词卡的编辑模式关掉。
+   *
+   * 这个开关从前只能靠再点一次顶栏那支笔来关，切去阅读模式再切回来它还开着 ——
+   * 于是回到复习页时卡片全是输入框、还能左滑删除，而用户以为自己早就退出了。
+   * 编辑模式是「这一阵子要整理卡片」的临时状态，出了这一屏就该结束。
+   *
+   * 换文档、换文库时**不关** —— 那种情况下多半是接着往下整理，关掉反而碍事。
+   */
+  useEffect(() => {
+    if (mode !== 'review') setReviewEditMode(false)
+  }, [mode])
   const [activePanel, setActivePanel] = useState<ActivePanel>(null)
+  /**
+   * 宽屏下左栏收没收起来。窄屏不看这个值 —— 那边左栏是浮层，归 activePanel 管。
+   * 默认展开：宽屏上一进来就该看得见文库，和从前一样。
+   */
+  const [wideLeftHidden, setWideLeftHidden] = useState(false)
   const [scrollTarget, setScrollTarget] = useState<{ pageId: string; anchorId: string } | null>(null)
   /** 「原文已删除」确认弹窗；resolve 用于把用户的选择交回给对账流程 */
   const [orphanPrompt, setOrphanPrompt] = useState<{
@@ -294,7 +313,7 @@ export default function App() {
     }
   }, [currentPage, activePages])
 
-  /** 移动端顶部栏标题：阅读模式=当前文档名，复习模式=选中的文档名或文件夹名 */
+  /** 移动端顶部栏标题：阅读模式=当前文档名，复习模式=选中的文档名或文库名 */
   const mobileHeaderTitle = useMemo(() => {
     if (mode === 'read') {
       return currentPage?.title ?? '语言学习笔记本'
@@ -605,8 +624,13 @@ export default function App() {
    * 全 app 唯一的安卓返回键监听。
    *
    * 各组件把「自己这一层怎么关」登记到 useBackHandler，这里按优先级只关最上面的一层。
-   * 注意：一旦接管了返回键，系统默认的「退出 App」就不会再发生，
-   * 所以没东西可关时必须自己调 exitApp，否则在主界面按返回会毫无反应。
+   * 注意：一旦接管了返回键，系统默认行为就不会再发生，所以没东西可关时必须自己收尾，
+   * 否则在主界面按返回会毫无反应。
+   *
+   * **收尾用的是 minimizeApp，不是 exitApp。** 从前写的是 exitApp —— 那是真退出，
+   * 进程直接结束，从主界面按一下返回整个 App 就没了，任务列表里也不剩。
+   * minimizeApp 等同于按 Home：界面留在后台，再点图标回到原来那一屏。
+   * 这才是安卓上一贯的行为。也正因为退到后台什么都不丢，不需要再加「按两次退出」。
    */
   useEffect(() => {
     if (!Capacitor.isNativePlatform()) return
@@ -614,7 +638,7 @@ export default function App() {
     let cancelled = false
 
     void CapacitorApp.addListener('backButton', () => {
-      if (!handleBackPress()) CapacitorApp.exitApp()
+      if (!handleBackPress()) void CapacitorApp.minimizeApp()
     }).then((h) => {
       if (cancelled) void h.remove()
       else handle = h
@@ -1139,6 +1163,8 @@ export default function App() {
     [refreshData]
   )
 
+  /** 够不够摆得下三栏。只用来分布局，手势那些全平台一套，见 useWideLayout */
+  const isWide = useIsWide()
   const showLeft = activePanel === 'left'
   const showRight = activePanel === 'right'
 
@@ -1176,21 +1202,31 @@ export default function App() {
 
 
   return (
-    <div className="h-full flex flex-col md:flex-row bg-paper overflow-hidden">
+    <div className="h-full flex flex-col wide:flex-row bg-paper overflow-hidden">
       {/* 移动端遮罩：常驻并做透明度过渡，避免呼出侧栏时闪屏；点击同时关闭左/右侧栏 */}
       <div
-        className={`fixed inset-0 z-20 md:hidden bg-black/30 transition-opacity duration-200 ${
+        className={`fixed inset-0 z-20 wide:hidden bg-black/30 transition-opacity duration-200 ${
           overlayVisible ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
         }`}
         aria-hidden
         onClick={() => setActivePanel(null)}
       />
 
-      {/* 左侧栏：固定高度，内部独立滚动 */}
+      {/*
+        左侧栏：固定高度，内部独立滚动。
+
+        **宽屏上也能收起来。** 从前是「窄屏能收、宽屏钉死」—— 汉堡键写着 md:hidden，
+        一到宽屏就没了。平板上于是 250px 一直占着，想安静读书也收不掉。
+        现在两边都能收，宽屏收起时用的是和右栏一样的办法：
+        收起 = fixed + 移出屏幕（不占位置），展开 = relative（占一列），
+        滑入滑出的动画两种宽度下都还在。
+
+        `wideLeftHidden` 只在宽屏下有意义；窄屏一律看 showLeft（浮层那套）。
+      */}
       <div
-        className={`h-full flex flex-col shrink-0 fixed md:relative inset-y-0 left-0 z-30 md:z-auto transform transition-transform duration-200 ease-out ${
-          showLeft ? 'translate-x-0' : '-translate-x-full md:translate-x-0'
-        }`}
+        className={`h-full flex flex-col shrink-0 ${showLeft ? 'fixed wide:relative' : 'fixed'} inset-y-0 left-0 z-30 wide:z-auto transform transition-transform duration-200 ease-out ${
+          showLeft ? 'translate-x-0' : '-translate-x-full'
+        } ${wideLeftHidden ? 'wide:fixed wide:-translate-x-full' : 'wide:relative wide:translate-x-0'}`}
       >
         <LeftSidebar
           panelOpen={showLeft}
@@ -1230,11 +1266,18 @@ export default function App() {
       <div className="flex flex-col flex-1 min-w-0 min-h-0 overflow-hidden">
         {/* 顶部栏：始终显示；桌面端仅保留标题与复习模式下的编辑按钮 */}
         <header className={`${BAND_TOP} bg-white`}>
+          {/*
+            汉堡键在宽屏上也留着 —— 宽屏点它是「把左栏收起/放出来」，
+            窄屏点它是「呼出浮层」。两种宽度下这颗键的含义一致：管左边那一栏。
+          */}
           <button
             type="button"
-            onClick={() => setActivePanel((p) => (p === 'left' ? null : 'left'))}
-            className="md:hidden p-2 rounded-lg hover:bg-stone-100 text-ink-muted"
-            aria-label="打开文库"
+            onClick={() => {
+              if (isWide) setWideLeftHidden((v) => !v)
+              else setActivePanel((p) => (p === 'left' ? null : 'left'))
+            }}
+            className="p-2 rounded-lg hover:bg-stone-100 text-ink-muted"
+            aria-label={isWide && !wideLeftHidden ? '收起文库' : '打开文库'}
           >
             <Menu className="w-5 h-5" />
           </button>
@@ -1252,7 +1295,7 @@ export default function App() {
                 setActivePanel((p) => (p === 'right' ? null : 'right'))
               }
             }}
-            className={`p-2 rounded-lg ${mode === 'read' ? 'md:hidden ' : ''}${
+            className={`p-2 rounded-lg ${mode === 'read' ? 'wide:hidden ' : ''}${
               mode === 'review' && reviewEditMode
                 ? 'bg-accent-100 text-accent-800'
                 : 'text-ink-muted hover:bg-stone-100'
@@ -1312,7 +1355,7 @@ export default function App() {
                 onClick={() => {
                   setActivePanel('right')
                 }}
-                className="hidden md:flex fixed right-4 top-1/2 -translate-y-1/2 z-10 items-center gap-2 px-3 py-2 rounded-full border border-paper-border bg-white shadow-md hover:bg-accent-50 hover:border-accent-300 text-ink-muted hover:text-accent-800 transition-colors"
+                className="hidden wide:flex fixed right-4 top-1/2 -translate-y-1/2 z-10 items-center gap-2 px-3 py-2 rounded-full border border-paper-border bg-white shadow-md hover:bg-accent-50 hover:border-accent-300 text-ink-muted hover:text-accent-800 transition-colors"
                 title="打开笔记"
               >
                 <BookOpen className="w-4 h-4" />
@@ -1345,7 +1388,7 @@ export default function App() {
       {/* 右侧栏：阅读模式下始终挂载（与左侧一致），用 showRight 控制 translate 才能稳定播滑入/滑出动画 */}
       {mode === 'read' && (
         <div
-          className={`h-full flex flex-col shrink-0 ${showRight ? 'fixed md:relative' : 'fixed'} inset-y-0 right-0 z-30 md:z-auto transform transition-transform duration-200 ease-out ${
+          className={`h-full flex flex-col shrink-0 ${showRight ? 'fixed wide:relative' : 'fixed'} inset-y-0 right-0 z-30 wide:z-auto transform transition-transform duration-200 ease-out ${
             showRight ? 'translate-x-0' : 'translate-x-full'
           }`}
         >

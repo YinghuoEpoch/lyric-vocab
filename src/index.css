@@ -141,6 +141,36 @@ body {
   font-family: 'Inter', system-ui, sans-serif;
 }
 
+/*
+ * 正文里句摘那条虚线。
+ *
+ * **不用 text-decoration 画。** 浏览器画下划线是一段一段来的：每一个子元素
+ * 就是一段，而正文里每个单词、每个空格都各自是一个 span（要挂长按、按压高亮），
+ * 于是虚线的节奏在**每个词的接缝处重新起头** —— 有的接缝并成一根长线，
+ * 有的空出一大截。同样的样式，那一段里若没有子元素，虚线是完全均匀的
+ * （在真页面上并排比过）。单词还带 2px 的左右内边距，相邻两段的线还会互相重叠。
+ *
+ * 改成把线画成**整段的背景条纹**：背景是这一段一次画完的，词与词之间没有接缝。
+ * 换行时每一行各自从左边起头，那是自然的。
+ *
+ * 几个刻意的选择：
+ * - `padding-bottom` 只是把背景盒往下撑，行内元素的上下内边距不影响排版，
+ *   所以不会把行撑高；线的位置和从前 underline-offset 0.6em 那条基本重合
+ * - 尺寸一律用 em，正文字号是用户可调的，放大时线条跟着长
+ * - 颜色走 --accent-600，跟着强调色一起换
+ */
+.sentence-line {
+  padding-bottom: 0.62em;
+  background-image: repeating-linear-gradient(
+    to right,
+    rgb(var(--accent-600)) 0 0.2em,
+    transparent 0.2em 0.4em
+  );
+  background-repeat: repeat-x;
+  background-size: 0.4em 1px;
+  background-position: left bottom;
+}
+
 /* 三栏独立滚动：细长灰色滚动条 */
 .scroll-area {
   overflow-y: auto;
