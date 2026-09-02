@@ -38,9 +38,9 @@ function describeError(e: unknown): string {
   if (e instanceof NoEpub) {
     return '这本书取不到，可能古登堡那边没存 epub。换一本试试'
   }
-  // 连接被掐断这一类：三个源、每段重试三次都没成，多半是网络到不了
+  // 连接被掐断这一类：三个源、每段重试三次都没成
   if (/end of stream|timeout|timed out|Failed to connect|Unable to resolve/i.test(raw)) {
-    return '连不上书库的服务器。换个网络试试（Wi-Fi 与流量的线路不一样），或者过一会儿再来'
+    return '网络不稳，没下完。连上 Wi-Fi 再试一次，或者过一会儿再来'
   }
   return '下载失败：' + raw
 }
@@ -170,6 +170,8 @@ export function LibraryDialog({ open, onClose, onImport }: LibraryDialogProps) {
                   共 {catalogSize().toLocaleString()} 本免费英文书
                   <br />
                   都是版权已过期的经典，可以放心下载
+                  <br />
+                  <span className="mt-2 inline-block">建议连 Wi-Fi 下载，用流量会慢很多</span>
                 </p>
               ) : results.length === 0 ? (
                 <p className="py-6 text-center text-sm text-ink-muted">没搜到</p>
