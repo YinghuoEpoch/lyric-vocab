@@ -92,8 +92,7 @@ export function SwipeToDelete({
    * 慢慢拖回去看不出来（松手时缺口已经很小），快划一下甩手就很扎眼，
    * 用户报的「红色按钮凭空不见了」就是它。
    *
-   * 静止时仍旧不画（两块同样圆角的方块叠着会透出一丝红边），只是把「静止」
-   * 推迟到动画真的走完。
+   * 配套还得让红层比卡片**小一圈**，否则会换来另一个毛病 —— 见下面 inset-[1px]。
    */
   const [closing, setClosing] = useState(false)
   const wasRevealing = useRef(false)
@@ -198,12 +197,17 @@ export function SwipeToDelete({
 
         自己带 `rounded-xl`，不靠外层去裁 —— 手机上外层是不裁的（见上面）。
 
-        **静止时干脆不画。** 两个同样大小、同样圆角的方块叠在一起，
-        边角上总会因为抗锯齿透出一丝红边（用户报的「边角没被盖全」就是它）。
-        与其去凑那一个像素，不如没在滑的时候根本不画 ——
-        但「静止」要等卡片**滑回到位之后**才算，见上面 closing 那段。
+        **比卡片各边小 1px（inset-[1px]）。** 两块一样大、一样圆角的方块叠在一起，
+        边角上总会因为抗锯齿透出一丝红边 —— 从前是靠「静止时根本不画」躲开的，
+        但那样一来卡片滑回去的过程中红色就没了（用户报的「红色凭空消失」）。
+        改成留着画之后，那圈红边就在收回去的 180ms 里露了出来，
+        看着是卡片边缘**闪一下红**（用户报的第二个毛病）。
+
+        往里收 1px 就没这回事了：小一圈的圆角整个落在卡片圆角**里面**
+        （45° 方向上差着 1.4px），怎么叠都盖得住。
+        露出来的那 88px 红区跟着少 1px，肉眼看不出来。
       */}
-      <div className={`absolute inset-0 flex justify-end rounded-xl bg-red-500 ${paintRed ? '' : 'hidden'}`}>
+      <div className={`absolute inset-[1px] flex justify-end rounded-xl bg-red-500 ${paintRed ? '' : 'hidden'}`}>
         <button
           type="button"
           onClick={onDelete}

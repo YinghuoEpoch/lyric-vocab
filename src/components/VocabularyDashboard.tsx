@@ -780,13 +780,19 @@ function VocabCard({
       <div className="flex items-start justify-between gap-2 flex-wrap">
         {/*
           手柄要和右边那个单词**压在同一条水平线上**。
-          量过（375px、18px 字号）：手柄按钮 24px 高、顶对齐，图标中线落在 199；
-          而单词那一行行高 28px，字形（不含下伸部）的中线在 201.5 —— 高了 2.5px，
-          看着就是「摇杆有点偏上」。
-          这里给它套一个和单词同高（28px）的盒子再居中，图标中线落到 201，
-          和字形对齐。不写死一个偏移量，是因为字号一变偏移量就不对了。
+
+          第一版只套了个同高（28px）的盒子居中，图标中线从 199 挪到 201 ——
+          用户仍说偏上，而且他是对的：**眼睛对齐的是小写字母那一坨，不是整个行盒。**
+          量过（375px、18px Playfair）：基线 208、小写 x 顶 198，小写的中线在 **203**
+          （字母 o 的中线 203.5）；而 stood 的 d、t 这些上伸部把行盒中线拉到了 201，
+          跟眼睛看到的差着 2px。
+
+          所以在居中之上再往下压 2px，图标中线落到 203。这张卡上的字号是固定的
+          （text-lg，不跟阅读页的字号设置走），所以这 2px 不会跑掉。
         */}
-        {dragHandle && <span className="flex h-7 shrink-0 items-center">{dragHandle}</span>}
+        {dragHandle && (
+          <span className="flex h-7 shrink-0 items-center mt-[2px]">{dragHandle}</span>
+        )}
         <div className="min-w-0 flex-1 min-h-[28px]">
           {showEnglish ? (
             /* 点单词 = 读出来；卡片别处照旧是「翻开答案」。
