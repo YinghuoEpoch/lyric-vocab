@@ -1212,24 +1212,13 @@ function LeftSidebarInner({
           >
             <div className="shrink-0 flex items-center justify-between p-3 border-b border-paper-border">
               <span className="text-sm font-medium text-ink">回收站</span>
-              <div className="flex items-center gap-1">
-                {trashCount > 0 && (
-                  <button
-                    type="button"
-                    onClick={() => setConfirmDelete({ type: 'all' })}
-                    className="rounded-lg px-2 py-1 text-xs text-red-600 hover:bg-red-50"
-                  >
-                    清空
-                  </button>
-                )}
-                <button
-                  type="button"
-                  onClick={() => setRecycleOpen(false)}
-                  className="p-1.5 rounded-lg hover:bg-stone-100 text-ink-muted"
-                >
-                  <X className="w-4 h-4" />
-                </button>
-              </div>
+              <button
+                type="button"
+                onClick={() => setRecycleOpen(false)}
+                className="p-1.5 rounded-lg hover:bg-stone-100 text-ink-muted"
+              >
+                <X className="w-4 h-4" />
+              </button>
             </div>
             <div className="flex-1 min-h-0 overflow-y-auto scroll-area p-3 space-y-2">
               {deletedBooks.length === 0 && deletedPages.length === 0 ? (
@@ -1293,6 +1282,24 @@ function LeftSidebarInner({
                 </>
               )}
             </div>
+            {/*
+              「清空回收站」单独占一行放在底部。
+              **不能和右上角的关闭叉挨着** —— 第一版放在标题栏里，量出来两者只隔
+              4px，一个是「删光」一个是「关掉」，手指按下去差之毫厘。
+              放到底栏之后隔着整个列表的高度，误触基本不可能。
+              回收站空的时候整行不出现，免得摆一个点了没用的东西。
+            */}
+            {trashCount > 0 && (
+              <div className="shrink-0 border-t border-paper-border p-2">
+                <button
+                  type="button"
+                  onClick={() => setConfirmDelete({ type: 'all' })}
+                  className="w-full rounded-lg py-2 text-sm text-red-600 transition-colors hover:bg-red-50"
+                >
+                  清空回收站
+                </button>
+              </div>
+            )}
           </div>
         </div>,
         document.body
