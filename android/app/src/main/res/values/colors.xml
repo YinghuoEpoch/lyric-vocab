@@ -1,5 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<resources>
-    <!-- 和网页里的纸色一致（src/index.css 的 body 背景）。窗口底色用它 -->
-    <color name="paper">#fbfcf8</color>
-</resources>

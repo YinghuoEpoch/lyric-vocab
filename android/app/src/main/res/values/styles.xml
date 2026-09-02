@@ -9,30 +9,10 @@
         <item name="colorAccent">@color/colorAccent</item>
     </style>
 
-    <!--
-        运行时用的就是这个主题（启动图之后 Capacitor 会切过来）。
-
-        两处刻意的改动，都是为了「网页和系统栏融成一片」：
-
-        1. 父主题从 DayNight 换成 Light。DayNight 会跟着系统深浅色走，
-           手机/平板一开深色模式，状态栏就拿深色主题的底色 —— 用户在平板上看到的
-           那条深灰就是它，而 app 自己永远是浅色纸张，两边对不上。
-           这个 app 没有深色模式，主题也就不该跟着变。
-        2. 两条系统栏底色改成透明，网页自己铺到它们底下去
-           （窗口那边由 MainActivity 打开沉浸式，内容靠安全区留白避让）。
-           图标的深浅由 Capacitor 的 SystemBars 在运行时定（见 capacitor.config.ts）。
-
-        windowBackground 用纸色：启动那一瞬间、转屏中途露出来的都是它，
-        写白色会在暖白纸张下闪一下冷白。
-    -->
-    <style name="AppTheme.NoActionBar" parent="Theme.AppCompat.Light.NoActionBar">
+    <style name="AppTheme.NoActionBar" parent="Theme.AppCompat.DayNight.NoActionBar">
         <item name="windowActionBar">false</item>
         <item name="windowNoTitle">true</item>
         <item name="android:background">@null</item>
-        <item name="android:windowBackground">@color/paper</item>
-        <item name="android:windowDrawsSystemBarBackgrounds">true</item>
-        <item name="android:statusBarColor">@android:color/transparent</item>
-        <item name="android:navigationBarColor">@android:color/transparent</item>
     </style>
 
 
