@@ -39,7 +39,7 @@ type NativeInsets = {
 
 const SafeArea = registerPlugin<{ getInsets(): Promise<NativeInsets> }>('SafeArea')
 
-/** 这次到底走的哪条路、拿到了什么。设置页底下那一小行会显示它 —— 真机上截图就能看清 */
+/** 这次到底走的哪条路、拿到了什么。设置页「开发者 → 系统栏参数」那一屏显示它 */
 export type SafeAreaReport = {
   source: '原生·问答' | '原生·推送' | 'env()' | '没拿到（用保底）'
   top: number
@@ -52,7 +52,7 @@ export type SafeAreaReport = {
   sdk?: number
   density?: number
   error?: string
-  /** 这份网页是什么时候打的 —— 用来确认手机上跑的不是上一版 */
+  /** 这份网页是什么时候打的 —— 用来确认手机上跑的不是上一版（这个 app 栽过一次） */
   build: string
 }
 
@@ -65,7 +65,7 @@ let report: SafeAreaReport = {
   build: __BUILD_STAMP__
 }
 
-/** 读一眼这次的取值情况。⚠️ 临时的，验完这一版就删（设置页那一行也一起删） */
+/** 读一眼这次的取值情况。给设置页里「开发者 → 系统栏参数」那一屏用 */
 export function getSafeAreaReport(): SafeAreaReport {
   return report
 }
