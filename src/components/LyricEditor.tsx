@@ -816,7 +816,14 @@ function LyricEditorInner({
           fontSize: readerSettings.fontSize,
           fontFamily: fontStack,
           textRendering: 'optimizeSpeed',
-          lineHeight: 1.8
+          lineHeight: 1.8,
+          /*
+           * 底部让出导航栏 —— 加在**滚动区里面**，不加在外面那层。
+           * 加在外面的话正文的纸色就到不了屏幕最下沿，app 会像踩在一条空白横条上。
+           * 加在里面，纸色一路铺到底，导航键浮在纸上，最后一行也还能滚上来看全。
+           * p-8 是 2rem，这里把它和让出的那一条加在一起。
+           */
+          paddingBottom: 'calc(2rem + var(--sa-bottom))'
         }}
       >
         {lines.map((line, lineIndex) => {
@@ -1044,7 +1051,9 @@ function LyricEditorInner({
                     boxShadow: '0 12px 32px -12px rgba(44, 44, 44, 0.3)'
                   }
                 : {
-                    paddingBottom: 'max(env(safe-area-inset-bottom), 16px)',
+                    // 抽屉贴着屏幕最下沿，白底铺到底、内容让出导航栏。
+                    // 从前直接用 env()，安卓老版本读不到系统栏，那排按钮就压在导航键底下了
+                    paddingBottom: 'max(var(--sa-bottom), 16px)',
                     boxShadow: '0 -10px 28px -12px rgba(44, 44, 44, 0.22)'
                   }
             }

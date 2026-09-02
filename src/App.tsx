@@ -1262,8 +1262,19 @@ export default function App() {
         />
       </div>
 
-      {/* 右侧主区域：顶部栏 + 内容区（桌面端为 Column，避免 Header 与 Content 横向并列） */}
-      <div className="flex flex-col flex-1 min-w-0 min-h-0 overflow-hidden">
+      {/*
+        右侧主区域：顶部栏 + 内容区（桌面端为 Column，避免 Header 与 Content 横向并列）。
+
+        **顶部让出状态栏的那一下加在这里，不加在 header 上。** 三栏的第一条带是对齐过的
+        （见 chrome.ts：44px，横着扫过去只有两条通栏的线）；留白要是加进 header 里，
+        它会连着带子一起长高，而两侧栏的留白在带子外面 —— 三条线当场错开。
+        加在带子外面，两边就都是「留白 + 44」。
+
+        底色跟着刷成白的：这一条留白露出来的就是它，下面紧挨着的 header 也是白的，
+        接在一起看不出缝。**底部不在这里留** —— 正文的纸色要一直铺到屏幕最下沿，
+        让出导航栏的事由滚动区里面的内容自己做（见 LyricEditor / VocabularyDashboard）。
+      */}
+      <div className="flex flex-col flex-1 min-w-0 min-h-0 overflow-hidden bg-white pt-[var(--sa-top)]">
         {/* 顶部栏：始终显示；桌面端仅保留标题与复习模式下的编辑按钮 */}
         <header className={`${BAND_TOP} bg-white`}>
           {/*

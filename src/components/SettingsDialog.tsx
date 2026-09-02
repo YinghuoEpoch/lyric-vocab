@@ -6,6 +6,7 @@ import { UserGuide } from './UserGuide'
 import { AGREEMENT_CLAUSES, AGREEMENT_TITLE } from '../agreement'
 import { describeTarget, loadConfig, resolveConfig, type AiConfig } from '../enrich'
 import { useBackHandler, BackPriority } from '../hooks/useBackHandler'
+import { getSafeAreaReport, type SafeAreaReport } from '../safeArea'
 import type { AccentColor, ReaderSettings } from '../types'
 
 /**
@@ -157,6 +158,10 @@ export function SettingsDialog({
   const backupInputRef = useRef<HTMLInputElement>(null)
   /** 存了多少发音。打开设置页时读一次就够，不用一直盯着 */
   const [audioStats, setAudioStats] = useState<CacheStats | null>(null)
+  /** ⚠️ 临时：系统栏留白这次到底取到了什么。验完这一版连同下面那个 Section 一起删 */
+  const [insetInfo, setInsetInfo] = useState<{ report: SafeAreaReport; applied: string } | null>(
+    null
+  )
 
   useEffect(() => {
     if (open) {
@@ -166,6 +171,14 @@ export function SettingsDialog({
       setShowGuide(false)
       setAudioStats(null)
       void cacheStats().then(setAudioStats)
+
+      // 报上来的数，和**真正生效**的 CSS 值，两个都读 ——
+      // 只看前者的话，万一变量写进去了样式却没用上，还是查不出来
+      const cs = getComputedStyle(document.documentElement)
+      const applied = (['top', 'right', 'bottom', 'left'] as const)
+        .map((k) => cs.getPropertyValue(`--sa-${k}`).trim() || '?')
+        .join(' / ')
+      setInsetInfo({ report: getSafeAreaReport(), applied })
     }
   }, [open])
 
@@ -404,6 +417,32 @@ export function SettingsDialog({
                 <p className="text-xs text-ink-muted leading-relaxed">
                   备份是一个 .json 文件，文库、正文和笔记都在里面。
                   恢复会用文件里的内容覆盖现在的数据。
+                </p>
+              </Section>
+
+              {/*
+                ⚠️ 临时的一块，只为这一版真机验证服务：系统栏的高度到底问到了没有。
+                上一次改沉浸式是盲改的，装上一看全废、又分不清是哪一处的错，只能整个撤回。
+                这次把四个数摆在明处，装上截一张图就够判断。**验完连同 safeArea.ts 里的
+                getSafeAreaReport 一起删掉。**
+              */}
+              <Section title="系统栏（临时·验完删）">
+                <p className="text-xs text-ink-muted leading-relaxed break-all">
+                  来源：{insetInfo?.report.source ?? '—'}
+                  <br />
+                  原生报的：上 {insetInfo?.report.top ?? '—'} / 右 {insetInfo?.report.right ?? '—'}{' '}
+                  / 下 {insetInfo?.report.bottom ?? '—'} / 左 {insetInfo?.report.left ?? '—'}
+                  <br />
+                  实际生效：{insetInfo?.applied ?? '—'}
+                  <br />
+                  安卓 {insetInfo?.report.sdk ?? '—'} · 密度 {insetInfo?.report.density ?? '—'} ·
+                  屏宽 {window.innerWidth}
+                  {insetInfo?.report.error ? (
+                    <>
+                      <br />
+                      出错：{insetInfo.report.error}
+                    </>
+                  ) : null}
                 </p>
               </Section>
 
