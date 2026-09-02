@@ -1,7 +1,7 @@
 import { memo, useState, useEffect } from 'react'
 import { useSpeak } from '../hooks/useSpeak'
 import { usePrefetchAudio } from '../hooks/usePrefetchAudio'
-import { PanelRightClose, BookOpen, ChevronRight, Trash2, Wand2, Undo2, X } from 'lucide-react'
+import { BookOpen, ChevronRight, Trash2, Wand2, Undo2, X } from 'lucide-react'
 import type { Sentence } from '../types'
 import { AutoMark } from './AutoMark'
 import { useIsClamped } from '../hooks/useIsClamped'
@@ -162,7 +162,6 @@ interface RightSidebarProps {
   /** 删除一条句摘，同上 */
   onDeleteSentence: (id: string) => void
   currentPageId: string | null
-  onClose: () => void
   /** 一键划词。不给就不显示那个按钮 */
   onAutoMark?: () => void
   /** 划词弹窗是否开着：开着时这颗按钮一直保持「按下」的样子 */
@@ -323,7 +322,6 @@ function RightSidebarInner({
   onDeleteVocab,
   onDeleteSentence,
   currentPageId,
-  onClose,
   onAutoMark,
   autoMarkOpen = false,
   markOutcome = null,
@@ -385,10 +383,11 @@ function RightSidebarInner({
             </span>
           </span>
           {/*
-            手机上不显示：左侧栏也没有关闭键，两边这样才一致；
-            收起来靠点遮罩或按安卓返回键，两条路都通。
-            宽屏必须留着 —— 那边遮罩是隐藏的，浮动的「笔记」按钮开着时也不显示，
-            删了就再没有关掉它的办法。
+            这里从前还有一颗关闭键（只在宽屏出现）。删了 ——
+            用户在平板横屏上说「必须点右上角那个按钮关闭，很麻烦」。
+            宽屏改成**点中间正文区就收起**（见 App.tsx 里 main 的 onClick），
+            窄屏照旧点遮罩或按安卓返回键。三条路都不需要这颗键，
+            删掉之后「AI 划词」自然靠到最右，标题行也清爽了。
           */}
           <div className="flex items-center gap-0.5">
             {/*
@@ -426,16 +425,6 @@ function RightSidebarInner({
                 AI 划词
               </button>
             )}
-            <button
-              type="button"
-              onClick={onClose}
-              className="hidden wide:inline-flex p-1.5 rounded-lg hover:bg-stone-100 text-ink-muted hover:text-ink"
-              title="关闭笔记"
-              /* 只有图标，没有文字。不写 aria-label 的话读屏软件念不出来 */
-              aria-label="关闭笔记"
-            >
-              <PanelRightClose className="w-4 h-4" />
-            </button>
           </div>
       </div>
       {/*

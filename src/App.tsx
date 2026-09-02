@@ -1321,8 +1321,30 @@ export default function App() {
           </button>
         </header>
 
-        {/* 中间区域：阅读模式 = 编辑器，复习模式 = 生词看板 */}
-        <main className="flex-1 flex flex-col min-w-0 min-h-0 overflow-hidden relative">
+        {/*
+          中间区域：阅读模式 = 编辑器，复习模式 = 生词看板。
+
+          **点中间收起笔记栏（只在宽屏）。** 窄屏那边点遮罩就能收，宽屏遮罩是隐藏的
+          （三栏各占一列，正文不该被压暗），于是从前只剩笔记栏右上角那颗关闭键 ——
+          用户在平板横屏上说「必须点右上角那个按钮，很麻烦」。现在有了这条路，
+          那颗键也就删掉了（见 RightSidebar）。
+
+          三种情况要放过去，不能顺手把栏收了：能操作的东西、正文里的英文词
+          （长按取词松手时也会补一个 click）、以及取词小窗开着的时候
+          —— 那一下归 LyricEditor 里那个全局 click 管，先关小窗。
+        */}
+        <main
+          className="flex-1 flex flex-col min-w-0 min-h-0 overflow-hidden relative"
+          onClick={(e) => {
+            if (!isWide || activePanel !== 'right') return
+            const target = e.target as HTMLElement | null
+            if (!target) return
+            if (target.closest('button, a, input, textarea, select, label')) return
+            if (target.closest('[data-word-span="true"]')) return
+            if (document.querySelector('[data-full-popup="true"]')) return
+            setActivePanel(null)
+          }}
+        >
         {initializing && (
           <div className="flex-1 flex items-center justify-center text-ink-muted text-sm">
             数据加载中...
@@ -1416,7 +1438,6 @@ export default function App() {
             onDeleteVocab={handleDeleteVocabNote}
             onDeleteSentence={handleDeleteSentenceById}
             currentPageId={currentPageId}
-            onClose={() => setActivePanel(null)}
             documentProgress={documentReadingProgress}
             currentDocIndex={currentDocIndex}
             totalDocsInFolder={totalDocsInFolder}
