@@ -106,29 +106,51 @@ body {
   min-height: 0;
 }
 
-/* 仅移动端：固定顶部留白（状态栏/刘海安全区），白条不随滚动移动 */
-@media (max-width: 767px) {
-  #root {
-    padding-top: max(env(safe-area-inset-top, 0px), 30px);
-    /*
-     * 底部避让系统导航栏。
-     * 手机若用「后台/主页/返回」三键导航，底部会被系统占掉一条，
-     * 不留白的话 app 的内容（比如左侧栏底部那排图标）会被压在下面点不到。
-     * 这里不设最小值：手势导航的手机这个值接近 0，不会白白浪费空间。
-     */
-    padding-bottom: env(safe-area-inset-bottom, 0px);
-    background-color: #ffffff;
-  }
+/*
+ * 系统栏的安全区。
+ *
+ * app 是沉浸式的（网页铺到状态栏和导航栏底下，见 android 那边的 MainActivity），
+ * 所以留白得自己算。四个值优先取 **原生报上来的** --safe-area-inset-*，
+ * 其次才退回 CSS 自己的 env() —— 安卓 WebView 对 env() 的支持看版本，
+ * 老一点的只认刘海、不认系统栏，光靠它会让内容压在时钟和导航键底下。
+ *
+ * **不再只对手机生效。** 从前这一整段裹在 `@media (max-width: 767px)` 里，
+ * 于是平板上一点避让都没有 —— 平板出现之前没人发现。
+ */
+:root {
+  --sa-top: var(--safe-area-inset-top, env(safe-area-inset-top, 0px));
+  --sa-right: var(--safe-area-inset-right, env(safe-area-inset-right, 0px));
+  --sa-bottom: var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px));
+  --sa-left: var(--safe-area-inset-left, env(safe-area-inset-left, 0px));
+}
 
-  /*
-   * 可复用的 Safe Area 内边距工具类，用于侧边栏等固定层。
-   * 侧边栏是 fixed 定位、按视口高度铺满的，不受 #root 内边距影响，
-   * 所以必须自己再避让一次底部。
-   */
-  .safe-area-padding {
-    padding-top: max(env(safe-area-inset-top, 0px), 30px);
-    padding-bottom: env(safe-area-inset-bottom, 0px);
-  }
+#root {
+  padding-top: var(--sa-top);
+  padding-right: var(--sa-right);
+  padding-bottom: var(--sa-bottom);
+  padding-left: var(--sa-left);
+  background-color: #ffffff;
+}
+
+/*
+ * 装成 app 跑时，顶部留一个 24px 的底线：万一原生和 env() 两条路都没报上来值，
+ * 内容也不至于直接顶到时钟上去（状态栏本来就是 24dp 上下，不浪费）。
+ * 浏览器里没有系统栏，就不留 —— 否则页面顶上凭空多一条白边。
+ * 底部一律不设底线：手势导航的机器这个值本来接近 0，硬留一条反而难看。
+ */
+.native #root,
+.native .safe-area-padding {
+  padding-top: max(var(--sa-top), 24px);
+}
+
+/*
+ * 可复用的 Safe Area 内边距工具类，用于侧边栏等固定层。
+ * 侧边栏是 fixed 定位、按视口高度铺满的，不受 #root 内边距影响，
+ * 所以必须自己再避让一次。
+ */
+.safe-area-padding {
+  padding-top: var(--sa-top);
+  padding-bottom: var(--sa-bottom);
 }
 
 /* 英文衬线 - 优雅 Serif */

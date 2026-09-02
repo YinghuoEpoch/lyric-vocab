@@ -1044,7 +1044,10 @@ function LyricEditorInner({
                     boxShadow: '0 12px 32px -12px rgba(44, 44, 44, 0.3)'
                   }
                 : {
-                    paddingBottom: 'max(env(safe-area-inset-bottom), 16px)',
+                    // 底部抽屉贴着屏幕下沿，得自己避开导航栏。
+                    // 和 index.css 走同一条链：先认原生报上来的值，再退回 env()
+                    paddingBottom:
+                      'max(var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px)), 16px)',
                     boxShadow: '0 -10px 28px -12px rgba(44, 44, 44, 0.22)'
                   }
             }
