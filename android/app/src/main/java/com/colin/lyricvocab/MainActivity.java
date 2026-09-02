@@ -68,9 +68,17 @@ public class MainActivity extends BridgeActivity {
                 WindowInsetsCompat.Type.systemBars() | WindowInsetsCompat.Type.displayCutout()
             );
             boolean imeVisible = insets.isVisible(WindowInsetsCompat.Type.ime());
+            // 放按钮要让多少，和底色要铺多少不是一回事 —— 缘由见 SafeAreaPlugin
+            int tappableBottom = insets.getInsets(WindowInsetsCompat.Type.tappableElement()).bottom;
 
             // 键盘弹出来时底部不再让系统栏那一条 —— 那时候底边归键盘
-            pushInsets(systemBars.top, systemBars.right, imeVisible ? 0 : systemBars.bottom, systemBars.left);
+            pushInsets(
+                systemBars.top,
+                systemBars.right,
+                imeVisible ? 0 : systemBars.bottom,
+                systemBars.left,
+                imeVisible ? 0 : tappableBottom
+            );
 
             if (Build.VERSION.SDK_INT < Build.VERSION_CODES.VANILLA_ICE_CREAM) {
                 int imeBottom = imeVisible
@@ -94,17 +102,18 @@ public class MainActivity extends BridgeActivity {
      * 免得一处改了另一处忘。钩子还没挂上（网页没起来）时这一句是空转，
      * 不要紧：启动那次的值是网页自己来问的。
      */
-    private void pushInsets(int top, int right, int bottom, int left) {
+    private void pushInsets(int top, int right, int bottom, int left, int tappableBottom) {
         if (getBridge() == null || getBridge().getWebView() == null) return;
 
         float density = getResources().getDisplayMetrics().density;
         final String js = String.format(
             Locale.US,
-            "window.__onNativeInsets&&window.__onNativeInsets(%d,%d,%d,%d)",
+            "window.__onNativeInsets&&window.__onNativeInsets(%d,%d,%d,%d,%d)",
             Math.round(top / density),
             Math.round(right / density),
             Math.round(bottom / density),
-            Math.round(left / density)
+            Math.round(left / density),
+            Math.round(tappableBottom / density)
         );
 
         runOnUiThread(() -> {

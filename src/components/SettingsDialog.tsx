@@ -175,7 +175,7 @@ export function SettingsDialog({
       // 报上来的数，和**真正生效**的 CSS 值，两个都读 ——
       // 只看前者的话，万一变量写进去了样式却没用上，还是查不出来
       const cs = getComputedStyle(document.documentElement)
-      const applied = (['top', 'right', 'bottom', 'left'] as const)
+      const applied = (['top', 'right', 'bottom', 'left', 'bottom-tap'] as const)
         .map((k) => cs.getPropertyValue(`--sa-${k}`).trim() || '?')
         .join(' / ')
       setInsetInfo({ report: getSafeAreaReport(), applied })
@@ -432,6 +432,8 @@ export function SettingsDialog({
                   <br />
                   原生报的：上 {insetInfo?.report.top ?? '—'} / 右 {insetInfo?.report.right ?? '—'}{' '}
                   / 下 {insetInfo?.report.bottom ?? '—'} / 左 {insetInfo?.report.left ?? '—'}
+                  <br />
+                  放按钮要让：{insetInfo?.report.tappableBottom ?? '—'}（0 = 手势条，不用让）
                   <br />
                   实际生效：{insetInfo?.applied ?? '—'}
                   <br />

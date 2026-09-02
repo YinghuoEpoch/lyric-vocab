@@ -27,6 +27,8 @@ type NativeInsets = {
   right?: number
   bottom?: number
   left?: number
+  /** 放按钮要往上让多少。手势条是 0，三颗导航键才是整条 —— 缘由见 SafeAreaPlugin */
+  tappableBottom?: number
   sdk?: number
   density?: number
 }
@@ -40,6 +42,7 @@ export type SafeAreaReport = {
   right: number
   bottom: number
   left: number
+  tappableBottom?: number
   sdk?: number
   density?: number
   error?: string
@@ -80,23 +83,37 @@ function readEnvInsets(): { top: number; right: number; bottom: number; left: nu
 }
 
 /**
- * 把四个数写成 CSS 变量。
+ * 把数写成 CSS 变量。
  *
- * 顶部套一道保底，其余三边不套 —— 手势导航的机器底部本来就接近 0，
- * 硬留一条反而难看；左右只有横过来吃到刘海时才不是 0。
+ * 顶部套一道保底，其余不套 —— 左右只有横过来吃到刘海时才不是 0。
+ *
+ * **底边有两个数，别混用**：
+ *
+ * - `--sa-bottom`：底下那条系统栏有多高。滚动到底时让内容能滚过它，
+ *   免得最后一行卡在导航键底下看不全
+ * - `--sa-bottom-tap`：**放按钮要往上让多少**。手势条是 0（那条是透的、点得穿），
+ *   三颗导航键才是整条。侧栏底部那排图标用它 ——
+ *   一律按前者让的话，手势条的机器上会白留一条，看着像整栏被抬了起来
  */
-function apply(top: number, right: number, bottom: number, left: number) {
+function apply(top: number, right: number, bottom: number, left: number, tappableBottom: number) {
   const s = document.documentElement.style
   s.setProperty('--sa-top', `${Math.max(top, MIN_TOP)}px`)
   s.setProperty('--sa-right', `${right}px`)
   s.setProperty('--sa-bottom', `${bottom}px`)
+  s.setProperty('--sa-bottom-tap', `${tappableBottom}px`)
   s.setProperty('--sa-left', `${left}px`)
 }
 
 declare global {
   interface Window {
     /** 原生在转屏、键盘弹起收起之后调这个（见 MainActivity 的 pushInsets） */
-    __onNativeInsets?: (top: number, right: number, bottom: number, left: number) => void
+    __onNativeInsets?: (
+      top: number,
+      right: number,
+      bottom: number,
+      left: number,
+      tappableBottom: number
+    ) => void
   }
 }
 
@@ -112,9 +129,9 @@ export async function initSafeArea(): Promise<void> {
   // 只有装成 app 才是沉浸式。浏览器里没有系统栏，同一段留白会在页面顶上凭空多一条白边
   document.documentElement.classList.add('native')
 
-  window.__onNativeInsets = (top, right, bottom, left) => {
-    apply(top, right, bottom, left)
-    report = { ...report, source: '原生·推送', top, right, bottom, left }
+  window.__onNativeInsets = (top, right, bottom, left, tappableBottom) => {
+    apply(top, right, bottom, left, tappableBottom)
+    report = { ...report, source: '原生·推送', top, right, bottom, left, tappableBottom }
   }
 
   try {
@@ -124,26 +141,38 @@ export async function initSafeArea(): Promise<void> {
       const right = v.right ?? 0
       const bottom = v.bottom ?? 0
       const left = v.left ?? 0
-      apply(top, right, bottom, left)
-      report = { source: '原生·问答', top, right, bottom, left, sdk: v.sdk, density: v.density }
+      const tappableBottom = v.tappableBottom ?? bottom
+      apply(top, right, bottom, left, tappableBottom)
+      report = {
+        source: '原生·问答',
+        top,
+        right,
+        bottom,
+        left,
+        tappableBottom,
+        sdk: v.sdk,
+        density: v.density
+      }
       return
     }
     // 原生说它自己也没取到 —— 退回 env()
     const env = readEnvInsets()
     const gotSomething = env.top > 0 || env.bottom > 0
-    apply(env.top, env.right, env.bottom, env.left)
+    apply(env.top, env.right, env.bottom, env.left, env.bottom)
     report = {
       source: gotSomething ? 'env()' : '没拿到（用保底）',
       ...env,
+      tappableBottom: env.bottom,
       sdk: v.sdk,
       density: v.density
     }
   } catch (e) {
     const env = readEnvInsets()
-    apply(env.top, env.right, env.bottom, env.left)
+    apply(env.top, env.right, env.bottom, env.left, env.bottom)
     report = {
       source: env.top > 0 || env.bottom > 0 ? 'env()' : '没拿到（用保底）',
       ...env,
+      tappableBottom: env.bottom,
       error: e instanceof Error ? e.message : String(e)
     }
   }

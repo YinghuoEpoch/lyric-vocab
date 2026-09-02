@@ -140,6 +140,18 @@ body {
   --sa-right: env(safe-area-inset-right, 0px);
   --sa-bottom: env(safe-area-inset-bottom, 0px);
   --sa-left: env(safe-area-inset-left, 0px);
+  /*
+   * 底边有两个数，别混用：
+   *
+   * - --sa-bottom     底下那条系统栏有多高。滚动区拿它当内容的下留白，
+   *                   最后一行才滚得过导航键
+   * - --sa-bottom-tap **放按钮要往上让多少**。手势条是 0（那条是透的、点得穿），
+   *                   三颗导航键才是整条。侧栏底部那排图标用它
+   *
+   * 一律按前者让，手势条的机器上就会白留一条 —— 用户在平板上一眼看出来了：
+   * 「左侧栏与右侧栏底部被抬高了」。底色照旧铺满整屏，让开的只有按钮。
+   */
+  --sa-bottom-tap: env(safe-area-inset-bottom, 0px);
 }
 
 .native {
@@ -155,7 +167,8 @@ body {
  */
 .safe-area-padding {
   padding-top: var(--sa-top);
-  padding-bottom: var(--sa-bottom);
+  /* 下面这一格装的是能点的东西（左栏底部那排图标），所以让的是「放按钮」那个数 */
+  padding-bottom: var(--sa-bottom-tap);
 }
 
 /* 英文衬线 - 优雅 Serif */

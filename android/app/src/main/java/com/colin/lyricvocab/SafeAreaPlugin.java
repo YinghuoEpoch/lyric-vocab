@@ -69,11 +69,26 @@ public class SafeAreaPlugin extends Plugin {
             WindowInsetsCompat.Type.systemBars() | WindowInsetsCompat.Type.displayCutout()
         );
 
+        /*
+         * 底边**另外报一个数**：放按钮的地方要让多少。
+         *
+         * 底下那条系统栏有两种，让的量差很多：
+         *
+         * - 三颗导航键：实心的，app 的按钮压在下面就点不着，必须整条让开（48dp 上下）
+         * - 手势条：透的，点得穿，不用让 —— tappableElement 这时候是 0
+         *
+         * 一律按系统栏高度让的话，手势条的机器上就白留一条 ——
+         * 用户在平板上一眼看出来了：「左侧栏与右侧栏底部被抬高了」。
+         * 所以底色仍旧铺满整屏（用 bottom），而**按钮往上让多少看这个数**。
+         */
+        Insets tappable = insets.getInsets(WindowInsetsCompat.Type.tappableElement());
+
         ret.put("available", true);
         ret.put("top", Math.round(bars.top / density));
         ret.put("right", Math.round(bars.right / density));
         ret.put("bottom", Math.round(bars.bottom / density));
         ret.put("left", Math.round(bars.left / density));
+        ret.put("tappableBottom", Math.round(tappable.bottom / density));
         call.resolve(ret);
     }
 }

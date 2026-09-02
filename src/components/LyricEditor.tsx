@@ -1051,9 +1051,10 @@ function LyricEditorInner({
                     boxShadow: '0 12px 32px -12px rgba(44, 44, 44, 0.3)'
                   }
                 : {
-                    // 抽屉贴着屏幕最下沿，白底铺到底、内容让出导航栏。
-                    // 从前直接用 env()，安卓老版本读不到系统栏，那排按钮就压在导航键底下了
-                    paddingBottom: 'max(var(--sa-bottom), 16px)',
+                    // 抽屉贴着屏幕最下沿，白底铺到底、里面那排按钮让开导航键
+                    // （手势条不用让，所以用 -tap 那个数）。
+                    // 从前直接用 env()，安卓老版本读不到系统栏，按钮就压在导航键底下了
+                    paddingBottom: 'max(var(--sa-bottom-tap), 16px)',
                     boxShadow: '0 -10px 28px -12px rgba(44, 44, 44, 0.22)'
                   }
             }
