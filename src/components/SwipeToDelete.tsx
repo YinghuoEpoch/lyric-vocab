@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Trash2 } from 'lucide-react'
 
 /**
@@ -18,6 +18,12 @@ export const REVEAL_PX = 88
 
 /** 先分清楚是横滑还是竖着滚页面，分清之前什么都不做 */
 export const DIRECTION_SLOP = 8
+
+/**
+ * 卡片滑回原位要多久。**样式里的过渡时长和这里必须是同一个数**，
+ * 所以只写这一处，下面的 transition 直接引它。
+ */
+export const CLOSE_MS = 180
 
 /**
  * 这一下算不算「横向滑动」。
@@ -74,6 +80,31 @@ export function SwipeToDelete({
   const swiped = useRef(false)
 
   const offset = dragOffset ?? (open ? -REVEAL_PX : 0)
+
+  /** 手指或 open 状态说「现在是露着的」 */
+  const revealing = open || dragOffset !== null
+
+  /**
+   * 收回去的那 180ms 里，红色那层要继续画着。
+   *
+   * 从前只看 revealing：一松手它立刻变 false，红色**当场消失**，而卡片才刚开始
+   * 往回滑 —— 于是有近 0.2 秒，卡片是压着一片空白往回走的。
+   * 慢慢拖回去看不出来（松手时缺口已经很小），快划一下甩手就很扎眼，
+   * 用户报的「红色按钮凭空不见了」就是它。
+   *
+   * 静止时仍旧不画（两块同样圆角的方块叠着会透出一丝红边），只是把「静止」
+   * 推迟到动画真的走完。
+   */
+  const [closing, setClosing] = useState(false)
+  const wasRevealing = useRef(false)
+  useEffect(() => {
+    const was = wasRevealing.current
+    wasRevealing.current = revealing
+    if (!was || revealing) return
+    setClosing(true)
+    const timer = window.setTimeout(() => setClosing(false), CLOSE_MS)
+    return () => window.clearTimeout(timer)
+  }, [revealing])
 
   const onPointerDown = useCallback((e: React.PointerEvent) => {
     const target = e.target as HTMLElement
@@ -143,8 +174,8 @@ export function SwipeToDelete({
     setDragOffset(null)
   }, [onOpenChange])
 
-  /** 静止收着的时候根本不画红色那层 —— 画了也只会从圆角缝里透出来 */
-  const revealing = open || dragOffset !== null
+  /** 真正要不要画红色那层：露着的时候画，收回去的动画走完才停 */
+  const paintRed = revealing || closing
 
   return (
     /*
@@ -169,9 +200,10 @@ export function SwipeToDelete({
 
         **静止时干脆不画。** 两个同样大小、同样圆角的方块叠在一起，
         边角上总会因为抗锯齿透出一丝红边（用户报的「边角没被盖全」就是它）。
-        与其去凑那一个像素，不如没在滑的时候根本不画。
+        与其去凑那一个像素，不如没在滑的时候根本不画 ——
+        但「静止」要等卡片**滑回到位之后**才算，见上面 closing 那段。
       */}
-      <div className={`absolute inset-0 flex justify-end rounded-xl bg-red-500 ${revealing ? '' : 'hidden'}`}>
+      <div className={`absolute inset-0 flex justify-end rounded-xl bg-red-500 ${paintRed ? '' : 'hidden'}`}>
         <button
           type="button"
           onClick={onDelete}
@@ -189,7 +221,7 @@ export function SwipeToDelete({
         // 写 none 的话整张卡都滚不动了，列表会卡住
         style={{
           transform: `translateX(${offset}px)`,
-          transition: dragOffset === null ? 'transform 180ms ease-out' : 'none',
+          transition: dragOffset === null ? `transform ${CLOSE_MS}ms ease-out` : 'none',
           touchAction: 'pan-y'
         }}
         onPointerDown={onPointerDown}

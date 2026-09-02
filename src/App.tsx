@@ -173,6 +173,19 @@ export default function App() {
 
   const [editMode, setEditMode] = useState(false)
   const [reviewEditMode, setReviewEditMode] = useState(false)
+
+  /**
+   * 离开复习模式就把生词卡的编辑模式关掉。
+   *
+   * 这个开关从前只能靠再点一次顶栏那支笔来关，切去阅读模式再切回来它还开着 ——
+   * 于是回到复习页时卡片全是输入框、还能左滑删除，而用户以为自己早就退出了。
+   * 编辑模式是「这一阵子要整理卡片」的临时状态，出了这一屏就该结束。
+   *
+   * 换文档、换文库时**不关** —— 那种情况下多半是接着往下整理，关掉反而碍事。
+   */
+  useEffect(() => {
+    if (mode !== 'review') setReviewEditMode(false)
+  }, [mode])
   const [activePanel, setActivePanel] = useState<ActivePanel>(null)
   const [scrollTarget, setScrollTarget] = useState<{ pageId: string; anchorId: string } | null>(null)
   /** 「原文已删除」确认弹窗；resolve 用于把用户的选择交回给对账流程 */
@@ -294,7 +307,7 @@ export default function App() {
     }
   }, [currentPage, activePages])
 
-  /** 移动端顶部栏标题：阅读模式=当前文档名，复习模式=选中的文档名或文件夹名 */
+  /** 移动端顶部栏标题：阅读模式=当前文档名，复习模式=选中的文档名或文库名 */
   const mobileHeaderTitle = useMemo(() => {
     if (mode === 'read') {
       return currentPage?.title ?? '语言学习笔记本'
@@ -605,8 +618,13 @@ export default function App() {
    * 全 app 唯一的安卓返回键监听。
    *
    * 各组件把「自己这一层怎么关」登记到 useBackHandler，这里按优先级只关最上面的一层。
-   * 注意：一旦接管了返回键，系统默认的「退出 App」就不会再发生，
-   * 所以没东西可关时必须自己调 exitApp，否则在主界面按返回会毫无反应。
+   * 注意：一旦接管了返回键，系统默认行为就不会再发生，所以没东西可关时必须自己收尾，
+   * 否则在主界面按返回会毫无反应。
+   *
+   * **收尾用的是 minimizeApp，不是 exitApp。** 从前写的是 exitApp —— 那是真退出，
+   * 进程直接结束，从主界面按一下返回整个 App 就没了，任务列表里也不剩。
+   * minimizeApp 等同于按 Home：界面留在后台，再点图标回到原来那一屏。
+   * 这才是安卓上一贯的行为。也正因为退到后台什么都不丢，不需要再加「按两次退出」。
    */
   useEffect(() => {
     if (!Capacitor.isNativePlatform()) return
@@ -614,7 +632,7 @@ export default function App() {
     let cancelled = false
 
     void CapacitorApp.addListener('backButton', () => {
-      if (!handleBackPress()) CapacitorApp.exitApp()
+      if (!handleBackPress()) void CapacitorApp.minimizeApp()
     }).then((h) => {
       if (cancelled) void h.remove()
       else handle = h

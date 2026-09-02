@@ -58,7 +58,7 @@ interface VocabCardItem {
   sourceText?: string
   /** 由 AI 自动填充，需要复核 */
   auto?: boolean
-   // 仅用于文件夹复习模式下的词频统计
+   // 仅用于文库复习模式下的词频统计
   frequency?: number
 }
 
@@ -156,7 +156,7 @@ function VocabularyDashboardInner({
       return [{ title: getPageTitle(reviewTarget.id), pageId: reviewTarget.id, items }]
     }
 
-    // 文件夹级别复习：按词汇聚合 + 词频统计
+    // 文库级别复习：按词汇聚合 + 词频统计
     const { high, normal } = getFolderReviewData(reviewTarget.id, pages, annotations)
 
     const sections: { title: string; pageId: string; items: VocabCardItem[] }[] = []
@@ -221,7 +221,7 @@ function VocabularyDashboardInner({
       if (items.length === 0) return []
       return [{ title: getPageTitle(reviewTarget.id), pageId: reviewTarget.id, items }]
     }
-    // 文件夹：该 book 下所有页面的句摘，按文档分组
+    // 文库：该 book 下所有页面的句摘，按文档分组
     const pagesInBook = pages.filter((p) => p.bookId === reviewTarget.id && !p.deletedAt)
     const pageIds = new Set(pagesInBook.map((p) => p.id))
     const filtered = sentences.filter((s) => pageIds.has(s.docId))
@@ -308,7 +308,7 @@ function VocabularyDashboardInner({
     return (
       <div className={`flex-1 flex flex-col items-center justify-center text-ink-muted ${themeStyles.bg}`}>
         <BookOpen className="w-12 h-12 mb-4 opacity-40" />
-        <p className="text-sm text-center px-4">在左侧选择文档或文件夹以查看生词</p>
+        <p className="text-sm text-center px-4">在左侧选择文档或文库以查看生词</p>
       </div>
     )
   }
@@ -778,7 +778,15 @@ function VocabCard({
       }}
     >
       <div className="flex items-start justify-between gap-2 flex-wrap">
-        {dragHandle}
+        {/*
+          手柄要和右边那个单词**压在同一条水平线上**。
+          量过（375px、18px 字号）：手柄按钮 24px 高、顶对齐，图标中线落在 199；
+          而单词那一行行高 28px，字形（不含下伸部）的中线在 201.5 —— 高了 2.5px，
+          看着就是「摇杆有点偏上」。
+          这里给它套一个和单词同高（28px）的盒子再居中，图标中线落到 201，
+          和字形对齐。不写死一个偏移量，是因为字号一变偏移量就不对了。
+        */}
+        {dragHandle && <span className="flex h-7 shrink-0 items-center">{dragHandle}</span>}
         <div className="min-w-0 flex-1 min-h-[28px]">
           {showEnglish ? (
             /* 点单词 = 读出来；卡片别处照旧是「翻开答案」。

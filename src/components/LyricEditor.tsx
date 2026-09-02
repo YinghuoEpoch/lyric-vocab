@@ -24,6 +24,11 @@ const PROGRESS_DEBOUNCE_MS = 700
  * 范围越大线越靠下：单词 < 短语 < 句摘，三者叠在一起时都看得见。
  * 线型也各不相同：直实线 / 波浪线 / 虚线，不必靠长短去分辨。
  *
+ * **只有句摘那条是例外：它不走 text-decoration，改成背景条纹（见 index.css
+ * 的 .sentence-line）。** 一段句摘里套着几十个单词 span，而浏览器画下划线是
+ * 一个子元素一段地画的，虚线在每个词的接缝处都重新起头，看着深一截浅一截。
+ * 单词和短语那两条各自只画在一个元素上，没有这个毛病，照旧。
+ *
  * 这几个数是量出来的，不是估的（18px 字号、行距 1.8 时）：
  * 基线往下 4px 是内容盒底部（从前两条 border-b 都落在这儿，所以会重叠），
  * 9.7px 是行盒底部，再往下还有 5.7px 行间空气才碰到下一行的字顶 ——
@@ -34,8 +39,7 @@ const WORD_LINE_CLASS =
   'underline decoration-solid decoration-accent-600 decoration-2 underline-offset-2'
 const PHRASE_LINE_CLASS =
   'underline decoration-wavy decoration-accent-600/90 decoration-1 underline-offset-[0.36em]'
-const SENTENCE_LINE_CLASS =
-  'underline decoration-dashed decoration-accent-600 decoration-1 underline-offset-[0.6em]'
+const SENTENCE_LINE_CLASS = 'sentence-line'
 
 /** 单词选择：仅一个词 */
 type WordSelection = { type: 'word'; anchorId: string; word: string }
@@ -843,12 +847,12 @@ function LyricEditorInner({
             }
 
             if (kind) {
-              // 三条线共用一套画法（text-decoration）：都从基线往下量，
-              // 位置一律用 em，字号调大时跟着一起长，不会挤到下一行去。
-              // 范围越大，线越靠下：单词(2px) < 短语(0.3em) < 句摘(0.55em)，
+              // 三条线的位置一律用 em，字号调大时跟着一起长，不会挤到下一行去。
+              // 范围越大，线越靠下：单词(2px) < 短语(0.3em) < 句摘(0.6em)，
               // 叠在一起时三条都看得见 —— 从前短语用 border-b，
               // 和句摘的 border-b 落在同一条水平线上，虚线整条被实线盖住。
               // 线型也各不相同：单词直实线、短语波浪线、句摘虚线，一眼可分。
+              // 句摘那条是背景条纹不是下划线，缘由见文件开头。
               const inner = phraseSegmentMask[segIdx] ? (
                 <span className={PHRASE_LINE_CLASS}>{chunkElems}</span>
               ) : (
