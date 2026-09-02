@@ -16,6 +16,19 @@ export default defineConfig({
       '/dictvoice': {
         target: 'https://dict.youdao.com',
         changeOrigin: true
+      },
+      /**
+       * 同理，古登堡下载书也不带跨域许可。手机上走原生网络，不经过这里。
+       *
+       * **末尾这个斜杠不能少。** 写成 `/gutenberg` 是按前缀匹配的，
+       * 会把 `/gutenberg-catalog.bin`（内置书目那个文件）一并劫走转去官网，
+       * 于是书目永远读不出来 —— 而且拿回来的是人家的 404 页面，
+       * 状态码和内容都对不上，查起来很费劲。这个坑当场踩过一次。
+       */
+      '/gutenberg/': {
+        target: 'https://www.gutenberg.org',
+        changeOrigin: true,
+        rewrite: (p) => p.replace(/^\/gutenberg/, '')
       }
     }
   },

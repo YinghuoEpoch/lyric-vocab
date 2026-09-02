@@ -2,6 +2,7 @@ import { memo, useState, useCallback, useRef, useEffect } from 'react'
 import {
   FolderPlus,
   FileText,
+  Library,
   Book,
   BookOpen,
   Brain,
@@ -36,6 +37,7 @@ import { restrictToVerticalAxis, restrictToWindowEdges } from '@dnd-kit/modifier
 import { CSS } from '@dnd-kit/utilities'
 import { createPortal } from 'react-dom'
 import { SettingsDialog } from './SettingsDialog'
+import { LibraryDialog } from './LibraryDialog'
 import { useBackHandler, BackPriority } from '../hooks/useBackHandler'
 import { IMPORT_ACCEPT } from '../importers'
 import { BAND_TOP, BAND_SUB } from './chrome'
@@ -177,6 +179,7 @@ function LeftSidebarInner({
   const [activeItem, setActiveItem] = useState<ItemKind | null>(null)
   const [dragOverBookId, setDragOverBookId] = useState<string | null>(null)
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const [libraryOpen, setLibraryOpen] = useState(false)
   const preEditOpenFoldersRef = useRef<string[] | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
   const txtFileInputRef = useRef<HTMLInputElement>(null)
@@ -1099,9 +1102,13 @@ function LeftSidebarInner({
        * 五个格子等于五个哑谜。而且三类性质不同的东西排成一样宽的五格：
        * 导入是天天用的动作、回收站是东西的去处、另外三个是低频设置。
        * 现在设置类的全收进设置页，剩下三格，每格 83px，放得下图标加文字。
+       *
+       * 2026-09-02 加了「书库」变成四格，每格 62px。**这个位置是临时的** ——
+       * 书库和导入是同一类事（都是往里放内容），挤在这排四个平权的格子里
+       * 未必是最终形态，等用户在手机上看过再定。
        */}
       <div className="shrink-0 border-t border-paper-border bg-gray-50">
-        <div className="grid grid-cols-3 gap-px">
+        <div className="grid grid-cols-4 gap-px">
           <input
             ref={txtFileInputRef}
             type="file"
@@ -1116,6 +1123,14 @@ function LeftSidebarInner({
           >
             <FileText className="h-5 w-5 shrink-0" aria-hidden />
             <span className="text-[11px] leading-none">导入</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setLibraryOpen(true)}
+            className="flex h-14 w-full min-w-0 flex-col items-center justify-center gap-0.5 text-gray-600 transition-colors hover:bg-gray-100"
+          >
+            <Library className="h-5 w-5 shrink-0" aria-hidden />
+            <span className="text-[11px] leading-none">书库</span>
           </button>
           <button
             type="button"
@@ -1145,6 +1160,17 @@ function LeftSidebarInner({
        * 设置页。和下面的回收站一样用传送门挂到 body 上 ——
        * 侧栏外层带 transform，留在 aside 里的话遮罩只盖得住 250px 宽的侧栏。
        */}
+      {/* 书库。同样走传送门，理由和设置页一样（侧栏带 transform，遮罩会被压在里面）*/}
+      {libraryOpen &&
+        createPortal(
+          <LibraryDialog
+            open={libraryOpen}
+            onClose={() => setLibraryOpen(false)}
+            onImport={onImportFile}
+          />,
+          document.body
+        )}
+
       {settingsOpen &&
         createPortal(
           <SettingsDialog
