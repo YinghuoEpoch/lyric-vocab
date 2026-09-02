@@ -551,14 +551,8 @@ function VocabularyDashboardInner({
             <p className="text-sm leading-relaxed text-ink mb-4">
               确定要删除{pendingDelete.label}吗？此操作不可恢复。
             </p>
+            {/* 用户拍板：删除在左、取消在右 */}
             <div className="flex justify-end gap-2">
-              <button
-                type="button"
-                onClick={() => setPendingDelete(null)}
-                className="px-3 py-2 rounded-lg text-sm text-ink-muted hover:bg-stone-100"
-              >
-                取消
-              </button>
               <button
                 type="button"
                 onClick={() => {
@@ -568,6 +562,13 @@ function VocabularyDashboardInner({
                 className="px-3 py-2 rounded-lg text-sm bg-red-600 text-white hover:bg-red-700"
               >
                 删除
+              </button>
+              <button
+                type="button"
+                onClick={() => setPendingDelete(null)}
+                className="px-3 py-2 rounded-lg text-sm text-ink-muted hover:bg-stone-100"
+              >
+                取消
               </button>
             </div>
           </div>

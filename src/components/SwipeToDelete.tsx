@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 
 /**
  * 左滑删除：**划到底就问一句，不留常驻的红按钮**。
@@ -96,6 +96,22 @@ export function SwipeToDelete({ onRequestDelete, children }: SwipeToDeleteProps)
   const swiped = useRef(false)
   /** 跟着手指走的那一层。松手时要直接改它的 transform，见 finish */
   const moverRef = useRef<HTMLDivElement>(null)
+  /**
+   * 「等卡片回到位再问」的那个等待。
+   *
+   * 一松手就弹确认框的话，框是压在一张还在动的卡片上出来的，两件事叠在一起看着乱。
+   * 等这 180ms 走完，卡片已经稳稳回到原位，再把框弹出来 —— 用户要的就是这个顺序。
+   *
+   * 卡片可能在这 180ms 里被卸掉（换文档、退出编辑模式），所以要留着句柄好取消，
+   * 否则会为一张已经不在的卡片弹框。
+   */
+  const askTimer = useRef<number | null>(null)
+  useEffect(
+    () => () => {
+      if (askTimer.current !== null) window.clearTimeout(askTimer.current)
+    },
+    []
+  )
 
   const offset = dragOffset ?? 0
 
@@ -192,7 +208,13 @@ export function SwipeToDelete({ onRequestDelete, children }: SwipeToDeleteProps)
     setDragOffset(null)
 
     // 读 ref 不读 state，理由见 offsetRef 那段注释
-    if (wasEngaged && shouldAskDelete(released)) onRequestDelete()
+    if (wasEngaged && shouldAskDelete(released)) {
+      if (askTimer.current !== null) window.clearTimeout(askTimer.current)
+      askTimer.current = window.setTimeout(() => {
+        askTimer.current = null
+        onRequestDelete()
+      }, SPRING_MS)
+    }
   }, [onRequestDelete])
 
   return (
