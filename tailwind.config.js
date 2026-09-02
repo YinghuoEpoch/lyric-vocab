@@ -5,6 +5,22 @@ export default {
   content: ['./index.html', './src/**/*.{js,ts,jsx,tsx}'],
   theme: {
     extend: {
+      /*
+       * 「宽屏布局」这条线：够不够摆得下三栏。
+       *
+       * 从前用的是默认的 md（768）。手机永远到不了，所以三栏那套从来没人验过，
+       * 而平板竖屏（iPad 768、安卓平板多是 800）正好落在上面一点，
+       * 拿到了一套摆不下的布局：笔记栏一开，正文只剩 94～126px，一行放不下两个词。
+       *
+       * 1024 把平板竖屏划给手机那套（侧栏浮起来盖住正文，正文永远整宽），
+       * 横屏才走三栏。缘由和量出来的数记在 src/hooks/useWideLayout.ts。
+       *
+       * ⚠️ 和 useWideLayout.ts 里的 WIDE_PX 必须是同一个数。
+       * md/lg/xl 保持 Tailwind 默认，别再拿它们表示「电脑版布局」。
+       */
+      screens: {
+        wide: '1024px'
+      },
       colors: {
         paper: '#fbfcf8',
         ink: '#2c2c2c',
