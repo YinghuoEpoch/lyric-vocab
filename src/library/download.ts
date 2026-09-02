@@ -4,37 +4,65 @@ import { Capacitor, CapacitorHttp } from '@capacitor/core'
  * 从古登堡把一本书的 epub 取回来。
  *
  * 走的是和取真人发音（`src/speech/fetchAudio.ts`）同一条路，原因也一样：
- * 古登堡不带跨域许可，网页里直接 fetch 会被拦下来。所以
+ * 古登堡不带跨域许可（验过，响应里一个 `Access-Control-*` 头都没有），
+ * 网页里直接 fetch 会被拦下来。所以
  *
  * - **手机上**走 Capacitor 的原生网络，请求由安卓发出，不受浏览器那套规矩管
- * - **电脑浏览器里**走 vite 的开发转发（vite.config.ts 里那条 `/gutenberg`），
+ * - **电脑浏览器里**走 vite 的开发转发（vite.config.ts 里那条 `/gutenberg/`），
  *   只为开发时能把整条流程验一验，跟打包出去的 App 无关
  *
- * 取回来的字节喂给现成的 epub 导入器，所以「下载」和「解析」是两件独立的事，
- * 这里只管把字节弄回来。
+ * ## ⚠️ 为什么要分块下载（2026-09-02 真机上栽了才改的）
+ *
+ * 第一版是一个请求整本下完。手机上（4G/5G）**每一本都失败**，报
+ * `unexpected end of stream on com.android.okhttp.Address@…` ——
+ * 连接建起来了，传到一半被掐断。
+ *
+ * 查过不是编码的问题：响应头很干净，有 `content-length`、不分块、不压缩。
+ * 就是这条长连接活不到传完。
+ *
+ * 好在古登堡三个源都支持分段取（`accept-ranges: bytes`，实测都回 206）。
+ * 所以改成**一次只要一小段**：每段几百 KB，请求短、连接活得久，
+ * 掐断了也只重试那一段而不是整本重来。顺带还能报进度。
  */
+
+/** 一次要多大。太小则请求次数多得离谱，太大又回到「长连接活不下来」的老问题 */
+const CHUNK = 256 * 1024
+/** 单段失败重试几次 */
+const RETRIES = 3
+/** 整本最多允许多少段，防止服务器给了个离谱的长度把 App 卡死 */
+const MAX_CHUNKS = 400
 
 /**
- * 下载地址直接用 `/cache/epub/{id}/pg{id}.epub`，不用 `/ebooks/{id}.epub.noimages`。
+ * 备用源。主站不通时依次往下试。
  *
- * 后者会 302 跳到前者。少一次跳转就少依赖一层「原生网络跟不跟随重定向」的行为 ——
- * 这类跨平台差异正是这个项目栽过跟头的地方。抽查过 16 本（最老的编号 1 到最新的
- * 70000），这个规律全部成立。
+ * 三个都实测过：同一本书返回的字节数完全一致，且都支持分段取。
+ * （另有 `gutenberg.nabasny.com` 也能连，但同一本书大小对不上，
+ * 内容版本不一样，故意不用。）
  */
-function epubUrl(id: number): string {
-  return Capacitor.isNativePlatform()
-    ? `https://www.gutenberg.org/cache/epub/${id}/pg${id}.epub`
-    : `/gutenberg/cache/epub/${id}/pg${id}.epub`
+const HOSTS = [
+  'https://www.gutenberg.org',
+  'https://gutenberg.pglaf.org',
+  'http://aleph.gutenberg.org'
+]
+
+/**
+ * 路径直接用 `/cache/epub/{id}/pg{id}.epub`，不用会 302 跳转的
+ * `/ebooks/{id}.epub.noimages`。少一次跳转就少依赖一层
+ * 「原生网络跟不跟随重定向」的行为 —— 这类跨平台差异正是这个项目栽过跟头的地方。
+ * 抽查过 16 本（编号 1 到 70000），这个规律全部成立。
+ */
+function bookPath(id: number): string {
+  return `/cache/epub/${id}/pg${id}.epub`
 }
 
-/** 这本书古登堡没有 epub —— 和「网络不通」不是一回事，上层要分开提示 */
+/** 这本书取不到 —— 和「网络不通」不是一回事，上层要分开提示 */
 export class NoEpub extends Error {}
 
-function base64ToArrayBuffer(base64: string): ArrayBuffer {
+function base64ToBytes(base64: string): Uint8Array {
   const binary = atob(base64)
-  const bytes = new Uint8Array(binary.length)
-  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i)
-  return bytes.buffer
+  const out = new Uint8Array(binary.length)
+  for (let i = 0; i < binary.length; i++) out[i] = binary.charCodeAt(i)
+  return out
 }
 
 /**
@@ -44,40 +72,142 @@ function base64ToArrayBuffer(base64: string): ArrayBuffer {
  * 返回的是 App 自己的首页 HTML，状态码照样 200，结果把网页当录音存了进去。
  * 真机上同样有得撞：公共 WiFi 的登录页、运营商插页，全是 200 的 HTML。
  *
- * epub 本质是个 zip，头四个字节固定是 `PK\x03\x04`。认不出来就当没有这本书，
- * 免得把一段 HTML 送进解析器，报出一堆看不懂的错。
+ * epub 本质是个 zip，头四个字节固定是 `PK\x03\x04`。
  */
-function looksLikeEpub(bytes: ArrayBuffer): boolean {
-  const head = new Uint8Array(bytes)
+export function looksLikeEpub(bytes: ArrayBuffer | Uint8Array): boolean {
+  const head = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes)
   if (head.length < 4) return false
   return head[0] === 0x50 && head[1] === 0x4b && head[2] === 0x03 && head[3] === 0x04
 }
 
-export async function fetchBookEpub(id: number): Promise<ArrayBuffer> {
-  const url = epubUrl(id)
+/** 一段的返回：字节，以及服务器说的整个文件有多大 */
+interface Chunk {
+  bytes: Uint8Array
+  /** 从 `Content-Range: bytes 0-255/1234` 里那个总长；解析不出来就是 null */
+  total: number | null
+}
+
+export function parseTotal(headers: Record<string, string> | undefined): number | null {
+  if (!headers) return null
+  // 头的大小写不保证，挨个找
+  const key = Object.keys(headers).find((k) => k.toLowerCase() === 'content-range')
+  const m = key ? /\/(\d+)\s*$/.exec(headers[key]) : null
+  return m ? Number(m[1]) : null
+}
+
+/** 取一段。`end` 含在内，和 HTTP 的 Range 一致 */
+async function fetchRange(url: string, start: number, end: number): Promise<Chunk> {
+  const range = `bytes=${start}-${end}`
 
   if (Capacitor.isNativePlatform()) {
-    const res = await CapacitorHttp.get({ url, responseType: 'blob', connectTimeout: 15000 })
-    if (res.status < 200 || res.status >= 300) throw new NoEpub(String(res.status))
+    const res = await CapacitorHttp.get({
+      url,
+      headers: { Range: range },
+      responseType: 'blob',
+      connectTimeout: 15000,
+      readTimeout: 20000
+    })
+    // 206 是「给你这一段」，200 是「不认 Range，整个给你」—— 后者也能用
+    if (res.status !== 206 && res.status !== 200) throw new NoEpub(String(res.status))
     const data = res.data
     const bytes =
       typeof data === 'string'
-        ? base64ToArrayBuffer(data)
+        ? base64ToBytes(data)
         : data instanceof ArrayBuffer
-          ? data
+          ? new Uint8Array(data)
           : null
     if (!bytes) throw new Error('拿回来的不是文件')
-    return checked(bytes)
+    return { bytes, total: parseTotal(res.headers as Record<string, string>) }
   }
 
-  const res = await fetch(url)
-  if (!res.ok) throw new NoEpub(String(res.status))
-  return checked(await res.arrayBuffer())
+  const res = await fetch(url, { headers: { Range: range } })
+  if (res.status !== 206 && res.status !== 200) throw new NoEpub(String(res.status))
+  const total = parseTotal({ 'content-range': res.headers.get('content-range') ?? '' })
+  return { bytes: new Uint8Array(await res.arrayBuffer()), total }
 }
 
-function checked(bytes: ArrayBuffer): ArrayBuffer {
-  if (!looksLikeEpub(bytes)) throw new NoEpub('拿回来的不是 epub')
-  return bytes
+/** 同一段重试几次再放弃。掐断是随机的，重试往往就过去了 */
+async function fetchRangeWithRetry(url: string, start: number, end: number): Promise<Chunk> {
+  let last: unknown
+  for (let i = 0; i < RETRIES; i++) {
+    try {
+      return await fetchRange(url, start, end)
+    } catch (e) {
+      last = e
+      // 立刻重试多半还是撞在同一个点上，稍微等一下
+      if (i < RETRIES - 1) await new Promise((r) => setTimeout(r, 400 * (i + 1)))
+    }
+  }
+  throw last
+}
+
+export interface DownloadProgress {
+  /** 已经拿到多少字节 */
+  loaded: number
+  /** 一共多大；服务器没说就是 null */
+  total: number | null
+}
+
+/**
+ * 把一本书整个取回来。分段取，主站不行就换备用源。
+ *
+ * @param onProgress 每取到一段回调一次，用来显示进度
+ */
+export async function fetchBookEpub(
+  id: number,
+  onProgress?: (p: DownloadProgress) => void
+): Promise<ArrayBuffer> {
+  const path = bookPath(id)
+  let lastError: unknown
+
+  for (const host of HOSTS) {
+    // 浏览器里走开发转发，只试主站那一条 —— 转发规则只配了这一个
+    const base = Capacitor.isNativePlatform() ? host + path : '/gutenberg' + path
+    try {
+      const bytes = await downloadFrom(base, onProgress)
+      return bytes
+    } catch (e) {
+      lastError = e
+      if (!Capacitor.isNativePlatform()) break
+    }
+  }
+  throw lastError ?? new Error('下载失败')
+}
+
+async function downloadFrom(
+  url: string,
+  onProgress?: (p: DownloadProgress) => void
+): Promise<ArrayBuffer> {
+  const parts: Uint8Array[] = []
+  let loaded = 0
+  let total: number | null = null
+
+  for (let n = 0; n < MAX_CHUNKS; n++) {
+    const chunk = await fetchRangeWithRetry(url, loaded, loaded + CHUNK - 1)
+
+    // 第一段就要认出这是不是 epub，是 HTML 的话趁早停，别白下几百 KB
+    if (n === 0 && !looksLikeEpub(chunk.bytes)) throw new NoEpub('拿回来的不是 epub')
+
+    if (chunk.total !== null) total = chunk.total
+    if (chunk.bytes.length === 0) break
+
+    parts.push(chunk.bytes)
+    loaded += chunk.bytes.length
+    onProgress?.({ loaded, total })
+
+    // 服务器不认 Range，一次就把整本给了 —— 那就已经下完了
+    if (total === null && chunk.bytes.length < CHUNK) break
+    if (total !== null && loaded >= total) break
+  }
+
+  const out = new Uint8Array(loaded)
+  let at = 0
+  for (const p of parts) {
+    out.set(p, at)
+    at += p.length
+  }
+  if (!looksLikeEpub(out)) throw new NoEpub('拿回来的不是 epub')
+  return out.buffer
 }
 
 /**
@@ -91,5 +221,3 @@ export function asEpubFile(bytes: ArrayBuffer, title: string): File {
   const safe = title.replace(/[\\/:*?"<>|]/g, ' ').trim() || 'book'
   return new File([bytes], `${safe}.epub`, { type: 'application/epub+zip' })
 }
-
-export { looksLikeEpub }

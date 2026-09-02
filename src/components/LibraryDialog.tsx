@@ -1,7 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { BookOpen, Download, Loader2, Search, X } from 'lucide-react'
 import { catalogSize, loadCatalog, searchCatalog, type CatalogBook } from '../library/catalog'
-import { asEpubFile, fetchBookEpub, NoEpub } from '../library/download'
+import {
+  asEpubFile,
+  fetchBookEpub,
+  NoEpub,
+  type DownloadProgress
+} from '../library/download'
 import { useBackHandler, BackPriority } from '../hooks/useBackHandler'
 
 /**
@@ -14,6 +19,31 @@ import { useBackHandler, BackPriority } from '../hooks/useBackHandler'
  * 只有真的下载那一下才需要网。下下来的字节包成 File 交给现成的导入流程，
  * 所以章节切分、异常提示这些一概不用重写。
  */
+
+/**
+ * 把下载失败翻译成人话。
+ *
+ * 第一版直接把原始异常甩在界面上，用户看到的是
+ * `unexpected end of stream on com.android.okhttp.Address@f3518f8e` ——
+ * 这句话对他没有任何用处，也不告诉他下一步该干嘛。
+ */
+function formatSize(bytes: number): string {
+  return bytes < 1024 * 1024
+    ? `${Math.round(bytes / 1024)} KB`
+    : `${(bytes / 1024 / 1024).toFixed(1)} MB`
+}
+
+function describeError(e: unknown): string {
+  const raw = e instanceof Error ? e.message : String(e)
+  if (e instanceof NoEpub) {
+    return '这本书取不到，可能古登堡那边没存 epub。换一本试试'
+  }
+  // 连接被掐断这一类：三个源、每段重试三次都没成，多半是网络到不了
+  if (/end of stream|timeout|timed out|Failed to connect|Unable to resolve/i.test(raw)) {
+    return '连不上书库的服务器。换个网络试试（Wi-Fi 与流量的线路不一样），或者过一会儿再来'
+  }
+  return '下载失败：' + raw
+}
 
 interface LibraryDialogProps {
   open: boolean
@@ -29,6 +59,8 @@ export function LibraryDialog({ open, onClose, onImport }: LibraryDialogProps) {
   const [query, setQuery] = useState('')
   /** 正在下载的那本书的编号，同时也用来禁掉其它条目 */
   const [downloading, setDownloading] = useState<number | null>(null)
+  /** 下载进度。手机上分段取，能报得出来 */
+  const [progress, setProgress] = useState<DownloadProgress | null>(null)
   const [error, setError] = useState('')
   const inputRef = useRef<HTMLInputElement>(null)
 
@@ -66,20 +98,18 @@ export function LibraryDialog({ open, onClose, onImport }: LibraryDialogProps) {
   const handlePick = (book: CatalogBook) => {
     if (downloading !== null) return
     setDownloading(book.id)
+    setProgress(null)
     setError('')
     void (async () => {
       try {
-        const bytes = await fetchBookEpub(book.id)
+        const bytes = await fetchBookEpub(book.id, setProgress)
         onImport(asEpubFile(bytes, book.title))
         onClose()
       } catch (e) {
-        setError(
-          e instanceof NoEpub
-            ? '这本书下不到（古登堡那边没有 epub，或者网络被挡住了）'
-            : '下载失败：' + (e instanceof Error ? e.message : String(e))
-        )
+        setError(describeError(e))
       } finally {
         setDownloading(null)
+        setProgress(null)
       }
     })()
   }
@@ -174,7 +204,25 @@ export function LibraryDialog({ open, onClose, onImport }: LibraryDialogProps) {
             </div>
 
             {downloading !== null && (
-              <p className="text-xs text-ink-muted">正在下载，书越厚等得越久…</p>
+              <div className="space-y-1">
+                <p className="text-xs text-ink-muted">
+                  {progress
+                    ? `正在下载… ${formatSize(progress.loaded)}${
+                        progress.total ? ` / ${formatSize(progress.total)}` : ''
+                      }`
+                    : '正在下载，书越厚等得越久…'}
+                </p>
+                {progress?.total ? (
+                  <div className="h-1 overflow-hidden rounded-full bg-stone-200">
+                    <div
+                      className="h-full bg-accent-500 transition-all duration-300"
+                      style={{
+                        width: `${Math.min(100, (progress.loaded / progress.total) * 100)}%`
+                      }}
+                    />
+                  </div>
+                ) : null}
+              </div>
             )}
             {error && <p className="text-xs leading-relaxed text-red-600">{error}</p>}
           </>
