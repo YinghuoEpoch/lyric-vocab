@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!--
+        和网页里的纸色一致（src/index.css 里 body 的背景）。
+
+        窗口底色用它：启动那一瞬间、转屏中途、网页还没画出来时露出来的都是这一层，
+        写白色会在暖白的纸张下闪一下冷白。
+    -->
+    <color name="paper">#fbfcf8</color>
+</resources>

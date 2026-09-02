@@ -6,6 +6,7 @@ import { UserGuide } from './UserGuide'
 import { AGREEMENT_CLAUSES, AGREEMENT_TITLE } from '../agreement'
 import { describeTarget, loadConfig, resolveConfig, type AiConfig } from '../enrich'
 import { useBackHandler, BackPriority } from '../hooks/useBackHandler'
+import { getSafeAreaReport, type SafeAreaReport } from '../safeArea'
 import type { AccentColor, ReaderSettings } from '../types'
 
 /**
@@ -66,6 +67,75 @@ function Section({ title, children }: { title: string; children: React.ReactNode
         {children}
       </div>
     </section>
+  )
+}
+
+/** 「开发者 → 系统栏参数」那一屏。一行一个数，名字用大白话 */
+function Row({ label, value }: { label: string; value: React.ReactNode }) {
+  return (
+    <div className="flex items-baseline justify-between gap-3 py-1">
+      <span className="shrink-0 text-xs text-ink-muted">{label}</span>
+      <span className="min-w-0 text-right text-sm text-ink break-all">{value}</span>
+    </div>
+  )
+}
+
+/**
+ * 系统栏参数。
+ *
+ * 本来是为了验一次沉浸式临时加的，用户验完说留着 —— 确实值得留：
+ * 这几个数一摆出来，「留白对不对」「跑的是不是刚打的那一版网页」当场就有答案，
+ * 不必再靠猜。改沉浸式那两轮的教训全在这一小屏里
+ * （见 后续规划.md 第四十九节）。
+ */
+function SafeAreaReadout({
+  info
+}: {
+  info: { report: SafeAreaReport; applied: string } | null
+}) {
+  const r = info?.report
+  const navText =
+    r?.navMode === 2
+      ? '手势（不用让）'
+      : r?.navMode === 0
+        ? '三颗键'
+        : r?.navMode === 1
+          ? '两颗键'
+          : `读不到（${r?.navMode ?? '—'}），按厚度判断`
+
+  return (
+    <div className="space-y-4">
+      <Section title="系统栏让出的留白">
+        <Row label="取值走的哪条路" value={r?.source ?? '—'} />
+        <Row
+          label="原生报的"
+          value={`上 ${r?.top ?? '—'} / 右 ${r?.right ?? '—'} / 下 ${r?.bottom ?? '—'} / 左 ${r?.left ?? '—'}`}
+        />
+        <Row
+          label="放按钮要让"
+          value={`${r?.tappableBottom ?? '—'}（系统自报 ${r?.tappableRaw ?? '—'}）`}
+        />
+        <Row label="导航方式" value={navText} />
+        <Row label="实际生效" value={info?.applied ?? '—'} />
+        {r?.error ? <Row label="出错" value={r.error} /> : null}
+        <p className="text-xs text-ink-muted leading-relaxed pt-1">
+          底下那条有两种：三颗导航键是实心的，按钮压在下面就点不着，得整条让开；
+          手势条是透的、点得穿，不用让。读不到导航方式时按厚度分 —— 细过 32 的当手势条。
+        </p>
+      </Section>
+
+      <Section title="这台机器 / 这份网页">
+        <Row
+          label="屏幕"
+          value={`${window.innerWidth}×${window.innerHeight} · 密度 ${r?.density ?? '—'}`}
+        />
+        <Row label="安卓版本" value={r?.sdk ?? '—'} />
+        <Row label="网页打包于" value={r?.build ?? '—'} />
+        <p className="text-xs text-ink-muted leading-relaxed pt-1">
+          「网页打包于」对不上刚装的那一版，就说明跑的还是旧网页 —— 这个 app 从前栽过一次。
+        </p>
+      </Section>
+    </div>
   )
 }
 
@@ -157,6 +227,12 @@ export function SettingsDialog({
   const backupInputRef = useRef<HTMLInputElement>(null)
   /** 存了多少发音。打开设置页时读一次就够，不用一直盯着 */
   const [audioStats, setAudioStats] = useState<CacheStats | null>(null)
+  /** 正在看开发者那一屏 */
+  const [showDev, setShowDev] = useState(false)
+  /** 系统栏留白这次取到了什么。进开发者那一屏时读一次 */
+  const [insetInfo, setInsetInfo] = useState<{ report: SafeAreaReport; applied: string } | null>(
+    null
+  )
 
   useEffect(() => {
     if (open) {
@@ -164,10 +240,27 @@ export function SettingsDialog({
       setEditingAi(false)
       setShowAgreement(false)
       setShowGuide(false)
+      setShowDev(false)
       setAudioStats(null)
       void cacheStats().then(setAudioStats)
     }
   }, [open])
+
+  /**
+   * 进开发者那一屏时现读一次 —— 转屏、收放键盘之后这些数会变，
+   * 打开设置页那一刻读的可能已经过期了。
+   *
+   * 报上来的数和**真正生效**的 CSS 值两个都读：只看前者的话，
+   * 万一变量写进去了、样式却没用上，还是查不出来。
+   */
+  const openDev = () => {
+    const cs = getComputedStyle(document.documentElement)
+    const applied = (['top', 'right', 'bottom', 'left', 'bottom-tap'] as const)
+      .map((k) => cs.getPropertyValue(`--sa-${k}`).trim() || '?')
+      .join(' / ')
+    setInsetInfo({ report: getSafeAreaReport(), applied })
+    setShowDev(true)
+  }
 
   /**
    * 返回键只登记一层，自己判断退到哪：在子屏里退回列表，在列表里才关掉。
@@ -177,6 +270,7 @@ export function SettingsDialog({
     if (editingAi) setEditingAi(false)
     else if (showAgreement) setShowAgreement(false)
     else if (showGuide) setShowGuide(false)
+    else if (showDev) setShowDev(false)
     else onClose()
   })
 
@@ -189,21 +283,25 @@ export function SettingsDialog({
    * 而自定义供应商叫「自定义」等于没说，得显示实际域名。
    */
   const resolvedAi = resolveConfig(aiConfig)
-  const inSubScreen = editingAi || showAgreement || showGuide
+  const inSubScreen = editingAi || showAgreement || showGuide || showDev
   const title = editingAi
     ? 'AI 设置'
     : showAgreement
       ? AGREEMENT_TITLE
       : showGuide
         ? '使用说明'
-        : '设置'
+        : showDev
+          ? '开发者'
+          : '设置'
   const back = editingAi
     ? () => setEditingAi(false)
     : showAgreement
       ? () => setShowAgreement(false)
       : showGuide
         ? () => setShowGuide(false)
-        : onClose
+        : showDev
+          ? () => setShowDev(false)
+          : onClose
 
   const setFontSize = (size: number) =>
     onReaderSettingsChange({ ...readerSettings, fontSize: size })
@@ -251,6 +349,8 @@ export function SettingsDialog({
                 <p key={line}>{line}</p>
               ))}
             </div>
+          ) : showDev ? (
+            <SafeAreaReadout info={insetInfo} />
           ) : (
             <>
               <Section title="上手">
@@ -405,6 +505,18 @@ export function SettingsDialog({
                   备份是一个 .json 文件，文库、正文和笔记都在里面。
                   恢复会用文件里的内容覆盖现在的数据。
                 </p>
+              </Section>
+
+              <Section title="开发者">
+                <button type="button" onClick={openDev} className="w-full flex items-center gap-2 text-left">
+                  <span className="flex-1 min-w-0">
+                    <span className="block text-sm text-ink">系统栏参数</span>
+                    <span className="block text-xs text-ink-muted">
+                      顶上和底下各让出多少、这份网页是哪一版
+                    </span>
+                  </span>
+                  <ChevronRight className="w-4 h-4 text-ink-muted shrink-0" />
+                </button>
               </Section>
 
               <Section title="关于">

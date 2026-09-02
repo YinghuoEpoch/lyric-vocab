@@ -9,10 +9,29 @@
         <item name="colorAccent">@color/colorAccent</item>
     </style>
 
-    <style name="AppTheme.NoActionBar" parent="Theme.AppCompat.DayNight.NoActionBar">
+    <!--
+        运行时用的就是这个主题（启动图之后 Capacitor 会切过来）。
+
+        1. **父主题从 DayNight 换成 Light。** 用户平板上顶着的那条深灰就是它来的：
+           名字看着像继承自上面那个 AppTheme，但只要写了显式的 parent 就以 parent 为准，
+           点号命名那套不算数。于是它压根没继承 app 的颜色，拿的是 AppCompat 的默认值 ——
+           状态栏色 = colorPrimaryDark = material_grey_600 = #757575，**浅色模式下也是这个灰**。
+           这个 app 没有深色模式，主题也就不该跟着系统深浅色走。
+        2. **两条系统栏底色改透明**，网页自己铺到它们底下去（沉浸式在 MainActivity 里打开）。
+           底色由网页那一栏自己的颜色负责 —— 左栏的白、正文的纸色一路铺到屏幕最顶最底，
+           分界线才不会断在半空。
+        3. **windowBackground 用纸色**，见 colors.xml 里的说明。
+
+        图标深浅不写在这里，由 MainActivity 用 WindowInsetsControllerCompat 设置 ——
+        那边自带版本判断，不必为 v23/v27 单开几个资源目录。
+    -->
+    <style name="AppTheme.NoActionBar" parent="Theme.AppCompat.Light.NoActionBar">
         <item name="windowActionBar">false</item>
         <item name="windowNoTitle">true</item>
         <item name="android:background">@null</item>
+        <item name="android:windowBackground">@color/paper</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
     </style>
 
 

@@ -3,6 +3,18 @@ import react from '@vitejs/plugin-react'
 import { VitePWA } from 'vite-plugin-pwa'
 
 export default defineConfig({
+  /*
+   * 打包时刻，编进代码里。设置页「开发者 → 系统栏参数」里显示。
+   *
+   * 用处只有一个，但很值：装到手机上一眼看出**跑的是不是刚打的这一版网页**。
+   * 这个 app 栽过 —— 装了新 APK 却还在跑上一版的网页（离线缓存截胡），
+   * 代码明明改了、手机上「好像没有变化」，查半天查不出。
+   */
+  define: {
+    __BUILD_STAMP__: JSON.stringify(
+      new Date().toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })
+    )
+  },
   /**
    * 开发时把取发音的请求转一道手。
    *
