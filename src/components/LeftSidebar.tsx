@@ -64,6 +64,8 @@ interface LeftSidebarProps {
   onRestorePage: (pageId: string) => void
   onDeleteBookPermanently: (bookId: string) => void
   onDeletePagePermanently: (pageId: string) => void
+  /** 清空回收站：把所有软删除的文库和文档一次抹掉 */
+  onEmptyTrash: () => void
   onRenameBook: (bookId: string, name: string) => void
   onRenamePage: (pageId: string, title: string) => void
   onSelectPage: (page: LyricPage) => void
@@ -144,6 +146,7 @@ function LeftSidebarInner({
   onRestorePage,
   onDeleteBookPermanently,
   onDeletePagePermanently,
+  onEmptyTrash,
   onRenameBook,
   onRenamePage,
   onSelectPage,
@@ -169,7 +172,14 @@ function LeftSidebarInner({
   const [editValue, setEditValue] = useState('')
   const [menuOpen, setMenuOpen] = useState<MenuKind>(null)
   const [recycleOpen, setRecycleOpen] = useState(false)
-  const [confirmDelete, setConfirmDelete] = useState<{ type: 'book' | 'page'; id: string } | null>(null)
+  /**
+   * 彻底删除的二次确认。`all` 是清空整个回收站，没有 id。
+   * 和单条删除共用一个弹窗 —— 问的是同一件事（不可恢复），
+   * 只是措辞和范围不同。
+   */
+  const [confirmDelete, setConfirmDelete] = useState<
+    { type: 'book' | 'page'; id: string } | { type: 'all' } | null
+  >(null)
   const [collapsedBooks, setCollapsedBooks] = useState<Record<string, boolean>>({})
   // 安卓返回键：先关二次确认，再关回收站
   useBackHandler(!!confirmDelete, BackPriority.confirmDelete, () => setConfirmDelete(null))
@@ -1202,13 +1212,24 @@ function LeftSidebarInner({
           >
             <div className="shrink-0 flex items-center justify-between p-3 border-b border-paper-border">
               <span className="text-sm font-medium text-ink">回收站</span>
-              <button
-                type="button"
-                onClick={() => setRecycleOpen(false)}
-                className="p-1.5 rounded-lg hover:bg-stone-100 text-ink-muted"
-              >
-                <X className="w-4 h-4" />
-              </button>
+              <div className="flex items-center gap-1">
+                {trashCount > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setConfirmDelete({ type: 'all' })}
+                    className="rounded-lg px-2 py-1 text-xs text-red-600 hover:bg-red-50"
+                  >
+                    清空
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setRecycleOpen(false)}
+                  className="p-1.5 rounded-lg hover:bg-stone-100 text-ink-muted"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
             </div>
             <div className="flex-1 min-h-0 overflow-y-auto scroll-area p-3 space-y-2">
               {deletedBooks.length === 0 && deletedPages.length === 0 ? (
@@ -1287,7 +1308,11 @@ function LeftSidebarInner({
             className="bg-white rounded-xl shadow-xl border border-paper-border p-4 max-w-sm w-full"
             onClick={(e) => e.stopPropagation()}
           >
-            <p className="text-sm text-ink mb-4">确定要彻底删除吗？此操作不可恢复。</p>
+            <p className="text-sm leading-relaxed text-ink mb-4">
+              {confirmDelete.type === 'all'
+                ? `确定要清空回收站吗？共 ${trashCount} 项，此操作不可恢复。`
+                : '确定要彻底删除吗？此操作不可恢复。'}
+            </p>
             <div className="flex justify-end gap-2">
               <button
                 type="button"
@@ -1299,13 +1324,15 @@ function LeftSidebarInner({
               <button
                 type="button"
                 onClick={() => {
-                  if (confirmDelete.type === 'book') onDeleteBookPermanently(confirmDelete.id)
+                  if (confirmDelete.type === 'all') onEmptyTrash()
+                  else if (confirmDelete.type === 'book')
+                    onDeleteBookPermanently(confirmDelete.id)
                   else onDeletePagePermanently(confirmDelete.id)
                   setConfirmDelete(null)
                 }}
                 className="px-3 py-2 rounded-lg text-sm bg-red-600 text-white hover:bg-red-700"
               >
-                彻底删除
+                {confirmDelete.type === 'all' ? '清空' : '彻底删除'}
               </button>
             </div>
           </div>

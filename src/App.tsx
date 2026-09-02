@@ -50,6 +50,7 @@ import {
   restorePage,
   deleteBookPermanently,
   deletePagePermanently,
+  emptyTrash,
   generateId,
   reorderBooks,
   reorderPages,
@@ -463,6 +464,23 @@ export default function App() {
     },
     [currentPageId, refreshData]
   )
+
+  /**
+   * 清空回收站。
+   *
+   * 正在读的那一篇理论上不会躺在回收站里（删的时候就跳开了），
+   * 但恢复、删除、多处入口混着用时不好打包票，所以清完再核一遍：
+   * 当前这篇要是没了，就退回没有选中文档的状态，免得界面指着一个不存在的东西。
+   */
+  const handleEmptyTrash = useCallback(() => {
+    void (async () => {
+      const next = await emptyTrash()
+      if (currentPageId && !next.pages.some((p) => p.id === currentPageId)) {
+        setCurrentPageId(null)
+      }
+      await refreshData()
+    })()
+  }, [currentPageId, refreshData])
 
   const handleSelectPage = useCallback((page: LyricPage) => {
     setCurrentPageId(page.id)
@@ -1193,6 +1211,7 @@ export default function App() {
           onRestorePage={handleRestorePage}
           onDeleteBookPermanently={handleDeleteBookPermanently}
           onDeletePagePermanently={handleDeletePagePermanently}
+          onEmptyTrash={handleEmptyTrash}
           onRenameBook={handleRenameBook}
           onRenamePage={handleRenamePage}
           onSelectPage={handleSelectPage}

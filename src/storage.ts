@@ -288,6 +288,43 @@ export async function deletePagePermanently(pageId: string): Promise<AppData> {
   return commit(data)
 }
 
+/**
+ * 清空回收站：把所有软删除的文库和文档一次性抹掉。
+ *
+ * **为什么单写一个函数，而不是循环调上面那两个。**
+ * 那两个函数每调一次都是一整轮「读全量 → 改 → 落盘」。回收站里攒到几十上百项
+ * 是常事（用户那台机器上就有 95 项），循环调等于连写上百次，慢不说，
+ * 中途被打断还会留下删了一半的状态。这里改成一次遍历、一次落盘。
+ *
+ * **保留「溶解」的语义**：删掉一个文库时，它下面**没有被删**的文档不跟着消失，
+ * 而是提升到根级（和 `deleteBookPermanently` 一致）。
+ * 正常情况下遇不到 —— `moveBookToTrash` 会把文库连同它的文档一起标记删除 ——
+ * 但文档可以被单独恢复，所以这条兜底不能省。
+ */
+export async function emptyTrash(): Promise<AppData> {
+  const data = await ensureLoaded()
+  const goneBooks = new Set(data.books.filter((b) => b.deletedAt).map((b) => b.id))
+  const gonePages = new Set(data.pages.filter((p) => p.deletedAt).map((p) => p.id))
+  if (goneBooks.size === 0 && gonePages.size === 0) return data
+
+  data.books = data.books.filter((b) => !goneBooks.has(b.id))
+  data.pages = data.pages
+    .filter((p) => !gonePages.has(p.id))
+    // 留下来的文档若挂在已删掉的文库上，提升到根级，别留一个指向空处的父级
+    .map((p) => (p.bookId && goneBooks.has(p.bookId) ? { ...p, bookId: null } : p))
+
+  // 笔记和标注跟着文档走，不清的话就是一堆再也够不着的垃圾
+  data.notes = Object.fromEntries(
+    Object.entries(data.notes).filter(([pageId]) => !gonePages.has(pageId))
+  )
+  const annotations = data.annotations ?? []
+  if (annotations.some((a) => gonePages.has(a.docId))) {
+    data.annotations = annotations.filter((a) => !gonePages.has(a.docId))
+  }
+
+  return commit(data)
+}
+
 export async function savePage(page: LyricPage): Promise<AppData> {
   const data = await ensureLoaded()
   const next = { ...page, updatedAt: Date.now() }
