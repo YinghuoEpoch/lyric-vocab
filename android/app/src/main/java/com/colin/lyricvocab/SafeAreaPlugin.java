@@ -60,14 +60,26 @@ public class SafeAreaPlugin extends Plugin {
      */
     static int buttonBottom(android.content.Context ctx, WindowInsetsCompat insets, float density) {
         int tappable = insets.getInsets(WindowInsetsCompat.Type.tappableElement()).bottom;
+        int bars = insets.getInsets(WindowInsetsCompat.Type.navigationBars()).bottom;
         int mode = navigationMode(ctx);
+
         if (mode == 2) return 0; // 手势
         if (mode == 0 || mode == 1) {
             // 按键模式：以系统栏为准，tappableElement 偶有报 0 的
-            int bars = insets.getInsets(WindowInsetsCompat.Type.navigationBars()).bottom;
             return Math.round(Math.max(tappable, bars) / density);
         }
-        return Math.round(tappable / density);
+
+        /*
+         * 两条依据都落空时（用户那台平板正是这样：tappableElement 和系统栏一样大、
+         * navigation_mode 读回 -1），**按厚度判断**：
+         *
+         * 三颗导航键那条是实心的，48dp 上下，按钮压在下面真点不着；
+         * 手势条只有 16～24dp，是透的、点得穿。以 32dp 为界，细的一律不让。
+         *
+         * 这个界是量出来的：用户平板报的是 16，而安卓的按键导航栏从来没有细过 32dp。
+         */
+        int css = Math.round(tappable / density);
+        return css < 32 ? 0 : css;
     }
 
     /**
