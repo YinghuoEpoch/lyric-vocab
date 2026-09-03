@@ -59,6 +59,8 @@ export type SafeAreaReport = {
   tappableBottom?: number
   tappableRaw?: number
   navMode?: number
+  /** 输入法此刻有多高（0 = 没弹出来） */
+  keyboard?: number
   sdk?: number
   density?: number
   error?: string
@@ -120,13 +122,22 @@ function readEnvInsets(): { top: number; right: number; bottom: number; left: nu
  *   三颗导航键才是整条。侧栏底部那排图标用它 ——
  *   一律按前者让的话，手势条的机器上会白留一条，看着像整栏被抬了起来
  */
-function apply(top: number, right: number, bottom: number, left: number, tappableBottom: number) {
+function apply(
+  top: number,
+  right: number,
+  bottom: number,
+  left: number,
+  tappableBottom: number,
+  keyboard = 0
+) {
   const s = document.documentElement.style
   s.setProperty('--sa-top', `${Math.max(top, MIN_TOP)}px`)
   s.setProperty('--sa-right', `${right}px`)
   s.setProperty('--sa-bottom', `${bottom}px`)
   s.setProperty('--sa-bottom-tap', `${tappableBottom}px`)
   s.setProperty('--sa-left', `${left}px`)
+  // 输入法有多高。从前是原生把整个窗口往上挤，三栏一起变矮；现在只报数，谁让谁自己让
+  s.setProperty('--kb', `${keyboard}px`)
 }
 
 declare global {
@@ -137,7 +148,8 @@ declare global {
       right: number,
       bottom: number,
       left: number,
-      tappableBottom: number
+      tappableBottom: number,
+      keyboard: number
     ) => void
   }
 }
@@ -154,9 +166,9 @@ export async function initSafeArea(): Promise<void> {
   // 只有装成 app 才是沉浸式。浏览器里没有系统栏，同一段留白会在页面顶上凭空多一条白边
   document.documentElement.classList.add('native')
 
-  window.__onNativeInsets = (top, right, bottom, left, tappableBottom) => {
-    apply(top, right, bottom, left, tappableBottom)
-    report = { ...report, source: '原生·推送', top, right, bottom, left, tappableBottom }
+  window.__onNativeInsets = (top, right, bottom, left, tappableBottom, keyboard) => {
+    apply(top, right, bottom, left, tappableBottom, keyboard)
+    report = { ...report, source: '原生·推送', top, right, bottom, left, tappableBottom, keyboard }
   }
 
   try {

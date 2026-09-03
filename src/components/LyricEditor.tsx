@@ -44,8 +44,16 @@ const MIN_POPUP_H = 200
  */
 const WORD_LINE_CLASS =
   'underline decoration-solid decoration-accent-600 decoration-2 underline-offset-2'
+/*
+ * 短语那条波浪线。
+ *
+ * `[text-decoration-skip-ink:none]` 不能少：浏览器默认会**给下伸笔画让路**
+ * （g、y、p 的尾巴穿过线时，那一段就不画了）。平板上字被系统放大，
+ * 尾巴正好压到线上，于是「finding」的 g 那儿断开一截 —— 手机上字小，碰不到。
+ * 短语靠这条线表示「这几个词是一伙的」，断了就成了两段，含义都变了。
+ */
 const PHRASE_LINE_CLASS =
-  'underline decoration-wavy decoration-accent-600/90 decoration-1 underline-offset-[0.36em]'
+  'underline decoration-wavy decoration-accent-600/90 decoration-1 underline-offset-[0.36em] [text-decoration-skip-ink:none]'
 const SENTENCE_LINE_CLASS = 'sentence-line'
 
 /** 单词选择：仅一个词 */

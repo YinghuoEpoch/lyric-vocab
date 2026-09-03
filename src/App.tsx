@@ -80,6 +80,17 @@ const USER_AGREEMENT_KEY = 'user_agreement_v1'
 const PRE_EDIT_KEY = 'lyric-vocab-pre-edit'
 /** 切词规则变更后的一次性数据迁移标记 */
 const TOKENIZER_MIGRATION_KEY = 'lyric-vocab-tokenizer-migrated-v2'
+/** 宽屏下左栏拖成了多宽。只在宽屏用 —— 窄屏那边左栏是浮层，一律 250 */
+const LEFT_WIDTH_KEY = 'lyric-vocab-left-width'
+const LEFT_WIDTH_DEFAULT = 250
+/** 拖到头的两个界：再窄装不下「我的文库 + 整理」，再宽就开始吃正文 */
+const LEFT_WIDTH_MIN = 200
+const LEFT_WIDTH_MAX = 560
+
+function clampLeftWidth(px: number): number {
+  const roomy = Math.min(LEFT_WIDTH_MAX, Math.round(window.innerWidth * 0.5))
+  return Math.max(LEFT_WIDTH_MIN, Math.min(roomy, Math.round(px)))
+}
 const defaultReaderSettings: ReaderSettings = {
   fontSize: 18,
   fontFamily: 'sans',
@@ -193,6 +204,22 @@ export default function App() {
    * 默认展开：宽屏上一进来就该看得见文库，和从前一样。
    */
   const [wideLeftHidden, setWideLeftHidden] = useState(false)
+  /**
+   * 左栏宽度（只在宽屏生效）。
+   *
+   * 起因是用户在平板上说「左侧栏目录省略太严重」—— 250px 里真正留给名字的只有
+   * 111px，一半以上被缩进、图标和「⋯」吃掉了，九章书全成了「CHAPTER…」。
+   * 与其替他挑一个新的死数，不如让他自己拖。
+   *
+   * **窄屏不用这个值**：那边左栏是盖住正文的浮层，拖宽了只会把正文遮更多。
+   */
+  const [leftWidth, setLeftWidth] = useState<number>(() => {
+    const saved = Number(localStorage.getItem(LEFT_WIDTH_KEY))
+    return saved > 0 ? clampLeftWidth(saved) : LEFT_WIDTH_DEFAULT
+  })
+  /** 正在拖那根杆：记下按下时的位置和当时的宽度，移动量加上去就是新宽度 */
+  const leftDragRef = useRef<{ startX: number; startWidth: number } | null>(null)
+  const [leftDragging, setLeftDragging] = useState(false)
   const [scrollTarget, setScrollTarget] = useState<{ pageId: string; anchorId: string } | null>(null)
   /** 「原文已删除」确认弹窗；resolve 用于把用户的选择交回给对账流程 */
   const [orphanPrompt, setOrphanPrompt] = useState<{
@@ -1229,6 +1256,7 @@ export default function App() {
         } ${wideLeftHidden ? 'wide:fixed wide:-translate-x-full' : 'wide:relative wide:translate-x-0'}`}
       >
         <LeftSidebar
+          width={isWide ? leftWidth : LEFT_WIDTH_DEFAULT}
           panelOpen={showLeft}
           mode={mode}
           onModeChange={setMode}
@@ -1260,6 +1288,58 @@ export default function App() {
           readerSettings={readerSettings}
           onReaderSettingsChange={setReaderSettings}
         />
+
+        {/*
+          拖杆：左栏和正文的交界线，按住左右拖就能改左栏宽度。
+
+          **只在宽屏、且左栏放出来时才有。** 窄屏那边左栏是盖住正文的浮层，
+          拖宽了只会遮更多，没意义。
+
+          自己看着是透明的，压在那条 1px 的分界线上；手指够得着的是 16px
+          （比线宽得多，不然平板上按不准），按住时才显出一条强调色。
+          `touch-none` 不能少 —— 不然手指一动浏览器当成滚动，把拖拽抢走了。
+        */}
+        {!wideLeftHidden && (
+          <div
+            role="separator"
+            aria-orientation="vertical"
+            aria-label="拖动改变文库栏宽度"
+            className={`hidden wide:block absolute inset-y-0 -right-2 w-4 z-40 cursor-col-resize touch-none after:absolute after:inset-y-0 after:left-1/2 after:w-[2px] after:-translate-x-1/2 after:transition-colors ${
+              leftDragging ? 'after:bg-accent-500' : 'after:bg-transparent hover:after:bg-accent-300'
+            }`}
+            onPointerDown={(e) => {
+              e.preventDefault()
+              e.currentTarget.setPointerCapture(e.pointerId)
+              leftDragRef.current = { startX: e.clientX, startWidth: leftWidth }
+              setLeftDragging(true)
+            }}
+            onPointerMove={(e) => {
+              const d = leftDragRef.current
+              if (!d) return
+              setLeftWidth(clampLeftWidth(d.startWidth + (e.clientX - d.startX)))
+            }}
+            onPointerUp={(e) => {
+              const d = leftDragRef.current
+              if (!d) return
+              leftDragRef.current = null
+              setLeftDragging(false)
+              e.currentTarget.releasePointerCapture(e.pointerId)
+              /*
+               * 最终宽度**当场按这一下的位置算**，不要去读 leftWidth ——
+               * 那是渲染时捕获的旧值，抬手和移动挨得近时 React 会把两次更新并成一批，
+               * 存进去的就是拖之前的数（浏览器里当场抓到过）。
+               * 松手才存：拖动过程中每一帧都写 localStorage 没必要。
+               */
+              const finalWidth = clampLeftWidth(d.startWidth + (e.clientX - d.startX))
+              setLeftWidth(finalWidth)
+              localStorage.setItem(LEFT_WIDTH_KEY, String(finalWidth))
+            }}
+            onPointerCancel={() => {
+              leftDragRef.current = null
+              setLeftDragging(false)
+            }}
+          />
+        )}
       </div>
 
       {/*
@@ -1271,10 +1351,14 @@ export default function App() {
         加在带子外面，两边就都是「留白 + 44」。
 
         底色跟着刷成白的：这一条留白露出来的就是它，下面紧挨着的 header 也是白的，
-        接在一起看不出缝。**底部不在这里留** —— 正文的纸色要一直铺到屏幕最下沿，
+        接在一起看不出缝。**底部不留系统栏** —— 正文的纸色要一直铺到屏幕最下沿，
         让出导航栏的事由滚动区里面的内容自己做（见 LyricEditor / VocabularyDashboard）。
+
+        **但键盘要让**（`pb-[var(--kb)]`）：编辑全文那个大输入框就在这一列里，
+        不让的话打字打到下半屏就看不见了。原生只报高度、不再挤整个窗口，
+        所以这一让只影响这一列，两侧栏纹丝不动 —— 那正是用户报的那条。
       */}
-      <div className="flex flex-col flex-1 min-w-0 min-h-0 overflow-hidden bg-white pt-[var(--sa-top)]">
+      <div className="flex flex-col flex-1 min-w-0 min-h-0 overflow-hidden bg-white pt-[var(--sa-top)] pb-[var(--kb,0px)]">
         {/* 顶部栏：始终显示；桌面端仅保留标题与复习模式下的编辑按钮 */}
         <header className={`${BAND_TOP} bg-white`}>
           {/*
@@ -1381,20 +1465,30 @@ export default function App() {
                 <p className="text-sm">在左侧新建文库并添加文档，或选择一篇开始学习</p>
               </div>
             )}
-            {/* 笔记栏呼出：仅阅读模式且右侧关闭时显示 */}
-            {!showRight && (
-              <button
-                type="button"
-                onClick={() => {
-                  setActivePanel('right')
-                }}
-                className="hidden wide:flex fixed right-4 top-1/2 -translate-y-1/2 z-10 items-center gap-2 px-3 py-2 rounded-full border border-paper-border bg-white shadow-md hover:bg-accent-50 hover:border-accent-300 text-ink-muted hover:text-accent-800 transition-colors"
-                title="打开笔记"
-              >
-                <BookOpen className="w-4 h-4" />
-                <span className="text-sm font-medium">笔记</span>
-              </button>
-            )}
+            {/*
+              笔记栏呼出（宽屏才有）。
+
+              **不能写成 `{!showRight && ...}`** —— 那样状态一翻转它就立刻冒出来，
+              而侧栏还要滑 200ms 才走完，看着像它抢在前面跳出来。用户报的就是这个。
+              改成一直挂着、用透明度收放：出现时**等 200ms**（侧栏滑完）再淡入，
+              消失时不等，立刻让位给正在滑进来的侧栏。
+            */}
+            <button
+              type="button"
+              onClick={() => {
+                setActivePanel('right')
+              }}
+              className={`hidden wide:flex fixed right-4 top-1/2 -translate-y-1/2 z-10 items-center gap-2 px-3 py-2 rounded-full border border-paper-border bg-white shadow-md hover:bg-accent-50 hover:border-accent-300 text-ink-muted hover:text-accent-800 transition-opacity ${
+                showRight
+                  ? 'opacity-0 pointer-events-none duration-100'
+                  : 'opacity-100 duration-150 delay-200'
+              }`}
+              title="打开笔记"
+              aria-hidden={showRight}
+            >
+              <BookOpen className="w-4 h-4" />
+              <span className="text-sm font-medium">笔记</span>
+            </button>
           </>
         )}
         {!initializing && mode === 'review' && (
@@ -1470,7 +1564,7 @@ export default function App() {
 
       {/* 「原文已删除」确认弹窗：沿用用户协议那张居中卡片的样式 */}
       {orphanPrompt && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 p-4">
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 p-4 kb-safe">
           <div className="max-w-sm w-[90%] max-h-[85vh] overflow-y-auto bg-white rounded-2xl shadow-xl border border-paper-border p-4 space-y-3">
             <h2 className="text-base font-semibold text-ink text-center mb-1">原文已删除</h2>
             <p className="text-xs text-ink-muted leading-relaxed">
@@ -1534,7 +1628,7 @@ export default function App() {
       )}
 
       {agreementChecked && !userAgreementAccepted && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 p-4">
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 p-4 kb-safe">
           <div className="max-w-sm w-[90%] max-h-[85vh] overflow-y-auto bg-white rounded-2xl shadow-xl border border-paper-border p-4 space-y-3 text-sm leading-relaxed">
             <h2 className="text-base font-semibold text-ink text-center mb-1">{AGREEMENT_TITLE}</h2>
             {/* 正文收在 agreement.ts 里，和设置页「关于」里那份是同一份 */}
