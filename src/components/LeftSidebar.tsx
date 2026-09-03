@@ -57,6 +57,14 @@ interface LeftSidebarProps {
   deletedPages: LyricPage[]
   trashCount: number
   currentPageId: string | null
+  /**
+   * 每个文库各自的「上次读到哪一篇」，这几篇的图标点成强调色。
+   *
+   * 传进来的是**算好的一份 id 名单**，不是那张表 —— 侧栏不必知道
+   * 「哪个文库对哪一篇」，也就不会自己去判断一条记录还作不作数。
+   * 那件事在 src/lastRead.ts 里做，那儿有测试。
+   */
+  lastReadPages?: Set<string>
   onAddBook: () => void
   onMoveBookToTrash: (bookId: string) => void
   onMovePageToTrash: (pageId: string) => void
@@ -141,6 +149,7 @@ function LeftSidebarInner({
   deletedPages,
   trashCount,
   currentPageId,
+  lastReadPages,
   onAddBook,
   onMoveBookToTrash,
   onMovePageToTrash,
@@ -345,6 +354,14 @@ function LeftSidebarInner({
     mode === 'read'
       ? currentPageId === pageId
       : mode === 'review' && reviewTarget?.type === 'page' && reviewTarget.id === pageId
+  /**
+   * 这一篇是不是它所在文库的「上次读到」—— 是就把图标点成强调色。
+   *
+   * 和「当前打开的那篇」用同一档颜色（用户拍板）：一个文库里最多只有一枚书签，
+   * 而当前那篇整行还有底色和加粗，两者摆在一起分得清，不必再多一档中间色。
+   * 你正待着的那个文库里，书签指的就是当前这篇，两个记号重合，看不出多余的东西。
+   */
+  const isLastRead = (pageId: string) => lastReadPages?.has(pageId) ?? false
 
   const handleBookClick = useCallback(
     (book: LyricBook) => {
@@ -555,7 +572,7 @@ function LeftSidebarInner({
       <div className="px-3 py-2 rounded-lg bg-white shadow-lg border border-accent-300 flex items-center gap-2">
         <FileText
           className={`w-3.5 h-3.5 shrink-0 mt-0.5 ${
-            isSelected ? 'text-accent-700' : 'text-ink-muted'
+            isSelected || isLastRead(page.id) ? 'text-accent-700' : 'text-ink-muted'
           }`}
         />
         <span
@@ -692,7 +709,7 @@ function LeftSidebarInner({
                             >
                               <FileText
                                 className={`w-3.5 h-3.5 shrink-0 mt-0.5 ${
-                                  isSelected ? 'text-accent-700' : 'text-ink-muted'
+                                  isSelected || isLastRead(page.id) ? 'text-accent-700' : 'text-ink-muted'
                                 }`}
                               />
                               {isEditingPage ? (
@@ -969,7 +986,7 @@ function LeftSidebarInner({
                                       >
                                         <FileText
                                           className={`w-3.5 h-3.5 shrink-0 mt-0.5 ${
-                                            isSelected ? 'text-accent-700' : 'text-ink-muted'
+                                            isSelected || isLastRead(page.id) ? 'text-accent-700' : 'text-ink-muted'
                                           }`}
                                         />
                                         {isEditingPage ? (

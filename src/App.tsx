@@ -37,6 +37,7 @@ import { useBackHandler, handleBackPress, BackPriority } from './hooks/useBackHa
 import { useIsWide } from './hooks/useWideLayout'
 import { shouldImmerse, useImmersiveReading } from './hooks/useImmersiveReading'
 import { usePanelWidth } from './hooks/usePanelWidth'
+import { useLastReadByBook } from './hooks/useLastReadByBook'
 import { useAutoFill } from './hooks/useAutoFill'
 import { useAutoMark } from './hooks/useAutoMark'
 import { AutoMarkDialog } from './components/AutoMarkDialog'
@@ -349,6 +350,15 @@ export default function App() {
       totalDocsInFolder: siblings.length
     }
   }, [currentPage, activePages])
+
+  /**
+   * 每个文库各自的「上次读到哪一篇」—— 目录里把那几篇的图标点亮。
+   *
+   * 用户提的：文库多、每个文库里文档也多，在 A 里读一篇跳去 B 读一篇，
+   * 回头想接着读 A 就得凭记忆在一长串里找。一个文库一枚书签，跳回去一眼就看见。
+   * 规矩见 src/lastRead.ts。
+   */
+  const lastReadPages = useLastReadByBook(currentPage, activePages)
 
   /** 移动端顶部栏标题：阅读模式=当前文档名，复习模式=选中的文档名或文库名 */
   const mobileHeaderTitle = useMemo(() => {
@@ -1303,6 +1313,7 @@ export default function App() {
           deletedPages={deletedPages}
           trashCount={trashCount}
           currentPageId={currentPageId}
+          lastReadPages={lastReadPages}
           onAddBook={handleAddBook}
           onMoveBookToTrash={handleMoveBookToTrash}
           onMovePageToTrash={handleMovePageToTrash}
