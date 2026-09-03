@@ -532,10 +532,10 @@ export function SettingsDialog({
   if (!open) return null
 
   /**
-   * 两行分别说「发给谁」和「用哪个模型」。
-   * 上面这行不能用供应商名字：内置的 DeepSeek 那行和 describeTarget 一模一样，
-   * 两行会重复成「DeepSeek / DeepSeek」（在浏览器里一眼看出来的）；
-   * 而自定义供应商叫「自定义」等于没说，得显示实际域名。
+   * 第二行说「发给谁 · 用哪个模型」。
+   *
+   * 「发给谁」这一格不能直接用供应商的配置名：自定义供应商叫「自定义」等于没说，
+   * 得显示实际域名 —— 用户才看得出自己的正文和生词到底去了哪儿（见 describeTarget）。
    */
   const resolvedAi = resolveConfig(aiConfig)
   /** 云端朗读配全了没有 —— AI 那一栏第二行据此显示「已配好的音色」还是「还没设置」 */
@@ -728,11 +728,19 @@ export function SettingsDialog({
                   className="w-full flex items-center gap-2 text-left"
                 >
                   <span className="flex-1 min-w-0">
+                    {/*
+                      上面这行写**这一栏是干什么的**，不写供应商叫什么名字（用户要的：
+                      「把 deepseek 改成辅助笔记」）。和底下那行「云端朗读」就并列了 ——
+                      两行都在说功能，而不是一行说功能、一行说牌子。
+                      供应商和模型挪到第二行，「数据发给谁」这个信息一个字没丢。
+                    */}
                     <span className="text-sm text-ink block truncate">
-                      {resolvedAi ? describeTarget(aiConfig) : '还没设置'}
+                      辅助笔记{resolvedAi ? '' : ' · 还没设置'}
                     </span>
                     <span className="text-xs text-ink-muted block truncate">
-                      {resolvedAi ? resolvedAi.model : '填上 API Key 才能用填充和划词'}
+                      {resolvedAi
+                        ? `${describeTarget(aiConfig)} · ${resolvedAi.model}`
+                        : '填上 API Key 才能用填充和划词'}
                     </span>
                   </span>
                   <ChevronRight className="w-4 h-4 text-ink-muted shrink-0" />
