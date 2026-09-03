@@ -24,18 +24,21 @@ const MIN_POPUP_H = 200
 /**
  * 正文里三种标记的线。
  *
- * 三条都走 text-decoration（不是 border-b）—— 同一套坐标系，都从基线往下量，
- * 才好把位置错开；border-b 落在「内容盒底部」，两层嵌套时是同一个位置，
- * 于是短语的实线会把句摘的虚线整条盖掉（这正是从前的毛病）。
- *
- * 位置一律用 em：正文字号是用户可调的，用 px 的话调大字号线就贴到字上去了。
+ * 位置一律从基线往下量、一律用 em（正文字号是用户可调的，用 px 的话
+ * 调大字号线就贴到字上去了）。都别用 border-b：它落在「内容盒底部」，
+ * 两层嵌套时是同一个位置，短语的线会把句摘的整条盖掉（从前的毛病）。
  * 范围越大线越靠下：单词 < 短语 < 句摘，三者叠在一起时都看得见。
  * 线型也各不相同：直实线 / 波浪线 / 虚线，不必靠长短去分辨。
  *
- * **只有句摘那条是例外：它不走 text-decoration，改成背景条纹（见 index.css
- * 的 .sentence-line）。** 一段句摘里套着几十个单词 span，而浏览器画下划线是
- * 一个子元素一段地画的，虚线在每个词的接缝处都重新起头，看着深一截浅一截。
- * 单词和短语那两条各自只画在一个元素上，没有这个毛病，照旧。
+ * **只有单词那条还走 text-decoration，另外两条都是背景图**
+ * （index.css 里的 .phrase-line、.sentence-line），各有各的缘由：
+ *
+ * - 句摘：一段里套着几十个单词 span，浏览器画下划线是一个子元素一段地画的，
+ *   虚线在每个词的接缝处重新起头，看着深一截浅一截
+ * - 短语：「要不要给 g、y 的尾巴让路」那个开关会往下传给单词那层，
+ *   两条线只要都走 text-decoration 就甩不掉彼此（第五十三节）
+ *
+ * 单词那条没有这两个毛病 —— 它只画在一个元素上，而且本来就该让路。
  *
  * 这几个数是量出来的，不是估的（18px 字号、行距 1.8 时）：
  * 基线往下 4px 是内容盒底部（从前两条 border-b 都落在这儿，所以会重叠），
@@ -43,18 +46,21 @@ const MIN_POPUP_H = 200
  * 也就是说基线以下约 15px 都是安全的。三条线分别落在 2 / 6.5 / 10.8px，
  * 彼此隔开 1.5px 以上，最深的一条离下一行还有 3px 富余。
  */
-const WORD_LINE_CLASS =
-  'underline decoration-solid decoration-accent-600 decoration-2 underline-offset-2'
 /*
- * 短语那条波浪线。
+ * 单词那条直线。
  *
- * `[text-decoration-skip-ink:none]` 不能少：浏览器默认会**给下伸笔画让路**
- * （g、y、p 的尾巴穿过线时，那一段就不画了）。平板上字被系统放大，
- * 尾巴正好压到线上，于是「finding」的 g 那儿断开一截 —— 手机上字小，碰不到。
- * 短语靠这条线表示「这几个词是一伙的」，断了就成了两段，含义都变了。
+ * `[text-decoration-skip-ink:auto]` 就是浏览器的默认值，写出来是**当个路障**：
+ * 这个属性会往下传，将来谁在外面一层关掉「给下伸笔画让路」，这条线就又会跟着
+ * 一起穿过 y、g 的尾巴 —— 那正是第五十三节的毛病，别再犯第二回。
+ *
+ * 单词的线该断就断：它标的是「这一个词」，被自己的字母截开不碍事。
+ * 短语那条要一整条不断，改用背景图画（见 index.css 的 .phrase-line），
+ * 从此不受这个开关管，两件事各走各的。
  */
-const PHRASE_LINE_CLASS =
-  'underline decoration-wavy decoration-accent-600/90 decoration-1 underline-offset-[0.36em] [text-decoration-skip-ink:none]'
+const WORD_LINE_CLASS =
+  'underline decoration-solid decoration-accent-600 decoration-2 underline-offset-2 [text-decoration-skip-ink:auto]'
+/** 短语那条波浪线：背景图，不走 text-decoration，缘由见 index.css 的 .phrase-line */
+const PHRASE_LINE_CLASS = 'phrase-line'
 const SENTENCE_LINE_CLASS = 'sentence-line'
 
 /** 单词选择：仅一个词 */
@@ -983,11 +989,11 @@ function LyricEditorInner({
 
             if (kind) {
               // 三条线的位置一律用 em，字号调大时跟着一起长，不会挤到下一行去。
-              // 范围越大，线越靠下：单词(2px) < 短语(0.3em) < 句摘(0.6em)，
+              // 范围越大，线越靠下：单词(2px) < 短语(0.28em) < 句摘(0.62em)，
               // 叠在一起时三条都看得见 —— 从前短语用 border-b，
               // 和句摘的 border-b 落在同一条水平线上，虚线整条被实线盖住。
               // 线型也各不相同：单词直实线、短语波浪线、句摘虚线，一眼可分。
-              // 句摘那条是背景条纹不是下划线，缘由见文件开头。
+              // 短语和句摘那两条是背景图不是下划线，缘由见文件开头。
               const inner = phraseSegmentMask[segIdx] ? (
                 <span className={PHRASE_LINE_CLASS}>{chunkElems}</span>
               ) : (

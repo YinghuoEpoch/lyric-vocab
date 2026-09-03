@@ -27,6 +27,8 @@
   --accent-700: 180 83 9;
   --accent-800: 146 64 14;
   --accent-900: 120 53 15;
+  /* 短语波浪线的图案：背景图里的颜色不能走变量，只好每种强调色各写一份，见 .phrase-line */
+  --phrase-wave: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='5' viewBox='0 0 24 5'%3E%3Cpath d='M0 3.65c1 0 2-2.3 3-2.3c1 0 2 2.3 3 2.3c1 0 2-2.3 3-2.3c1 0 2 2.3 3 2.3c1 0 2-2.3 3-2.3c1 0 2 2.3 3 2.3c1 0 2-2.3 3-2.3c1 0 2 2.3 3 2.3' fill='none' stroke='%23d97706' stroke-opacity='0.9' stroke-width='1'/%3E%3C/svg%3E");
 }
 /* 墨蓝 */
 :root[data-accent='indigo'] {
@@ -40,6 +42,7 @@
   --accent-700: 67 56 202;
   --accent-800: 55 48 163;
   --accent-900: 49 46 129;
+  --phrase-wave: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='5' viewBox='0 0 24 5'%3E%3Cpath d='M0 3.65c1 0 2-2.3 3-2.3c1 0 2 2.3 3 2.3c1 0 2-2.3 3-2.3c1 0 2 2.3 3 2.3c1 0 2-2.3 3-2.3c1 0 2 2.3 3 2.3c1 0 2-2.3 3-2.3c1 0 2 2.3 3 2.3' fill='none' stroke='%234f46e5' stroke-opacity='0.9' stroke-width='1'/%3E%3C/svg%3E");
 }
 /* 松绿 */
 :root[data-accent='teal'] {
@@ -53,6 +56,7 @@
   --accent-700: 15 118 110;
   --accent-800: 17 94 89;
   --accent-900: 19 78 74;
+  --phrase-wave: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='5' viewBox='0 0 24 5'%3E%3Cpath d='M0 3.65c1 0 2-2.3 3-2.3c1 0 2 2.3 3 2.3c1 0 2-2.3 3-2.3c1 0 2 2.3 3 2.3c1 0 2-2.3 3-2.3c1 0 2 2.3 3 2.3c1 0 2-2.3 3-2.3c1 0 2 2.3 3 2.3' fill='none' stroke='%230d9488' stroke-opacity='0.9' stroke-width='1'/%3E%3C/svg%3E");
 }
 /* 朱红 */
 :root[data-accent='rose'] {
@@ -66,6 +70,7 @@
   --accent-700: 190 18 60;
   --accent-800: 159 18 57;
   --accent-900: 136 19 55;
+  --phrase-wave: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='5' viewBox='0 0 24 5'%3E%3Cpath d='M0 3.65c1 0 2-2.3 3-2.3c1 0 2 2.3 3 2.3c1 0 2-2.3 3-2.3c1 0 2 2.3 3 2.3c1 0 2-2.3 3-2.3c1 0 2 2.3 3 2.3c1 0 2-2.3 3-2.3c1 0 2 2.3 3 2.3' fill='none' stroke='%23e11d48' stroke-opacity='0.9' stroke-width='1'/%3E%3C/svg%3E");
 }
 /* 石墨 */
 :root[data-accent='stone'] {
@@ -79,6 +84,7 @@
   --accent-700: 68 64 60;
   --accent-800: 41 37 36;
   --accent-900: 28 25 23;
+  --phrase-wave: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='5' viewBox='0 0 24 5'%3E%3Cpath d='M0 3.65c1 0 2-2.3 3-2.3c1 0 2 2.3 3 2.3c1 0 2-2.3 3-2.3c1 0 2 2.3 3 2.3c1 0 2-2.3 3-2.3c1 0 2 2.3 3 2.3c1 0 2-2.3 3-2.3c1 0 2 2.3 3 2.3' fill='none' stroke='%2357534e' stroke-opacity='0.9' stroke-width='1'/%3E%3C/svg%3E");
 }
 
 /* 锁死全局滚动：外壳固定，仅内部 main 区域可滚动，避免橡皮筋与顶部留白被拖动 */
@@ -233,6 +239,49 @@ body {
   );
   background-repeat: repeat-x;
   background-size: 0.4em 1px;
+  background-position: left bottom;
+}
+
+/*
+ * 正文里短语那条波浪线。
+ *
+ * **也不用 text-decoration 画了**，和句摘那条同一个道理，但起因不同 ——
+ * 起因是「要不要给 g、y 的尾巴让路」这个开关（text-decoration-skip-ink）
+ * **是会往下传的**，而单词的 span 正套在短语的 span 里面：
+ *
+ * - 短语要一整条不断，得关掉让路（第五十一节，平板上「finding」的 g 那儿断开）
+ * - 单词要该断就断，得开着让路（第五十三节，用户报的 fuck you）
+ *
+ * 两条线只要都走 text-decoration，就共用这一个开关，只能一起让或一起不让 ——
+ * 而且是浏览器**画到哪个 span 就用哪个 span 的值**：给单词那层开了让路，
+ * 短语的波浪线画过那个词时也跟着破一个口子（用户看到的
+ * 「plain gone 不断、sticking out 会断」，差别正是那个词有没有被单独划过词）。
+ *
+ * 改成背景图，这条线就不归那个开关管了：短语一整条不断，
+ * 单词那条 text-decoration 照样让路。两件事各自独立。
+ *
+ * 几个数是在浏览器里和原来那条波浪线**叠着**量出来的（21px 正文放大 9 倍看）：
+ * 一个波长 6px、峰高 5px、线粗 1px，`padding-bottom: 0.28em` 让它落在原来的位置上。
+ *
+ * **⚠️ 一块砖装四个波，而且砖缝落在波谷 —— 这两件事都不能改。**
+ * 第一版一块砖只装一个波、波形从半山腰起笔（M0 2.5 那种），结果每个砖缝上
+ * 都缺一个小口子：线的两头是平口切的，切口垂直于笔画方向，在最陡的地方就成了
+ * 一道斜切，两块砖的斜切对在一起留出一个楔形的空档。用户在手机上看见了
+ * （平板上没有 —— 屏幕密度不同，凑巧盖住了）。
+ * 改成从波谷起笔，那里笔画是水平的，平口切出来是一条竖线，两块砖严丝合缝。
+ * 一块砖装四个波是顺带的：砖缝少四分之三，缩放时的取整误差也少四分之三。
+ * 放大二十倍并排看过，旧的每个砖缝一个缺口，新的整条平滑。
+ * 波形大小用 px 不用 em 是**照着原样**：浏览器画的波浪线只跟线粗（1px）走，
+ * 字号调大时波形本来就不跟着长，只有位置跟着走 —— 所以位置那一项才用 em。
+ *
+ * 颜色只能一种一份：背景图是一段 URL，里面的颜色没法写成 --accent-600 那样的变量。
+ * 图案本身放在文件开头每个强调色块里的 --phrase-wave，这里只管取用。
+ */
+.phrase-line {
+  padding-bottom: 0.28em;
+  background-image: var(--phrase-wave);
+  background-repeat: repeat-x;
+  background-size: 24px 5px;
   background-position: left bottom;
 }
 
