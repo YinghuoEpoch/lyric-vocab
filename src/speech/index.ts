@@ -4,6 +4,7 @@ import { createWebSpeaker, isWebSpeechAvailable } from './webSpeech'
 import { createNativeSpeaker, openVoiceInstall } from './nativeSpeech'
 import { createDictPlayer } from './dictAudio'
 import { createHumanFirstSpeaker } from './humanFirst'
+import { createCloudPlayer } from './cloudVoice'
 
 /**
  * 朗读层入口。界面只跟这里打交道：问一句「能不能读」，要一个朗读器。
@@ -34,7 +35,9 @@ export function createSpeaker(): Speaker | null {
       ? createWebSpeaker()
       : null
   if (!system) return null
-  return createHumanFirstSpeaker(system, createDictPlayer())
+  // 三级：真人录音 → 云端合成 → 这台机器的引擎。云端没配 key 就自动跳过，
+  // 所以这里无条件挂上去，不必先问「配了没有」—— 见 humanFirst 的说明
+  return createHumanFirstSpeaker(system, createDictPlayer(), createCloudPlayer())
 }
 
 /**
@@ -46,4 +49,5 @@ export function canOpenVoiceInstall(): boolean {
 }
 
 export { openVoiceInstall }
+export * from './cloudTts'
 export * from './types'

@@ -7,9 +7,18 @@ import { AGREEMENT_CLAUSES, AGREEMENT_TITLE } from '../agreement'
 import { describeTarget, loadConfig, resolveConfig, type AiConfig } from '../enrich'
 import { useBackHandler, BackPriority } from '../hooks/useBackHandler'
 import { getSafeAreaReport, type SafeAreaReport } from '../safeArea'
+import { CloudTtsPanel } from './CloudTtsPanel'
+import {
+  loadCloudConfig,
+  saveCloudConfig,
+  isCloudReady,
+  type CloudTtsConfig
+} from '../speech/cloudTts'
 import {
   diagnoseSpeech,
   tryRead,
+  tryCloudRead,
+  CLOUD_SAMPLE,
   TRY_SAMPLES,
   type Answer,
   type SpeechDiagnosis,
@@ -47,12 +56,16 @@ function SpeechReadout({
   diag,
   results,
   onTry,
-  running
+  running,
+  cloudReady,
+  onCloudTry
 }: {
   diag: SpeechDiagnosis | null
   results: Record<string, TryReadResult>
   onTry: (key: string, text: string, lang: string) => void
   running: string | null
+  cloudReady: boolean
+  onCloudTry: () => void
 }) {
   return (
     <div className="space-y-4">
@@ -69,6 +82,36 @@ function SpeechReadout({
         {diag ? <AnswerRow label="英文嗓子" answer={diag.englishVoices} /> : null}
         <p className="text-xs text-ink-muted leading-relaxed pt-1">
           语言和嗓子都是「一个都没有」，说明引擎其实没起来 —— 那和「有引擎但缺英文」是两码事。
+        </p>
+      </Section>
+
+      <Section title="云端朗读">
+        <Row label="配全了吗" value={cloudReady ? '配全了' : '还没填全'} />
+        <button
+          type="button"
+          onClick={onCloudTry}
+          disabled={running !== null}
+          className="w-full px-3 py-2 rounded-lg border border-paper-border bg-white text-sm text-ink text-left disabled:opacity-50"
+        >
+          {running === 'cloud' ? '正在问云端…' : '云端试读'}
+          <span className="block text-xs text-ink-muted truncate">{CLOUD_SAMPLE}</span>
+        </button>
+        {results.cloud ? (
+          <p className="px-1 text-xs leading-relaxed break-all">
+            {results.cloud.ok ? (
+              <span className="text-emerald-700">
+                成功，用了 {results.cloud.ms} 毫秒。{results.cloud.error}
+              </span>
+            ) : (
+              <span className="text-rose-600">
+                失败（{results.cloud.ms} 毫秒）：{results.cloud.error}
+              </span>
+            )}
+          </p>
+        ) : null}
+        <p className="text-xs text-ink-muted leading-relaxed pt-1">
+          这里显示的是服务商的原话，没经过翻译 —— Key 填错、额度用完、服务没开通、
+          音色名不对，四种说法各不相同，而处理办法也各不相同。成功就会当场放出声来。
         </p>
       </Section>
 
@@ -338,6 +381,8 @@ export function SettingsDialog({
   const [insetInfo, setInsetInfo] = useState<{ report: SafeAreaReport; applied: string } | null>(
     null
   )
+  /** 正在填云端朗读的凭证（AI 那一栏点进来的第二行） */
+  const [editingCloud, setEditingCloud] = useState(false)
   /** 正在看「朗读引擎参数」那一屏 */
   const [showSpeechDev, setShowSpeechDev] = useState(false)
   /** 问引擎问出来的那几件事 */
@@ -346,6 +391,8 @@ export function SettingsDialog({
   const [tryResults, setTryResults] = useState<Record<string, TryReadResult>>({})
   /** 这会儿正在试读哪一句（按钮期间禁用，免得两句叠在一起，读数就废了） */
   const [tryRunning, setTryRunning] = useState<string | null>(null)
+  /** 云端朗读的凭证。打开设置页时读一次，改一下存一下 */
+  const [cloudConfig, setCloudConfig] = useState<CloudTtsConfig>(loadCloudConfig)
 
   useEffect(() => {
     if (open) {
@@ -354,10 +401,12 @@ export function SettingsDialog({
       setShowAgreement(false)
       setShowGuide(false)
       setShowDev(false)
+      setEditingCloud(false)
       setShowSpeechDev(false)
       setSpeechDiag(null)
       setTryResults({})
       setTryRunning(null)
+      setCloudConfig(loadCloudConfig())
       setAudioStats(null)
       void cacheStats().then(setAudioStats)
     }
@@ -395,6 +444,23 @@ export function SettingsDialog({
   }
 
   /**
+   * 云端试读。**这颗按钮是用户能自己查下去的唯一凭据** —— 我手上没有他的 Key，
+   * 通不通我验不了，只能把服务商的原话原样交给他。
+   */
+  const runCloudTry = () => {
+    setTryRunning('cloud')
+    void tryCloudRead(cloudConfig)
+      .then((r) => setTryResults((prev) => ({ ...prev, cloud: r })))
+      .finally(() => setTryRunning(null))
+  }
+
+  /** 改一格存一格 —— 这几个值是粘贴进来的，不该再要一次「保存」 */
+  const updateCloud = (c: CloudTtsConfig) => {
+    setCloudConfig(c)
+    saveCloudConfig(c)
+  }
+
+  /**
    * 返回键只登记一层，自己判断退到哪：在子屏里退回列表，在列表里才关掉。
    * 分成两层登记的话，AI 那屏一开一关要多一轮注册注销，没必要。
    */
@@ -402,6 +468,7 @@ export function SettingsDialog({
     if (editingAi) setEditingAi(false)
     else if (showAgreement) setShowAgreement(false)
     else if (showGuide) setShowGuide(false)
+    else if (editingCloud) setEditingCloud(false)
     else if (showSpeechDev) setShowSpeechDev(false)
     else if (showDev) setShowDev(false)
     else onClose()
@@ -416,9 +483,13 @@ export function SettingsDialog({
    * 而自定义供应商叫「自定义」等于没说，得显示实际域名。
    */
   const resolvedAi = resolveConfig(aiConfig)
-  const inSubScreen = editingAi || showAgreement || showGuide || showDev || showSpeechDev
+  /** 云端朗读配全了没有 —— AI 那一栏第二行据此显示「已配好的音色」还是「还没设置」 */
+  const cloudOn = isCloudReady(cloudConfig)
+  const inSubScreen = editingAi || editingCloud || showAgreement || showGuide || showDev || showSpeechDev
   const title = editingAi
     ? 'AI 设置'
+    : editingCloud
+    ? '云端朗读'
     : showAgreement
       ? AGREEMENT_TITLE
       : showGuide
@@ -430,6 +501,8 @@ export function SettingsDialog({
             : '设置'
   const back = editingAi
     ? () => setEditingAi(false)
+    : editingCloud
+    ? () => setEditingCloud(false)
     : showAgreement
       ? () => setShowAgreement(false)
       : showGuide
@@ -478,6 +551,10 @@ export function SettingsDialog({
                 onCancel={() => setEditingAi(false)}
               />
             </div>
+          ) : editingCloud ? (
+            <div className="space-y-4">
+              <CloudTtsPanel value={cloudConfig} onChange={updateCloud} />
+            </div>
           ) : showGuide ? (
             <UserGuide />
           ) : showAgreement ? (
@@ -492,6 +569,8 @@ export function SettingsDialog({
               results={tryResults}
               onTry={runTryRead}
               running={tryRunning}
+              cloudReady={isCloudReady(cloudConfig)}
+              onCloudTry={runCloudTry}
             />
           ) : showDev ? (
             <SafeAreaReadout info={insetInfo} />
@@ -584,8 +663,28 @@ export function SettingsDialog({
                   </span>
                   <ChevronRight className="w-4 h-4 text-ink-muted shrink-0" />
                 </button>
+                {/*
+                  云端朗读排在 AI 下面 —— 用户要的（「把朗读那些填写放进 AI 那一栏」）。
+                  两件事性质一样：都是外面的服务、都要粘一个 Key、都只存在这台手机上，
+                  摆在一起找起来才顺。**这一行长得和上面那行一模一样**，点进去是单独一屏。
+                */}
+                <button
+                  type="button"
+                  onClick={() => setEditingCloud(true)}
+                  className="w-full flex items-center gap-2 text-left"
+                >
+                  <span className="flex-1 min-w-0">
+                    <span className="text-sm text-ink block truncate">
+                      云端朗读{cloudOn ? '' : ' · 还没设置'}
+                    </span>
+                    <span className="text-xs text-ink-muted block truncate">
+                      {cloudOn ? `音色 ${cloudConfig.voiceType}` : '填上之后句子和生僻词才读得出来'}
+                    </span>
+                  </span>
+                  <ChevronRight className="w-4 h-4 text-ink-muted shrink-0" />
+                </button>
                 <p className="text-xs text-ink-muted leading-relaxed">
-                  「一键填充」和「一键划词」共用这一份配置。Key 只存在这台手机上，
+                  「一键填充」和「一键划词」共用上面那份配置。两个 Key 都只存在这台手机上，
                   不会上传，也不会写进导出的备份文件。
                 </p>
               </Section>
@@ -612,7 +711,8 @@ export function SettingsDialog({
                   </button>
                 </div>
                 <p className="text-xs text-ink-muted leading-relaxed">
-                  单词和短语读过一次就存在这台手机上，之后不用联网、也没有等开口的停顿。
+                  读过一次就存在这台手机上，之后不用联网、也没有等开口的停顿。
+                  云端合成的句子也存在这里 —— 那一份还省着调用次数，同一句永远只花一次。
                   清空只是删掉存的录音，笔记一条都不会动，下次点还会重新取。
                 </p>
               </Section>
