@@ -1,3 +1,4 @@
+import { annotationGroupOf } from '../types'
 import type { Annotation, AppData, LyricBook, LyricPage, NotesMap } from '../types'
 
 /**
@@ -239,6 +240,50 @@ function inOrder<T extends { id: string }>(map: Map<string, T>, order: readonly 
   return out
 }
 
+/**
+ * 复习页卡片的排序，按「同一文档、同一类型」一组一组地合。
+ *
+ * ⚠️ **为什么不能逐条合。** 卡片顺序是每条记录上的 `order` 字段，
+ * 逐条合看着能work，实际会**交错**：本机把 A 挪到最后、对面把 B 挪到最前，
+ * 逐条各取各的，最后两张卡可能都编号 0 —— 排出一个**谁都没要过的乱序**。
+ * 用户追问「复习模式下的卡片也有排序功能，这个有考虑到吗」时，
+ * 测试当场把这个抓出来了。
+ *
+ * 所以整组取一边的次序，规矩和文库文档那边一致：
+ * 只有一边动过就听那一边的，两边都动过本机赢。合完**重新编号 0..n-1**，
+ * 顺手把历史遗留的重复编号也抹平了。
+ */
+export function mergeCardOrder(
+  base: readonly Annotation[],
+  local: readonly Annotation[],
+  remote: readonly Annotation[],
+  survivors: Map<string, Annotation>
+): Map<string, Annotation> {
+  const key = (a: Annotation) => `${a.docId}|${annotationGroupOf(a.type)}`
+  const seq = (list: readonly Annotation[], k: string) =>
+    list
+      .filter((a) => key(a) === k)
+      .slice()
+      .sort((x, y) => x.order - y.order)
+      .map((a) => a.id)
+
+  const groups = new Set<string>()
+  for (const a of survivors.values()) groups.add(key(a))
+
+  const out = new Map(survivors)
+  for (const k of groups) {
+    const alive = new Set(
+      [...survivors.values()].filter((a) => key(a) === k).map((a) => a.id)
+    )
+    const order = mergeOrder(seq(base, k), seq(local, k), seq(remote, k), alive)
+    order.forEach((id, i) => {
+      const a = out.get(id)
+      if (a && a.order !== i) out.set(id, { ...a, order: i })
+    })
+  }
+  return out
+}
+
 function byId<T extends { id: string }>(list: readonly T[] | undefined): Map<string, T> {
   return new Map((list ?? []).map((x) => [x.id, x]))
 }
@@ -276,11 +321,18 @@ export function mergeAppData(
     report,
     byUpdatedAt
   )
-  const annotations = mergeById<Annotation>(
+  const annotationsById = mergeById<Annotation>(
     byId(b.annotations),
     byId(local.annotations),
     byId(remote.annotations),
     report
+  )
+  // 卡片顺序整组合一遍，逐条合会交错成乱序 —— 见 mergeCardOrder
+  const annotations = mergeCardOrder(
+    b.annotations ?? [],
+    local.annotations ?? [],
+    remote.annotations ?? [],
+    annotationsById
   )
 
   // 旧模型的 notes 是「文档 id -> 一堆笔记」的表。运行期已经不写它了

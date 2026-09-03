@@ -240,4 +240,31 @@ describe('两台设备来回同步（拆开存正文之后）', () => {
     syncDevice(cloud, { ...base, pages: [base.pages[1], base.pages[0]] }, base)
     expect(cloud.uploads).toEqual([])
   })
+
+  it('复习页重排卡片：另一台跟着变，而且一篇正文都不传', () => {
+    const cloud = new FakeCloud()
+    const start = data({
+      pages: [page('p1', BOOK)],
+      annotations: [
+        { ...ann('a1', '一'), order: 0 },
+        { ...ann('a2', '二'), order: 1 }
+      ]
+    })
+    const phoneBase = syncDevice(cloud, start, null)
+    const tabletBase = syncDevice(cloud, data(), null)
+    cloud.uploads = []
+
+    // 手机上把两张卡对调
+    const reordered = {
+      ...phoneBase,
+      annotations: phoneBase.annotations!.map((a) => ({ ...a, order: a.order === 0 ? 1 : 0 }))
+    }
+    syncDevice(cloud, reordered, phoneBase)
+    expect(cloud.uploads).toEqual([]) // 正文一篇没传
+
+    const tablet = syncDevice(cloud, tabletBase, tabletBase)
+    const byId = new Map(tablet.annotations!.map((a) => [a.id, a.order]))
+    expect([byId.get('a1'), byId.get('a2')]).toEqual([1, 0])
+    expect(tablet.pages[0].content).toBe(BOOK)
+  })
 })

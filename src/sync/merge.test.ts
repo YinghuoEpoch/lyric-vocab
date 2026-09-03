@@ -290,3 +290,55 @@ describe('排序', () => {
     expect(merged.books.map((x) => x.id)).toEqual(['b2', 'b3', 'b1'])
   })
 })
+
+/**
+ * 复习页卡片的排序。**用户追问出来的**：
+ * 「复习模式下的卡片也有排序功能，这个有考虑到吗」。
+ *
+ * 结论是**这一种天生就没问题**，但值得钉住，因为原因很不显眼：
+ * 卡片排序改的是每条记录上的 `order` **字段**（见 storage.ts 的 reorderAnnotations），
+ * 而文库和文档的顺序是**数组位置**。前者天然会被三方合并看见（记录内容变了），
+ * 后者不会 —— 那才是上面那个 bug 的来头。
+ *
+ * 两种机制混在一个 app 里，下一个人很容易以为「排序都一样处理」。不一样。
+ */
+describe('复习页卡片的排序（order 字段）', () => {
+  const card = (id: string, order: number): Annotation => ({ ...ann(id, '释义'), order })
+
+  it('本机重排了卡片：合完保住', () => {
+    const base = data({ annotations: [card('a1', 0), card('a2', 1), card('a3', 2)] })
+    const local = data({ annotations: [card('a1', 2), card('a2', 0), card('a3', 1)] })
+    const { merged } = mergeAppData(base, local, base)
+    const byId = new Map(merged.annotations!.map((a) => [a.id, a.order]))
+    expect([byId.get('a1'), byId.get('a2'), byId.get('a3')]).toEqual([2, 0, 1])
+  })
+
+  it('对面重排了：本机跟着变', () => {
+    const base = data({ annotations: [card('a1', 0), card('a2', 1)] })
+    const remote = data({ annotations: [card('a1', 1), card('a2', 0)] })
+    const { merged } = mergeAppData(base, base, remote)
+    const byId = new Map(merged.annotations!.map((a) => [a.id, a.order]))
+    expect([byId.get('a1'), byId.get('a2')]).toEqual([1, 0])
+  })
+
+  it('⚠️ 两边都重排了：整份取本机的，不能一半本机一半对面', () => {
+    // 交错的话会排出一个谁都没要过的乱序，比「听某一边的」难受得多
+    const base = data({ annotations: [card('a1', 0), card('a2', 1), card('a3', 2)] })
+    const local = data({ annotations: [card('a1', 2), card('a2', 1), card('a3', 0)] })
+    const remote = data({ annotations: [card('a1', 1), card('a2', 0), card('a3', 2)] })
+    const { merged } = mergeAppData(base, local, remote)
+    const byId = new Map(merged.annotations!.map((a) => [a.id, a.order]))
+    expect([byId.get('a1'), byId.get('a2'), byId.get('a3')]).toEqual([2, 1, 0])
+  })
+
+  it('一边重排、另一边加了新卡：重排保住，新卡也在', () => {
+    const base = data({ annotations: [card('a1', 0), card('a2', 1)] })
+    const local = data({ annotations: [card('a1', 1), card('a2', 0)] })
+    const remote = data({ annotations: [card('a1', 0), card('a2', 1), card('a9', 2)] })
+    const { merged } = mergeAppData(base, local, remote)
+    const byId = new Map(merged.annotations!.map((a) => [a.id, a.order]))
+    expect(byId.get('a1')).toBe(1)
+    expect(byId.get('a2')).toBe(0)
+    expect(byId.has('a9')).toBe(true)
+  })
+})
