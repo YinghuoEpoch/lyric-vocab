@@ -1354,11 +1354,17 @@ export default function App() {
         接在一起看不出缝。**底部不留系统栏** —— 正文的纸色要一直铺到屏幕最下沿，
         让出导航栏的事由滚动区里面的内容自己做（见 LyricEditor / VocabularyDashboard）。
 
-        **但键盘要让**（`pb-[var(--kb)]`）：编辑全文那个大输入框就在这一列里，
-        不让的话打字打到下半屏就看不见了。原生只报高度、不再挤整个窗口，
-        所以这一让只影响这一列，两侧栏纹丝不动 —— 那正是用户报的那条。
+        **键盘只在编辑全文时让**（`pb-[var(--kb)]`）。那种情况下输入框就是正文本身，
+        不让开就看不见自己在打什么；其余时候（书库搜索、重命名、填 Key……）
+        键盘只是盖住下半屏，正文没有理由跟着缩 —— 用户的原话：
+        「除了编辑模式，没有必要任何情况下键盘出现都要顶起来吧」。
+        第一版我不分场合地让，于是一开键盘正文底部就被吃掉一截。
       */}
-      <div className="flex flex-col flex-1 min-w-0 min-h-0 overflow-hidden bg-white pt-[var(--sa-top)] pb-[var(--kb,0px)]">
+      <div
+        className={`flex flex-col flex-1 min-w-0 min-h-0 overflow-hidden bg-white pt-[var(--sa-top)] ${
+          editMode ? 'pb-[var(--kb,0px)]' : ''
+        }`}
+      >
         {/* 顶部栏：始终显示；桌面端仅保留标题与复习模式下的编辑按钮 */}
         <header className={`${BAND_TOP} bg-white`}>
           {/*
