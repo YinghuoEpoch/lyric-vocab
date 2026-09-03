@@ -79,6 +79,49 @@ export function saveCloudConfig(c: CloudTtsConfig): void {
   }
 }
 
+/**
+ * 这台机器上真正发出去过多少次请求。
+ *
+ * **为什么要自己数**：火山控制台的用量是延迟统计的，刚用完看不出变化；
+ * 而真正要回答的问题（「我的免费额度还剩多少」）想从官方接口拿，
+ * 得往手机里放一套**账号级**的密钥并自己做签名 —— 那套密钥能动整个账号，
+ * 为看一个数字不值当（见 后续规划.md 第五十八节）。
+ *
+ * ⚠️ **只数真发出去的**：命中缓存的那些不算，因为它们压根没请求，也不扣额度。
+ * 所以这个数就是「我花掉了多少次调用」，正好是他想知道的那件事。
+ */
+const CALLS_KEY = 'lyric-vocab-cloud-calls'
+
+/** 存出来那串字怎么变回一个数。单拎出来是为了能测 —— localStorage 在测试环境里没有 */
+export function parseCalls(raw: string | null): number {
+  const n = Number(raw)
+  return raw !== null && raw !== '' && Number.isFinite(n) && n >= 0 ? Math.floor(n) : 0
+}
+
+export function getCloudCalls(): number {
+  try {
+    return parseCalls(localStorage.getItem(CALLS_KEY))
+  } catch {
+    return 0
+  }
+}
+
+export function resetCloudCalls(): void {
+  try {
+    localStorage.setItem(CALLS_KEY, '0')
+  } catch {
+    /* 存不下就算了 */
+  }
+}
+
+function bumpCloudCalls(): void {
+  try {
+    localStorage.setItem(CALLS_KEY, String(getCloudCalls() + 1))
+  } catch {
+    /* 同上：数不准也不该拦着人读书 */
+  }
+}
+
 /** 云端这条路自己的错。带上原话，诊断屏直接显示它 */
 export class CloudTtsError extends Error {}
 
@@ -175,11 +218,16 @@ export async function synthesizeCloud(
       connectTimeout: 10000,
       readTimeout: 15000
     })
-    return base64ToArrayBuffer(readPayload(res.status, res.data))
+    const bytes = base64ToArrayBuffer(readPayload(res.status, res.data))
+    bumpCloudCalls()
+    return bytes
   }
 
   const res = await fetch(DEV_URL, { method: 'POST', headers, body: JSON.stringify(body) })
-  return base64ToArrayBuffer(readPayload(res.status, await res.text()))
+  const bytes = base64ToArrayBuffer(readPayload(res.status, await res.text()))
+  // 只有真拿到音频才算一次 —— 报错的那些火山那边多半也不扣
+  bumpCloudCalls()
+  return bytes
 }
 
 /**

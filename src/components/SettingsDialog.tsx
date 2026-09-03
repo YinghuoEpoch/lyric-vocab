@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { ChevronRight, Settings as SettingsIcon, X } from 'lucide-react'
 import { AiSettingsPanel } from './AiSettingsPanel'
 import { cacheStats, clearCache, formatBytes, type CacheStats } from '../speech/audioCache'
@@ -373,6 +373,10 @@ export function SettingsDialog({
   /** 正在看使用说明 */
   const [showGuide, setShowGuide] = useState(false)
   const backupInputRef = useRef<HTMLInputElement>(null)
+  /** 那块能滚的区域。所有屏共用同一个，所以滚到哪儿要自己管 —— 见下面 enterSub */
+  const scrollRef = useRef<HTMLDivElement>(null)
+  /** 进子屏之前，主列表滚到哪儿了 */
+  const savedScroll = useRef(0)
   /** 存了多少发音。打开设置页时读一次就够，不用一直盯着 */
   const [audioStats, setAudioStats] = useState<CacheStats | null>(null)
   /** 正在看开发者那一屏 */
@@ -402,6 +406,8 @@ export function SettingsDialog({
       setShowGuide(false)
       setShowDev(false)
       setEditingCloud(false)
+      // 关掉再打开就从头开始 —— 用户明确说了不用一直记着
+      savedScroll.current = 0
       setShowSpeechDev(false)
       setSpeechDiag(null)
       setTryResults({})
@@ -461,6 +467,35 @@ export function SettingsDialog({
   }
 
   /**
+   * 进子屏之前，把主列表滚到哪儿了记下来。
+   *
+   * ⚠️ **必须在点下去那一刻记，不能等渲染完再读。** 这几块屏共用同一个滚动容器，
+   * 一换屏内容高度就变，浏览器会当场把 scrollTop 夹回新的最大值 ——
+   * 等到副作用里再读，读到的已经是夹过的数，那正是这个 bug 的成因。
+   */
+  const enterSub = (open: () => void) => {
+    savedScroll.current = scrollRef.current?.scrollTop ?? 0
+    open()
+  }
+
+  /**
+   * 换屏时把滚动位置摆对。用户报的两件事其实是同一个根子：
+   *
+   * - **「开发者那两个点进去默认滑到最下方」** —— 那两个入口就在主列表最底下，
+   *   你得滚到底才点得着，换屏时 scrollTop 原样留着，看着就像它自己滑下去了
+   * - **「从子屏返回，设置就跳回顶部」** —— 子屏内容短，scrollTop 被夹成了小数，
+   *   返回时那个小数还留着
+   *
+   * 所以：进子屏一律从头看，退回来还你原来那个位置。
+   */
+  const inSub = editingAi || editingCloud || showAgreement || showGuide || showDev || showSpeechDev
+  useLayoutEffect(() => {
+    const el = scrollRef.current
+    if (!el) return
+    el.scrollTop = inSub ? 0 : savedScroll.current
+  }, [inSub])
+
+  /**
    * 返回键只登记一层，自己判断退到哪：在子屏里退回列表，在列表里才关掉。
    * 分成两层登记的话，AI 那屏一开一关要多一轮注册注销，没必要。
    */
@@ -485,7 +520,7 @@ export function SettingsDialog({
   const resolvedAi = resolveConfig(aiConfig)
   /** 云端朗读配全了没有 —— AI 那一栏第二行据此显示「已配好的音色」还是「还没设置」 */
   const cloudOn = isCloudReady(cloudConfig)
-  const inSubScreen = editingAi || editingCloud || showAgreement || showGuide || showDev || showSpeechDev
+  const inSubScreen = inSub
   const title = editingAi
     ? 'AI 设置'
     : editingCloud
@@ -540,7 +575,7 @@ export function SettingsDialog({
           </button>
         </div>
 
-        <div className="flex-1 min-h-0 overflow-y-auto scroll-area p-3 space-y-4">
+        <div ref={scrollRef} className="flex-1 min-h-0 overflow-y-auto scroll-area p-3 space-y-4">
           {editingAi ? (
             <div className="space-y-3">
               <AiSettingsPanel
@@ -579,7 +614,7 @@ export function SettingsDialog({
               <Section title="上手">
                 <button
                   type="button"
-                  onClick={() => setShowGuide(true)}
+                  onClick={() => enterSub(() => setShowGuide(true))}
                   className="w-full flex items-center gap-2 text-left"
                 >
                   <span className="flex-1 min-w-0">
@@ -650,7 +685,7 @@ export function SettingsDialog({
               <Section title="AI">
                 <button
                   type="button"
-                  onClick={() => setEditingAi(true)}
+                  onClick={() => enterSub(() => setEditingAi(true))}
                   className="w-full flex items-center gap-2 text-left"
                 >
                   <span className="flex-1 min-w-0">
@@ -670,7 +705,7 @@ export function SettingsDialog({
                 */}
                 <button
                   type="button"
-                  onClick={() => setEditingCloud(true)}
+                  onClick={() => enterSub(() => setEditingCloud(true))}
                   className="w-full flex items-center gap-2 text-left"
                 >
                   <span className="flex-1 min-w-0">
@@ -683,10 +718,6 @@ export function SettingsDialog({
                   </span>
                   <ChevronRight className="w-4 h-4 text-ink-muted shrink-0" />
                 </button>
-                <p className="text-xs text-ink-muted leading-relaxed">
-                  「一键填充」和「一键划词」共用上面那份配置。两个 Key 都只存在这台手机上，
-                  不会上传，也不会写进导出的备份文件。
-                </p>
               </Section>
 
               <Section title="发音">
@@ -752,7 +783,7 @@ export function SettingsDialog({
               </Section>
 
               <Section title="开发者">
-                <button type="button" onClick={openDev} className="w-full flex items-center gap-2 text-left">
+                <button type="button" onClick={() => enterSub(openDev)} className="w-full flex items-center gap-2 text-left">
                   <span className="flex-1 min-w-0">
                     <span className="block text-sm text-ink">系统栏参数</span>
                     <span className="block text-xs text-ink-muted">
@@ -763,7 +794,7 @@ export function SettingsDialog({
                 </button>
                 <button
                   type="button"
-                  onClick={openSpeechDev}
+                  onClick={() => enterSub(openSpeechDev)}
                   className="w-full flex items-center gap-2 text-left"
                 >
                   <span className="flex-1 min-w-0">
@@ -779,7 +810,7 @@ export function SettingsDialog({
               <Section title="关于">
                 <button
                   type="button"
-                  onClick={() => setShowAgreement(true)}
+                  onClick={() => enterSub(() => setShowAgreement(true))}
                   className="w-full flex items-center gap-2 text-left"
                 >
                   <span className="flex-1 text-sm text-ink">{AGREEMENT_TITLE}</span>

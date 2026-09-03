@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Eye, EyeOff } from 'lucide-react'
-import type { CloudTtsConfig } from '../speech/cloudTts'
+import { getCloudCalls, resetCloudCalls, type CloudTtsConfig } from '../speech/cloudTts'
 
 /**
  * 设置里填云端朗读凭证的地方。
@@ -24,6 +24,8 @@ export function CloudTtsPanel({
    * 「安卓密码框不给粘贴」那个老坑 —— 而这一格恰恰是要粘贴进来的。
    */
   const [showToken, setShowToken] = useState(value.token.trim() === '')
+  /** 这台机器上真发出去过多少次。进这一屏时读一次就够 */
+  const [calls, setCalls] = useState(getCloudCalls)
 
   const set = (patch: Partial<CloudTtsConfig>) => onChange({ ...value, ...patch })
   const field = 'w-full px-2.5 py-1.5 text-sm rounded-lg border border-paper-border bg-white text-ink focus:outline-none focus:ring-2 focus:ring-accent-500/30 focus:border-accent-500'
@@ -89,6 +91,26 @@ export function CloudTtsPanel({
         />
       </label>
 
+      <div className="flex items-center justify-between gap-2 pt-1">
+        <span className="flex-1 min-w-0 text-sm text-ink">
+          这台机器上已经用掉 {calls} 次
+        </span>
+        <button
+          type="button"
+          onClick={() => {
+            resetCloudCalls()
+            setCalls(0)
+          }}
+          className="shrink-0 px-2.5 py-1 text-xs rounded-lg border border-paper-border hover:bg-stone-100 text-ink-muted"
+        >
+          归零
+        </button>
+      </div>
+      <p className="text-xs text-ink-muted leading-relaxed">
+        这个数是 app 自己数的，只数真发出去的那些 —— 读过一遍存下来的句子再点不算，
+        因为它压根没联网、也不扣额度。官网的用量是延迟统计的，刚用完往往看不出变化，
+        对不上的时候以这儿为准。想和官网对齐就按「归零」。
+      </p>
       <p className="text-xs text-ink-muted leading-relaxed">
         填好之后去「开发者 → 朗读引擎参数」点一下「云端试读」，那儿会把服务商的原话显示出来，
         对不对一眼就知道。留空则不用云端，照旧只有真人录音和这台机器的引擎。

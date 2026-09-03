@@ -6,7 +6,8 @@ import {
   isCloudReady,
   pickAudioBase64,
   CloudTtsError,
-  readPayload
+  readPayload,
+  parseCalls
 } from './cloudTts'
 import { cloudCacheKey } from './cloudVoice'
 
@@ -110,5 +111,20 @@ describe('readPayload：状态码不好看时先看正文', () => {
 
   it('原生那边回的是已经解析好的对象，也认', () => {
     expect(readPayload(200, { code: 3000, data: 'QUJD' })).toBe('QUJD')
+  })
+})
+
+describe('用掉多少次这个计数', () => {
+  it('没数过、存坏了、负数，一律当 0', () => {
+    expect(parseCalls(null)).toBe(0)
+    expect(parseCalls('')).toBe(0)
+    expect(parseCalls('坏了')).toBe(0)
+    expect(parseCalls('-3')).toBe(0)
+  })
+
+  it('正常的数读得回来，小数往下取整', () => {
+    expect(parseCalls('42')).toBe(42)
+    expect(parseCalls('7.9')).toBe(7)
+    expect(parseCalls('0')).toBe(0)
   })
 })
