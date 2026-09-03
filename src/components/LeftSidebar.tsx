@@ -42,6 +42,7 @@ import { useBackHandler, BackPriority } from '../hooks/useBackHandler'
 import { IMPORT_ACCEPT } from '../importers'
 import { BAND_TOP, BAND_SUB } from './chrome'
 import type { LyricBook, LyricPage, ReaderSettings } from '../types'
+import type { SyncStatus } from '../hooks/useSync'
 
 export type AppMode = 'read' | 'review'
 export type ReviewTarget = { type: 'book'; id: string } | { type: 'page'; id: string } | null
@@ -86,6 +87,9 @@ interface LeftSidebarProps {
   onImportFile: (file: File) => void
   readerSettings: ReaderSettings
   onReaderSettingsChange: (s: ReaderSettings) => void
+  /** 同步的状态和手动那颗按钮，原样透给设置页 */
+  syncStatus: SyncStatus
+  onSyncNow: () => void
   /** 侧栏此刻是不是被呼出着（仅手机尺寸有意义；宽屏一直挂着，恒为 false） */
   panelOpen?: boolean
   className?: string
@@ -169,6 +173,8 @@ function LeftSidebarInner({
   onImportFile,
   readerSettings,
   onReaderSettingsChange,
+  syncStatus,
+  onSyncNow,
   panelOpen = false,
   className = '',
   width
@@ -1223,6 +1229,8 @@ function LeftSidebarInner({
             onClose={() => setSettingsOpen(false)}
             readerSettings={readerSettings}
             onReaderSettingsChange={onReaderSettingsChange}
+            syncStatus={syncStatus}
+            onSyncNow={onSyncNow}
             onExportBackup={onExportBackup}
             onRestoreBackup={onRestoreBackup}
           />,

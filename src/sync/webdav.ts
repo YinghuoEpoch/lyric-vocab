@@ -1,0 +1,214 @@
+import { Capacitor, CapacitorHttp } from '@capacitor/core'
+
+/**
+ * WebDAV 读写（坚果云）。
+ *
+ * 只用三个动作：**取一个文件、放一个文件、建一个文件夹**。
+ * 选 WebDAV 而不是数据库，正是因为这个 app 的数据本来就是一整块 JSON ——
+ * 要的不是「云端数据库」，只是「一个两台设备都够得着的地方放一个文件」。
+ *
+ * 认证是 HTTP Basic：账号 + **应用密码**（坚果云单独生成的那一串，
+ * 不是登录密码，随时能单独作废）。
+ *
+ * **手机上走 Capacitor 的原生网络**（安卓发的请求，没有跨域这回事），
+ * **电脑浏览器里走 vite 转发**（`/jgy`，见 vite.config.ts）——
+ * 和取词典发音、云端朗读是同一套办法。
+ */
+
+export interface SyncConfig {
+  /** 坚果云账号（邮箱） */
+  username: string
+  /** 应用密码。⚠️ 不是登录密码 */
+  password: string
+  /** 放在哪个文件夹里。默认 lyric-vocab */
+  folder: string
+}
+
+export function defaultSyncConfig(): SyncConfig {
+  return { username: '', password: '', folder: 'lyric-vocab' }
+}
+
+const STORAGE_KEY = 'lyric-vocab-sync'
+
+export function isSyncReady(c: SyncConfig): boolean {
+  return c.username.trim() !== '' && c.password.trim() !== '' && c.folder.trim() !== ''
+}
+
+export function loadSyncConfig(): SyncConfig {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY)
+    if (!raw) return defaultSyncConfig()
+    const p = JSON.parse(raw)
+    const d = defaultSyncConfig()
+    const str = (v: unknown, f: string) => (typeof v === 'string' && v.trim() ? v.trim() : f)
+    return {
+      username: str(p?.username, d.username),
+      password: str(p?.password, d.password),
+      folder: str(p?.folder, d.folder)
+    }
+  } catch {
+    return defaultSyncConfig()
+  }
+}
+
+export function saveSyncConfig(c: SyncConfig): void {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(c))
+  } catch {
+    /* 存不下就这一趟有效 */
+  }
+}
+
+/** 同步这条路自己的错。带上服务器的原话 —— 我验不了用户的账号，只能把原话交给他 */
+export class SyncError extends Error {}
+
+const NATIVE_BASE = 'https://dav.jianguoyun.com/dav'
+const DEV_BASE = '/jgy/dav'
+
+/** 数据文件叫什么，以及被覆盖前那一版存哪儿 */
+export const DATA_FILE = 'data.json'
+export const PREV_FILE = 'data.prev.json'
+
+/**
+ * 路径里的每一段都要转义。
+ *
+ * 文件夹名用户可以自己填，写个中文或者带空格的名字很正常 ——
+ * 不转义的话请求直接就是坏的，而 WebDAV 报回来的错跟这件事看不出关系。
+ */
+export function davUrl(folder: string, file: string, dev = false): string {
+  const base = dev ? DEV_BASE : NATIVE_BASE
+  return `${base}/${encodeURIComponent(folder.trim())}/${encodeURIComponent(file)}`
+}
+
+export function basicAuth(username: string, password: string): string {
+  // btoa 只认 Latin-1，密码里有非 ASCII 会抛。坚果云的应用密码是字母数字，
+  // 但账号是邮箱、理论上可以有别的字符，所以先转成 UTF-8 的字节再编
+  const bytes = new TextEncoder().encode(`${username}:${password}`)
+  let binary = ''
+  bytes.forEach((b) => {
+    binary += String.fromCharCode(b)
+  })
+  return `Basic ${btoa(binary)}`
+}
+
+interface DavResponse {
+  status: number
+  text: string
+  etag?: string
+}
+
+async function request(
+  method: string,
+  url: string,
+  c: SyncConfig,
+  body?: string,
+  extraHeaders: Record<string, string> = {}
+): Promise<DavResponse> {
+  const headers: Record<string, string> = {
+    Authorization: basicAuth(c.username.trim(), c.password.trim()),
+    ...extraHeaders
+  }
+  if (body !== undefined) headers['Content-Type'] = 'application/json; charset=utf-8'
+
+  if (Capacitor.isNativePlatform()) {
+    const res = await CapacitorHttp.request({
+      url,
+      method,
+      headers,
+      data: body,
+      connectTimeout: 10000,
+      readTimeout: 30000
+    })
+    const raw = res.data
+    return {
+      status: res.status,
+      text: typeof raw === 'string' ? raw : raw == null ? '' : JSON.stringify(raw),
+      etag: pickEtag(res.headers)
+    }
+  }
+
+  const res = await fetch(url, { method, headers, body })
+  return { status: res.status, text: await res.text(), etag: res.headers.get('etag') ?? undefined }
+}
+
+/** 响应头的大小写各家不一样，挨个认一遍 */
+function pickEtag(headers: Record<string, string> | undefined): string | undefined {
+  if (!headers) return undefined
+  for (const [k, v] of Object.entries(headers)) {
+    if (k.toLowerCase() === 'etag') return v
+  }
+  return undefined
+}
+
+/** 云端那一份，连同它的 ETag（用来防「我读完到我写回去这中间对面又写了一次」） */
+export interface RemoteFile {
+  /** 文件内容；云端还没有这个文件时是 null */
+  text: string | null
+  etag?: string
+}
+
+export async function getRemote(c: SyncConfig): Promise<RemoteFile> {
+  const dev = !Capacitor.isNativePlatform()
+  const res = await request('GET', davUrl(c.folder, DATA_FILE, dev), c)
+  if (res.status === 404) return { text: null }
+  if (res.status === 401) throw new SyncError('账号或应用密码不对（服务器回 401）')
+  if (res.status < 200 || res.status >= 300) {
+    throw new SyncError(`取云端那份失败：${res.status}${brief(res.text)}`)
+  }
+  return { text: res.text, etag: res.etag }
+}
+
+/**
+ * 写回云端。
+ *
+ * `ifMatch` 是「我是基于这一版改的」——中间对面要是又写过一次，服务器回 412，
+ * 那时必须**重新取一遍再合一次**，绝不能硬盖。少了这一道，
+ * 两台设备几乎同时同步就会吃掉一边的改动，而且神不知鬼不觉。
+ */
+export async function putRemote(c: SyncConfig, text: string, ifMatch?: string): Promise<void> {
+  const dev = !Capacitor.isNativePlatform()
+  const headers: Record<string, string> = ifMatch ? { 'If-Match': ifMatch } : {}
+  const res = await request('PUT', davUrl(c.folder, DATA_FILE, dev), c, text, headers)
+  if (res.status === 412) throw new StaleError('云端在这中间被改过了')
+  if (res.status === 409 || res.status === 404) {
+    throw new SyncError(`文件夹「${c.folder}」在坚果云里不存在，先去建一个（${res.status}）`)
+  }
+  if (res.status === 401) throw new SyncError('账号或应用密码不对（服务器回 401）')
+  if (res.status < 200 || res.status >= 300) {
+    throw new SyncError(`写云端失败：${res.status}${brief(res.text)}`)
+  }
+}
+
+/** 云端被覆盖之前那一版，另存一份。第二十一节的教训：救得回来才敢动 */
+export async function putPrev(c: SyncConfig, text: string): Promise<void> {
+  const dev = !Capacitor.isNativePlatform()
+  try {
+    await request('PUT', davUrl(c.folder, PREV_FILE, dev), c, text)
+  } catch {
+    /* 存底失败不该拦着同步本身 —— 它只是保险，不是主线 */
+  }
+}
+
+/** 云端那一版比我新，得重来。单独一个类型，因为处理办法完全不同（重取再合，不是报错） */
+export class StaleError extends Error {}
+
+/**
+ * 建文件夹。坚果云要求文件必须在一个已存在的文件夹里。
+ *
+ * 建不成不报错：多半是**它本来就在**（405），那正是我们要的结果；
+ * 真的建不了，后面 PUT 会报 409，那时的报错更说明问题。
+ */
+export async function ensureFolder(c: SyncConfig): Promise<void> {
+  const dev = !Capacitor.isNativePlatform()
+  const url = `${dev ? DEV_BASE : NATIVE_BASE}/${encodeURIComponent(c.folder.trim())}`
+  try {
+    await request('MKCOL', url, c)
+  } catch {
+    /* 见上 */
+  }
+}
+
+function brief(text: string): string {
+  const t = text.trim().slice(0, 120)
+  return t ? `：${t}` : ''
+}

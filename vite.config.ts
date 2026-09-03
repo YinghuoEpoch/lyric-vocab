@@ -46,6 +46,12 @@ export default defineConfig({
         changeOrigin: true,
         rewrite: (p) => p.replace(/^\/volctts/, '')
       },
+      /** 坚果云 WebDAV（数据同步）。手机上走原生网络，不经过这里 */
+      '/jgy/': {
+        target: 'https://dav.jianguoyun.com',
+        changeOrigin: true,
+        rewrite: (p) => p.replace(/^\/jgy/, '')
+      },
       '/gutenberg/': {
         target: 'https://www.gutenberg.org',
         changeOrigin: true,
