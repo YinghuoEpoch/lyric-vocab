@@ -6,7 +6,9 @@ import android.util.DisplayMetrics;
 import android.view.View;
 import androidx.core.graphics.Insets;
 import androidx.core.view.ViewCompat;
+import androidx.core.view.WindowCompat;
 import androidx.core.view.WindowInsetsCompat;
+import androidx.core.view.WindowInsetsControllerCompat;
 import com.getcapacitor.JSObject;
 import com.getcapacitor.Plugin;
 import com.getcapacitor.PluginCall;
@@ -140,5 +142,48 @@ public class SafeAreaPlugin extends Plugin {
         ret.put("navMode", navigationMode(getContext()));
         ret.put("tappableBottom", buttonBottom(getContext(), insets, density));
         call.resolve(ret);
+    }
+
+    /**
+     * 沉浸阅读：把两条系统栏藏起来 / 放回来。
+     *
+     * 用户要的是「像看视频那样」：平板横屏、两侧栏都收起来的时候，
+     * 时钟电量和底下那条一起消失，正文占满整块屏；从屏幕顶端往下滑，
+     * 系统栏浮出来一会儿，自己又收回去。
+     *
+     * **收放的时机、滑出来之后停多久，全是系统在管**（BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE），
+     * 网页那边不必掐表 —— 顶栏和「笔记」键那两样才是自己管的（3 秒）。
+     *
+     * ⚠️ **这是手机平板共用的地基**，第四十八节在这上面栽过：为了平板动了共用的东西，
+     * 手机一装就废。所以开关握在网页手里，且只在宽屏（1024 起）才会打开，
+     * 手机上这个方法一次都不会被调到 —— 但每次改完两台都得验。
+     *
+     * 藏起来之后系统栏的尺寸会变成 0，MainActivity 里那个监听会把新值推给网页，
+     * `--sa-top` 自己就跟着变了，这里不用管。
+     */
+    @PluginMethod
+    public void setImmersive(PluginCall call) {
+        final boolean on = Boolean.TRUE.equals(call.getBoolean("on", false));
+        final android.app.Activity activity = getActivity();
+        if (activity == null) {
+            call.resolve();
+            return;
+        }
+        activity.runOnUiThread(() -> {
+            WindowInsetsControllerCompat bars = WindowCompat.getInsetsController(
+                activity.getWindow(),
+                activity.getWindow().getDecorView()
+            );
+            // 「滑一下就临时露出来、过会儿自己收」——就是视频播放器那套
+            bars.setSystemBarsBehavior(
+                WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+            );
+            if (on) {
+                bars.hide(WindowInsetsCompat.Type.systemBars());
+            } else {
+                bars.show(WindowInsetsCompat.Type.systemBars());
+            }
+        });
+        call.resolve();
     }
 }
