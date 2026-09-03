@@ -1,4 +1,5 @@
 import { Capacitor, CapacitorHttp } from '@capacitor/core'
+import { pack, unpack } from './codec'
 
 /**
  * WebDAV 读写（坚果云）。
@@ -142,9 +143,29 @@ function pickEtag(headers: Record<string, string> | undefined): string | undefin
 
 /** 云端那一份，连同它的 ETag（用来防「我读完到我写回去这中间对面又写了一次」） */
 export interface RemoteFile {
-  /** 文件内容；云端还没有这个文件时是 null */
+  /** 文件内容（已经拆过箱的 JSON 文本）；云端还没有这个文件时是 null */
   text: string | null
   etag?: string
+  /** 实际下载了多少字节。给界面显示「这次走了多少流量」 */
+  bytes?: number
+}
+
+/**
+ * 只问一句「云端那份的版本号是多少」，**不下载内容**。
+ *
+ * 这是省流量的关键一招：绝大多数次同步其实什么都没变，
+ * 而一次 HEAD 只有几百字节，一次 GET 是好几兆。
+ * 返回 null 表示云端还没有这个文件。
+ */
+export async function headRemoteEtag(c: SyncConfig): Promise<string | null> {
+  const dev = !Capacitor.isNativePlatform()
+  const res = await request('HEAD', davUrl(c.folder, DATA_FILE, dev), c)
+  if (res.status === 404 || res.status === 409) return null
+  if (res.status === 401) throw new SyncError('账号或应用密码不对（服务器回 401）')
+  if (res.status < 200 || res.status >= 300) {
+    throw new SyncError(`问云端版本失败：${res.status}${brief(res.text)}`)
+  }
+  return res.etag ?? null
 }
 
 export async function getRemote(c: SyncConfig): Promise<RemoteFile> {
@@ -157,7 +178,8 @@ export async function getRemote(c: SyncConfig): Promise<RemoteFile> {
   if (res.status < 200 || res.status >= 300) {
     throw new SyncError(`取云端那份失败：${res.status}${brief(res.text)}`)
   }
-  return { text: res.text, etag: res.etag }
+  // 拆箱：压缩过的和早先那份明文的都认，见 codec.ts
+  return { text: unpack(res.text), etag: res.etag, bytes: res.text.length }
 }
 
 /**
@@ -167,10 +189,16 @@ export async function getRemote(c: SyncConfig): Promise<RemoteFile> {
  * 那时必须**重新取一遍再合一次**，绝不能硬盖。少了这一道，
  * 两台设备几乎同时同步就会吃掉一边的改动，而且神不知鬼不觉。
  */
-export async function putRemote(c: SyncConfig, text: string, ifMatch?: string): Promise<void> {
+export async function putRemote(
+  c: SyncConfig,
+  text: string,
+  ifMatch?: string
+): Promise<{ bytes: number }> {
   const dev = !Capacitor.isNativePlatform()
   const headers: Record<string, string> = ifMatch ? { 'If-Match': ifMatch } : {}
-  const res = await request('PUT', davUrl(c.folder, DATA_FILE, dev), c, text, headers)
+  // 装箱：压缩 + base64。用户那份数据是整本整本的小说，不压会很快吃光免费额度
+  const body = pack(text)
+  const res = await request('PUT', davUrl(c.folder, DATA_FILE, dev), c, body, headers)
   if (res.status === 412) throw new StaleError('云端在这中间被改过了')
   if (res.status === 409 || res.status === 404) {
     throw new SyncError(`文件夹「${c.folder}」在坚果云里不存在，先去建一个（${res.status}）`)
@@ -179,13 +207,14 @@ export async function putRemote(c: SyncConfig, text: string, ifMatch?: string): 
   if (res.status < 200 || res.status >= 300) {
     throw new SyncError(`写云端失败：${res.status}${brief(res.text)}`)
   }
+  return { bytes: body.length }
 }
 
 /** 云端被覆盖之前那一版，另存一份。第二十一节的教训：救得回来才敢动 */
 export async function putPrev(c: SyncConfig, text: string): Promise<void> {
   const dev = !Capacitor.isNativePlatform()
   try {
-    await request('PUT', davUrl(c.folder, PREV_FILE, dev), c, text)
+    await request('PUT', davUrl(c.folder, PREV_FILE, dev), c, pack(text))
   } catch {
     /* 存底失败不该拦着同步本身 —— 它只是保险，不是主线 */
   }
