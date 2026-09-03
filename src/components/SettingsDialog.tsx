@@ -381,6 +381,8 @@ export function SettingsDialog({
   const [insetInfo, setInsetInfo] = useState<{ report: SafeAreaReport; applied: string } | null>(
     null
   )
+  /** 正在填云端朗读的凭证（AI 那一栏点进来的第二行） */
+  const [editingCloud, setEditingCloud] = useState(false)
   /** 正在看「朗读引擎参数」那一屏 */
   const [showSpeechDev, setShowSpeechDev] = useState(false)
   /** 问引擎问出来的那几件事 */
@@ -399,6 +401,7 @@ export function SettingsDialog({
       setShowAgreement(false)
       setShowGuide(false)
       setShowDev(false)
+      setEditingCloud(false)
       setShowSpeechDev(false)
       setSpeechDiag(null)
       setTryResults({})
@@ -465,6 +468,7 @@ export function SettingsDialog({
     if (editingAi) setEditingAi(false)
     else if (showAgreement) setShowAgreement(false)
     else if (showGuide) setShowGuide(false)
+    else if (editingCloud) setEditingCloud(false)
     else if (showSpeechDev) setShowSpeechDev(false)
     else if (showDev) setShowDev(false)
     else onClose()
@@ -479,9 +483,13 @@ export function SettingsDialog({
    * 而自定义供应商叫「自定义」等于没说，得显示实际域名。
    */
   const resolvedAi = resolveConfig(aiConfig)
-  const inSubScreen = editingAi || showAgreement || showGuide || showDev || showSpeechDev
+  /** 云端朗读配全了没有 —— AI 那一栏第二行据此显示「已配好的音色」还是「还没设置」 */
+  const cloudOn = isCloudReady(cloudConfig)
+  const inSubScreen = editingAi || editingCloud || showAgreement || showGuide || showDev || showSpeechDev
   const title = editingAi
     ? 'AI 设置'
+    : editingCloud
+    ? '云端朗读'
     : showAgreement
       ? AGREEMENT_TITLE
       : showGuide
@@ -493,6 +501,8 @@ export function SettingsDialog({
             : '设置'
   const back = editingAi
     ? () => setEditingAi(false)
+    : editingCloud
+    ? () => setEditingCloud(false)
     : showAgreement
       ? () => setShowAgreement(false)
       : showGuide
@@ -540,6 +550,10 @@ export function SettingsDialog({
                 }}
                 onCancel={() => setEditingAi(false)}
               />
+            </div>
+          ) : editingCloud ? (
+            <div className="space-y-4">
+              <CloudTtsPanel value={cloudConfig} onChange={updateCloud} />
             </div>
           ) : showGuide ? (
             <UserGuide />
@@ -649,8 +663,28 @@ export function SettingsDialog({
                   </span>
                   <ChevronRight className="w-4 h-4 text-ink-muted shrink-0" />
                 </button>
+                {/*
+                  云端朗读排在 AI 下面 —— 用户要的（「把朗读那些填写放进 AI 那一栏」）。
+                  两件事性质一样：都是外面的服务、都要粘一个 Key、都只存在这台手机上，
+                  摆在一起找起来才顺。**这一行长得和上面那行一模一样**，点进去是单独一屏。
+                */}
+                <button
+                  type="button"
+                  onClick={() => setEditingCloud(true)}
+                  className="w-full flex items-center gap-2 text-left"
+                >
+                  <span className="flex-1 min-w-0">
+                    <span className="text-sm text-ink block truncate">
+                      云端朗读{cloudOn ? '' : ' · 还没设置'}
+                    </span>
+                    <span className="text-xs text-ink-muted block truncate">
+                      {cloudOn ? `音色 ${cloudConfig.voiceType}` : '填上之后句子和生僻词才读得出来'}
+                    </span>
+                  </span>
+                  <ChevronRight className="w-4 h-4 text-ink-muted shrink-0" />
+                </button>
                 <p className="text-xs text-ink-muted leading-relaxed">
-                  「一键填充」和「一键划词」共用这一份配置。Key 只存在这台手机上，
+                  「一键填充」和「一键划词」共用上面那份配置。两个 Key 都只存在这台手机上，
                   不会上传，也不会写进导出的备份文件。
                 </p>
               </Section>
@@ -715,10 +749,6 @@ export function SettingsDialog({
                   备份是一个 .json 文件，文库、正文和笔记都在里面。
                   恢复会用文件里的内容覆盖现在的数据。
                 </p>
-              </Section>
-
-              <Section title="朗读">
-                <CloudTtsPanel value={cloudConfig} onChange={updateCloud} />
               </Section>
 
               <Section title="开发者">
