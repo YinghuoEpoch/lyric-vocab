@@ -35,6 +35,7 @@ import { importFile } from './importers'
 import { AGREEMENT_CLAUSES, AGREEMENT_TITLE } from './agreement'
 import { useBackHandler, handleBackPress, BackPriority } from './hooks/useBackHandler'
 import { useIsWide } from './hooks/useWideLayout'
+import { usePanelWidth } from './hooks/usePanelWidth'
 import { useAutoFill } from './hooks/useAutoFill'
 import { useAutoMark } from './hooks/useAutoMark'
 import { AutoMarkDialog } from './components/AutoMarkDialog'
@@ -80,17 +81,23 @@ const USER_AGREEMENT_KEY = 'user_agreement_v1'
 const PRE_EDIT_KEY = 'lyric-vocab-pre-edit'
 /** 切词规则变更后的一次性数据迁移标记 */
 const TOKENIZER_MIGRATION_KEY = 'lyric-vocab-tokenizer-migrated-v2'
-/** 宽屏下左栏拖成了多宽。只在宽屏用 —— 窄屏那边左栏是浮层，一律 250 */
+/*
+ * 两侧栏在宽屏下拖成了多宽。**只在宽屏用** —— 窄屏那边两栏都是盖住正文的浮层，
+ * 拖宽了只会遮更多，所以那边一律用各自的默认值。拖拽本身见 usePanelWidth。
+ */
 const LEFT_WIDTH_KEY = 'lyric-vocab-left-width'
 const LEFT_WIDTH_DEFAULT = 250
-/** 拖到头的两个界：再窄装不下「我的文库 + 整理」，再宽就开始吃正文 */
+/** 左栏拖到头的两个界：再窄装不下「我的文库 + 整理」，再宽就开始吃正文 */
 const LEFT_WIDTH_MIN = 200
 const LEFT_WIDTH_MAX = 560
 
-function clampLeftWidth(px: number): number {
-  const roomy = Math.min(LEFT_WIDTH_MAX, Math.round(window.innerWidth * 0.5))
-  return Math.max(LEFT_WIDTH_MIN, Math.min(roomy, Math.round(px)))
-}
+const RIGHT_WIDTH_KEY = 'lyric-vocab-right-width'
+/** 右栏两种宽度是原本就有的：窄屏 260、宽屏 350 */
+const RIGHT_WIDTH_NARROW = 260
+const RIGHT_WIDTH_DEFAULT = 350
+/** 右栏再窄一张生词卡就挤了（窄屏那 260 是验熟的下限） */
+const RIGHT_WIDTH_MIN = 260
+const RIGHT_WIDTH_MAX = 560
 const defaultReaderSettings: ReaderSettings = {
   fontSize: 18,
   fontFamily: 'sans',
@@ -205,21 +212,23 @@ export default function App() {
    */
   const [wideLeftHidden, setWideLeftHidden] = useState(false)
   /**
-   * 左栏宽度（只在宽屏生效）。
-   *
-   * 起因是用户在平板上说「左侧栏目录省略太严重」—— 250px 里真正留给名字的只有
-   * 111px，一半以上被缩进、图标和「⋯」吃掉了，九章书全成了「CHAPTER…」。
-   * 与其替他挑一个新的死数，不如让他自己拖。
-   *
-   * **窄屏不用这个值**：那边左栏是盖住正文的浮层，拖宽了只会把正文遮更多。
+   * 两侧栏的宽度（只在宽屏生效），各自拖、各自记。
+   * 缘由和拖拽本身都在 usePanelWidth 里。
    */
-  const [leftWidth, setLeftWidth] = useState<number>(() => {
-    const saved = Number(localStorage.getItem(LEFT_WIDTH_KEY))
-    return saved > 0 ? clampLeftWidth(saved) : LEFT_WIDTH_DEFAULT
+  const left = usePanelWidth({
+    storageKey: LEFT_WIDTH_KEY,
+    initial: LEFT_WIDTH_DEFAULT,
+    min: LEFT_WIDTH_MIN,
+    max: LEFT_WIDTH_MAX
   })
-  /** 正在拖那根杆：记下按下时的位置和当时的宽度，移动量加上去就是新宽度 */
-  const leftDragRef = useRef<{ startX: number; startWidth: number } | null>(null)
-  const [leftDragging, setLeftDragging] = useState(false)
+  const right = usePanelWidth({
+    storageKey: RIGHT_WIDTH_KEY,
+    initial: RIGHT_WIDTH_DEFAULT,
+    min: RIGHT_WIDTH_MIN,
+    max: RIGHT_WIDTH_MAX,
+    // 右栏那根杆在它的左边缘：往左拖是变宽
+    invert: true
+  })
   const [scrollTarget, setScrollTarget] = useState<{ pageId: string; anchorId: string } | null>(null)
   /** 「原文已删除」确认弹窗；resolve 用于把用户的选择交回给对账流程 */
   const [orphanPrompt, setOrphanPrompt] = useState<{
@@ -1256,7 +1265,7 @@ export default function App() {
         } ${wideLeftHidden ? 'wide:fixed wide:-translate-x-full' : 'wide:relative wide:translate-x-0'}`}
       >
         <LeftSidebar
-          width={isWide ? leftWidth : LEFT_WIDTH_DEFAULT}
+          width={isWide ? left.width : LEFT_WIDTH_DEFAULT}
           panelOpen={showLeft}
           mode={mode}
           onModeChange={setMode}
@@ -1305,39 +1314,9 @@ export default function App() {
             aria-orientation="vertical"
             aria-label="拖动改变文库栏宽度"
             className={`hidden wide:block absolute inset-y-0 -right-2 w-4 z-40 cursor-col-resize touch-none after:absolute after:inset-y-0 after:left-1/2 after:w-[2px] after:-translate-x-1/2 after:transition-colors ${
-              leftDragging ? 'after:bg-accent-500' : 'after:bg-transparent hover:after:bg-accent-300'
+              left.dragging ? 'after:bg-accent-500' : 'after:bg-transparent hover:after:bg-accent-300'
             }`}
-            onPointerDown={(e) => {
-              e.preventDefault()
-              e.currentTarget.setPointerCapture(e.pointerId)
-              leftDragRef.current = { startX: e.clientX, startWidth: leftWidth }
-              setLeftDragging(true)
-            }}
-            onPointerMove={(e) => {
-              const d = leftDragRef.current
-              if (!d) return
-              setLeftWidth(clampLeftWidth(d.startWidth + (e.clientX - d.startX)))
-            }}
-            onPointerUp={(e) => {
-              const d = leftDragRef.current
-              if (!d) return
-              leftDragRef.current = null
-              setLeftDragging(false)
-              e.currentTarget.releasePointerCapture(e.pointerId)
-              /*
-               * 最终宽度**当场按这一下的位置算**，不要去读 leftWidth ——
-               * 那是渲染时捕获的旧值，抬手和移动挨得近时 React 会把两次更新并成一批，
-               * 存进去的就是拖之前的数（浏览器里当场抓到过）。
-               * 松手才存：拖动过程中每一帧都写 localStorage 没必要。
-               */
-              const finalWidth = clampLeftWidth(d.startWidth + (e.clientX - d.startX))
-              setLeftWidth(finalWidth)
-              localStorage.setItem(LEFT_WIDTH_KEY, String(finalWidth))
-            }}
-            onPointerCancel={() => {
-              leftDragRef.current = null
-              setLeftDragging(false)
-            }}
+            {...left.handleProps}
           />
         )}
       </div>
@@ -1526,6 +1505,7 @@ export default function App() {
           }`}
         >
           <RightSidebar
+            width={isWide ? right.width : RIGHT_WIDTH_NARROW}
             vocab={vocabList}
             sentences={sentences}
             onScrollToWord={handleScrollToWord}
@@ -1542,6 +1522,24 @@ export default function App() {
             currentDocIndex={currentDocIndex}
             totalDocsInFolder={totalDocsInFolder}
           />
+
+          {/*
+            拖杆：正文和笔记栏的交界线。和左栏那根是同一套（usePanelWidth），
+            只是杆在这一栏的**左**边缘，所以往左拖才是变宽（invert）。
+
+            只在宽屏、且笔记栏开着时才有 —— 收起来的时候那条边在屏幕外面。
+          */}
+          {showRight && (
+            <div
+              role="separator"
+              aria-orientation="vertical"
+              aria-label="拖动改变笔记栏宽度"
+              className={`hidden wide:block absolute inset-y-0 -left-2 w-4 z-40 cursor-col-resize touch-none after:absolute after:inset-y-0 after:left-1/2 after:w-[2px] after:-translate-x-1/2 after:transition-colors ${
+                right.dragging ? 'after:bg-accent-500' : 'after:bg-transparent hover:after:bg-accent-300'
+              }`}
+              {...right.handleProps}
+            />
+          )}
         </div>
       )}
 

@@ -138,6 +138,32 @@ function apply(
   s.setProperty('--sa-left', `${left}px`)
   // 输入法有多高。从前是原生把整个窗口往上挤，三栏一起变矮；现在只报数，谁让谁自己让
   s.setProperty('--kb', `${keyboard}px`)
+  // 有些位置是 JS 算的（长按取词那个小窗），光有 CSS 变量它看不见
+  setKeyboard(keyboard)
+}
+
+/**
+ * 键盘高度的订阅。
+ *
+ * CSS 变量改了不会通知 JS，而「长按取词那个小窗要不要躲开键盘」是 JS 在算位置，
+ * 所以这里留一条订阅：值一变就叫一声。见 hooks/useKeyboardHeight.ts。
+ */
+type KeyboardListener = (px: number) => void
+const keyboardListeners = new Set<KeyboardListener>()
+let currentKeyboard = 0
+
+export function onKeyboardChange(fn: KeyboardListener): () => void {
+  keyboardListeners.add(fn)
+  fn(currentKeyboard)
+  return () => {
+    keyboardListeners.delete(fn)
+  }
+}
+
+function setKeyboard(px: number) {
+  if (px === currentKeyboard) return
+  currentKeyboard = px
+  keyboardListeners.forEach((fn) => fn(px))
 }
 
 declare global {
@@ -161,15 +187,20 @@ declare global {
  * 最坏就是走 CSS 里的保底，界面照常出来。
  */
 export async function initSafeArea(): Promise<void> {
-  if (!Capacitor.isNativePlatform()) return
-
-  // 只有装成 app 才是沉浸式。浏览器里没有系统栏，同一段留白会在页面顶上凭空多一条白边
-  document.documentElement.classList.add('native')
-
+  /*
+   * 这个钩子**在浏览器里也挂上**。原生不会去调它，但这样一来，
+   * 在浏览器里手工调一句就能完整走一遍真实通路（`window.__onNativeInsets(32,0,16,0,0,320)`）——
+   * 键盘、系统栏这些我在这台电脑上验不了，留个口子比盲改强。
+   */
   window.__onNativeInsets = (top, right, bottom, left, tappableBottom, keyboard) => {
     apply(top, right, bottom, left, tappableBottom, keyboard)
     report = { ...report, source: '原生·推送', top, right, bottom, left, tappableBottom, keyboard }
   }
+
+  if (!Capacitor.isNativePlatform()) return
+
+  // 只有装成 app 才是沉浸式。浏览器里没有系统栏，同一段留白会在页面顶上凭空多一条白边
+  document.documentElement.classList.add('native')
 
   try {
     const v = await SafeArea.getInsets()
