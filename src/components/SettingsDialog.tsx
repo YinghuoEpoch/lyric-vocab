@@ -613,10 +613,9 @@ export function SettingsDialog({
           ) : editingSync ? (
             <SyncPanel
               value={syncConfig}
-              onSave={(c) => {
-                updateSync(c)
-                setEditingSync(false)
-              }}
+              // 保存之后**留在这一屏**（用户要的）：他可能还要接着点「立刻同步一次」。
+              // 存没存住看那颗键本身 —— 保存完它会变成「已保存」并置灰
+              onSave={updateSync}
               onCancel={() => setEditingSync(false)}
               status={syncStatus}
               onSync={onSyncNow}
@@ -625,10 +624,8 @@ export function SettingsDialog({
             <div className="space-y-4">
               <CloudTtsPanel
                 value={cloudConfig}
-                onSave={(c) => {
-                  updateCloud(c)
-                  setEditingCloud(false)
-                }}
+                // 同上：保存之后留在这一屏，他可能还要去试读
+                onSave={updateCloud}
                 onCancel={() => setEditingCloud(false)}
               />
             </div>
@@ -826,7 +823,7 @@ export function SettingsDialog({
                   是同一类（把数据搬到另一台去），但一个自动一个手动 ——
                   不点破的话，配了云端同步的人会以为这两颗是别的什么东西。
                 */}
-                <span className="block text-xs font-medium text-ink-muted pt-1">手动同步</span>
+                <span className="block text-sm text-ink pt-1">手动同步</span>
                 <div className="flex gap-2">
                   <button
                     type="button"
