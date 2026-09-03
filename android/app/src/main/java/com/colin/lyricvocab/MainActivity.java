@@ -30,9 +30,11 @@ import java.util.Locale;
  *    系统栏后面永远是白纸或纸色，白图标等于看不见。
  * 3. **系统栏尺寸报给网页**。启动时由网页主动来问（见 SafeAreaPlugin），
  *    这里只管**之后**的变化：转屏、键盘弹起收起。那时候网页早在了，不抢跑。
- * 4. **键盘避让**。一旦关掉自动避让，安卓 15 以下就没人管输入法遮挡了
- *    （Capacitor 那段处理同样只在 15 及以上）。这个 app 在键盘上栽过跟头
- *    （见后续规划第七之二节），所以 15 以下自己把内容顶上去。这一段别删。
+ * 4. **键盘只报高度，不动窗口**。从前这里是「把整个窗口往上挤」，
+ *    结果三栏一起变矮 —— 用户在平板上报的：开书库一搜索，左侧栏也跟着被顶起来。
+ *    现在把输入法高度报给网页（--kb），谁该避让谁自己让：弹窗、正文列会让，
+ *    两侧栏只在你正在它里面打字时才让。这个 app 在键盘上栽过跟头
+ *    （见后续规划第七之二节），改动别再往回走。
  */
 public class MainActivity extends BridgeActivity {
 
@@ -76,23 +78,17 @@ public class MainActivity extends BridgeActivity {
             float density = getResources().getDisplayMetrics().density;
             int buttonBottom = SafeAreaPlugin.buttonBottom(this, insets, density);
 
+            int imeBottom = imeVisible ? insets.getInsets(WindowInsetsCompat.Type.ime()).bottom : 0;
+
             // 键盘弹出来时底部不再让系统栏那一条 —— 那时候底边归键盘
             pushInsets(
                 systemBars.top,
                 systemBars.right,
                 imeVisible ? 0 : systemBars.bottom,
                 systemBars.left,
-                imeVisible ? 0 : buttonBottom
+                imeVisible ? 0 : buttonBottom,
+                imeBottom
             );
-
-            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.VANILLA_ICE_CREAM) {
-                int imeBottom = imeVisible
-                    ? insets.getInsets(WindowInsetsCompat.Type.ime()).bottom
-                    : 0;
-                if (v.getPaddingBottom() != imeBottom) {
-                    v.setPadding(0, 0, 0, imeBottom);
-                }
-            }
 
             // 不吞掉：Capacitor 自己那套（安卓 15 及以上）还要用
             return insets;
@@ -107,19 +103,20 @@ public class MainActivity extends BridgeActivity {
      * 免得一处改了另一处忘。钩子还没挂上（网页没起来）时这一句是空转，
      * 不要紧：启动那次的值是网页自己来问的。
      */
-    /** 前四个数是物理像素，最后那个 buttonBottom 已经是 CSS 像素了，别再除一次 */
-    private void pushInsets(int top, int right, int bottom, int left, int buttonBottomCss) {
+    /** 除了 buttonBottom 已经是 CSS 像素（别再除一次），其余都是物理像素 */
+    private void pushInsets(int top, int right, int bottom, int left, int buttonBottomCss, int imeBottom) {
         if (getBridge() == null || getBridge().getWebView() == null) return;
 
         float density = getResources().getDisplayMetrics().density;
         final String js = String.format(
             Locale.US,
-            "window.__onNativeInsets&&window.__onNativeInsets(%d,%d,%d,%d,%d)",
+            "window.__onNativeInsets&&window.__onNativeInsets(%d,%d,%d,%d,%d,%d)",
             Math.round(top / density),
             Math.round(right / density),
             Math.round(bottom / density),
             Math.round(left / density),
-            buttonBottomCss
+            buttonBottomCss,
+            Math.round(imeBottom / density)
         );
 
         runOnUiThread(() -> {

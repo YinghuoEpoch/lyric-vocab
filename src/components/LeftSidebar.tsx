@@ -81,6 +81,8 @@ interface LeftSidebarProps {
   /** 侧栏此刻是不是被呼出着（仅手机尺寸有意义；宽屏一直挂着，恒为 false） */
   panelOpen?: boolean
   className?: string
+  /** 有多宽（像素）。宽屏可拖着改，不给就是 250 —— 见 App.tsx 那根拖杆 */
+  width?: number
 }
 
 type Editing = { type: 'book'; id: string } | { type: 'page'; id: string } | null
@@ -159,7 +161,8 @@ function LeftSidebarInner({
   readerSettings,
   onReaderSettingsChange,
   panelOpen = false,
-  className = ''
+  className = '',
+  width
 }: LeftSidebarProps) {
   const [pageLayout, setPageLayout] = useState<LyricPage[]>(pages)
   /**
@@ -567,7 +570,11 @@ function LeftSidebarInner({
   }
 
   return (
-    <aside className={`w-[250px] h-full shrink-0 border-r border-paper-border bg-white/80 flex flex-col overflow-hidden safe-area-padding ${className}`}>
+    <aside
+      className={`h-full shrink-0 border-r border-paper-border bg-white/80 flex flex-col overflow-hidden safe-area-padding ${className}`}
+      /* 宽度由上面给：宽屏可以拖着改（见 App.tsx 那根拖杆），窄屏一律 250 */
+      style={{ width: width ?? 250 }}
+    >
       <div className={BAND_TOP}>
         <span className="text-sm font-medium text-ink-muted tracking-wide">我的文库</span>
         <div className="flex items-center gap-1">
@@ -1203,7 +1210,7 @@ function LeftSidebarInner({
        */}
       {recycleOpen && createPortal(
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/30"
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/30 kb-safe"
           onClick={() => setRecycleOpen(false)}
         >
           <div
@@ -1308,7 +1315,7 @@ function LeftSidebarInner({
       {/* 彻底删除二次确认。同样挂到 body，否则遮罩只盖住侧栏 */}
       {confirmDelete && createPortal(
         <div
-          className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/40"
+          className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/40 kb-safe"
           onClick={() => setConfirmDelete(null)}
         >
           <div

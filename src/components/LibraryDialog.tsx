@@ -116,7 +116,7 @@ export function LibraryDialog({ open, onClose, onImport }: LibraryDialogProps) {
 
   return (
     <div
-      className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 p-4"
+      className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 p-4 kb-safe"
       onClick={() => downloading === null && onClose()}
     >
       <div

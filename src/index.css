@@ -171,6 +171,31 @@ body {
   padding-bottom: var(--sa-bottom-tap);
 }
 
+/*
+ * ================= 输入法（--kb） =================
+ *
+ * 原生只报「输入法有多高」，不再把整个窗口往上挤（从前那样三栏一起变矮，
+ * 用户在平板上报的：开书库一搜索，左侧栏也跟着被顶起来）。**谁该避让谁自己让。**
+ *
+ * - **弹窗**：`.kb-safe`（所有那些 fixed inset-0 居中的遮罩都挂了这个类）。
+ *   底部让出键盘，里面那张卡片的最高高度改按「剩下的空间」算 ——
+ *   只加留白不改高度的话，85vh 的卡片会从顶上溢出去
+ * - **正文列**：见 App.tsx，编辑全文那个大输入框要靠它让开
+ * - **两侧栏**：只在 `:focus-within` 时让 —— 也就是**你正在这一栏里打字**
+ *   （重命名文库那种）。不打字时纹丝不动，这正是用户要的
+ */
+.kb-safe {
+  padding-bottom: calc(1rem + var(--kb, 0px));
+}
+
+.kb-safe > * {
+  max-height: min(85vh, 100%);
+}
+
+.safe-area-padding:focus-within {
+  padding-bottom: calc(var(--sa-bottom-tap) + var(--kb, 0px));
+}
+
 /* 英文衬线 - 优雅 Serif */
 .font-lyric-en {
   font-family: 'Playfair Display', Georgia, serif;

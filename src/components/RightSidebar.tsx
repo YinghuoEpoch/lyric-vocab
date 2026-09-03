@@ -177,6 +177,8 @@ interface RightSidebarProps {
   /** 同组内文档总数 */
   totalDocsInFolder?: number
   className?: string
+  /** 有多宽（像素）。宽屏可拖着改，不给就是 260 —— 见 App.tsx 那根拖杆 */
+  width?: number
 }
 
 interface VocabCardProps {
@@ -330,7 +332,8 @@ function RightSidebarInner({
   documentProgress = 0,
   currentDocIndex = 0,
   totalDocsInFolder = 0,
-  className = ''
+  className = '',
+  width
 }: RightSidebarProps) {
   const [tab, setTab] = useState<NotesTab>('vocab')
   const filtered = currentPageId ? vocab.filter((v) => v.pageId === currentPageId) : vocab
@@ -372,7 +375,9 @@ function RightSidebarInner({
 
   return (
     <aside
-      className={`w-[260px] wide:w-[350px] h-full shrink-0 border-l border-paper-border bg-white/80 flex flex-col overflow-hidden safe-area-padding ${className}`}
+      className={`h-full shrink-0 border-l border-paper-border bg-white/80 flex flex-col overflow-hidden safe-area-padding ${className}`}
+      /* 宽度由上面给：宽屏可以拖着改（见 App.tsx 那根拖杆），窄屏一律 260 */
+      style={{ width: width ?? 260 }}
     >
       <div className={BAND_TOP}>
           <span className="text-sm font-medium text-ink-muted flex items-center gap-2">

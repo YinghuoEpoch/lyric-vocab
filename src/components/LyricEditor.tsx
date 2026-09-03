@@ -10,6 +10,7 @@ import { X, Trash2 } from 'lucide-react'
 import { useWordInteraction } from '../hooks/useWordInteraction'
 import { useBackHandler, BackPriority } from '../hooks/useBackHandler'
 import { useIsWide } from '../hooks/useWideLayout'
+import { useKeyboardHeight } from '../hooks/useKeyboardHeight'
 import { buildWordList, getRangeText as sliceRangeText } from '../utils/reconcile'
 
 const PROGRESS_DEBOUNCE_MS = 700
@@ -44,8 +45,16 @@ const MIN_POPUP_H = 200
  */
 const WORD_LINE_CLASS =
   'underline decoration-solid decoration-accent-600 decoration-2 underline-offset-2'
+/*
+ * 短语那条波浪线。
+ *
+ * `[text-decoration-skip-ink:none]` 不能少：浏览器默认会**给下伸笔画让路**
+ * （g、y、p 的尾巴穿过线时，那一段就不画了）。平板上字被系统放大，
+ * 尾巴正好压到线上，于是「finding」的 g 那儿断开一截 —— 手机上字小，碰不到。
+ * 短语靠这条线表示「这几个词是一伙的」，断了就成了两段，含义都变了。
+ */
 const PHRASE_LINE_CLASS =
-  'underline decoration-wavy decoration-accent-600/90 decoration-1 underline-offset-[0.36em]'
+  'underline decoration-wavy decoration-accent-600/90 decoration-1 underline-offset-[0.36em] [text-decoration-skip-ink:none]'
 const SENTENCE_LINE_CLASS = 'sentence-line'
 
 /** 单词选择：仅一个词 */
@@ -328,6 +337,12 @@ function LyricEditorInner({
    * 窄屏（手机、平板竖屏）一律还是底部抽屉，那套是验熟的。
    */
   const isWide = useIsWide()
+  /**
+   * 键盘弹起来时，屏幕能用的那一块变矮了 —— 下面摆小窗时要按这个算。
+   * 不算的话：长按屏幕下半部分的词，小窗正好落在键盘底下，
+   * 开着却整个看不见（量过：词在 y=572，小窗 602–888，键盘顶边 580）。
+   */
+  const keyboardH = useKeyboardHeight()
   const popupRef = useRef<HTMLDivElement>(null)
   const [popupPos, setPopupPos] = useState<{
     left: number
@@ -425,6 +440,8 @@ function LyricEditorInner({
     }
 
     const place = () => {
+      // 键盘占掉的那一截不算数：小窗只能摆在它上面
+      const screenH = window.innerHeight - keyboardH
       const startId = selection.type === 'word' ? selection.anchorId : selection.startAnchorId
       const endId = selection.type === 'word' ? selection.anchorId : selection.endAnchorId
       const startEl = document.getElementById(startId)
@@ -455,7 +472,7 @@ function LyricEditorInner({
        */
       const bottomEdge = Math.max(a.bottom, b.bottom) + 8
       const topEdge = Math.min(a.top, b.top) - 8
-      const spaceBelow = window.innerHeight - bottomEdge - POPUP_MARGIN
+      const spaceBelow = screenH - bottomEdge - POPUP_MARGIN
       const spaceAbove = topEdge - POPUP_MARGIN
       const putBelow = h <= spaceBelow || spaceBelow >= spaceAbove
       const maxHeight = Math.max(MIN_POPUP_H, putBelow ? spaceBelow : spaceAbove)
@@ -470,7 +487,7 @@ function LyricEditorInner({
        */
       const top = Math.min(
         Math.max(wanted, POPUP_MARGIN),
-        Math.max(POPUP_MARGIN, window.innerHeight - Math.min(h, maxHeight) - POPUP_MARGIN)
+        Math.max(POPUP_MARGIN, screenH - Math.min(h, maxHeight) - POPUP_MARGIN)
       )
       setPopupPos({ left, top, maxHeight })
     }
@@ -486,7 +503,8 @@ function LyricEditorInner({
       window.removeEventListener('resize', place)
       window.removeEventListener('scroll', place, true)
     }
-  }, [isWide, fullMode, selection])
+    // keyboardH 也在里面：键盘一弹起来就得重新摆一次，否则小窗留在原地被盖住
+  }, [isWide, fullMode, selection, keyboardH])
 
   useBackHandler(!!fullMode || !!selection, BackPriority.wordDrawer, () => {
     if (fullMode) setFullMode(null)
@@ -1051,8 +1069,15 @@ function LyricEditorInner({
                     boxShadow: '0 12px 32px -12px rgba(44, 44, 44, 0.3)'
                   }
                 : {
-                    // 抽屉贴着屏幕最下沿，白底铺到底、里面那排按钮让开导航键
-                    // （手势条不用让，所以用 -tap 那个数）。
+                    /*
+                     * 抽屉自己坐到键盘上面去。
+                     *
+                     * 从前不用管：原生把整个窗口往上挤，它跟着就上去了。现在窗口不动了
+                     * （见 MainActivity 的说明），不自己让就整个躲在键盘背后 ——
+                     * 而这张抽屉里正有要填的格子。
+                     */
+                    bottom: 'var(--kb, 0px)',
+                    // 白底铺到底、里面那排按钮让开导航键（手势条不用让，所以用 -tap 那个数）。
                     // 从前直接用 env()，安卓老版本读不到系统栏，按钮就压在导航键底下了
                     paddingBottom: 'max(var(--sa-bottom-tap), 16px)',
                     boxShadow: '0 -10px 28px -12px rgba(44, 44, 44, 0.22)'
