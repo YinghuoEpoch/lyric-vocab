@@ -7,7 +7,112 @@ import { AGREEMENT_CLAUSES, AGREEMENT_TITLE } from '../agreement'
 import { describeTarget, loadConfig, resolveConfig, type AiConfig } from '../enrich'
 import { useBackHandler, BackPriority } from '../hooks/useBackHandler'
 import { getSafeAreaReport, type SafeAreaReport } from '../safeArea'
+import {
+  diagnoseSpeech,
+  tryRead,
+  TRY_SAMPLES,
+  type Answer,
+  type SpeechDiagnosis,
+  type TryReadResult
+} from '../speech/diagnose'
 import type { AccentColor, ReaderSettings } from '../types'
+
+/** 一问一答：问出来了就显示答案，报错了就把原文摊出来 —— 诊断要的正是原文 */
+function AnswerRow({ label, answer }: { label: string; answer: Answer }) {
+  return (
+    <Row
+      label={label}
+      value={
+        answer.ok ? (
+          answer.value
+        ) : (
+          <span className="text-rose-600">报错：{answer.error}</span>
+        )
+      }
+    />
+  )
+}
+
+/**
+ * 朗读引擎参数。
+ *
+ * 起因见 后续规划.md 第五十七节：平板上凡是过系统朗读引擎的一概没声音，
+ * 而无障碍的「屏幕朗读」念得了英文 —— 引擎和英文数据都在，是我们这条路没走通。
+ * 我在电脑上验不了安卓的朗读引擎，所以照第四十九节那条老办法先摆读数。
+ *
+ * 三颗试读按钮是这一屏的重点，**中文那颗是分水岭**：
+ * 中文能读、英文不能，就是缺英文数据；两个都不能，问题在引擎或者我们的调用。
+ */
+function SpeechReadout({
+  diag,
+  results,
+  onTry,
+  running
+}: {
+  diag: SpeechDiagnosis | null
+  results: Record<string, TryReadResult>
+  onTry: (key: string, text: string, lang: string) => void
+  running: string | null
+}) {
+  return (
+    <div className="space-y-4">
+      <Section title="引擎认不认英文">
+        <Row label="装成 app 了吗" value={diag ? (diag.native ? '是' : '不是（浏览器里）') : '—'} />
+        <Row
+          label="朗读插件挂上了吗"
+          value={diag ? (diag.pluginAvailable ? '挂上了' : '没挂上') : '—'}
+        />
+        {diag ? <AnswerRow label="认 en-US 吗" answer={diag.english} /> : null}
+        {diag ? <AnswerRow label="英文语言" answer={diag.englishLangs} /> : null}
+        {diag ? <AnswerRow label="语言共几个" answer={diag.langCount} /> : null}
+        {diag ? <AnswerRow label="嗓子共几个" answer={diag.voiceCount} /> : null}
+        {diag ? <AnswerRow label="英文嗓子" answer={diag.englishVoices} /> : null}
+        <p className="text-xs text-ink-muted leading-relaxed pt-1">
+          语言和嗓子都是「一个都没有」，说明引擎其实没起来 —— 那和「有引擎但缺英文」是两码事。
+        </p>
+      </Section>
+
+      <Section title="试读（不查真人录音，直接考引擎）">
+        <div className="space-y-2">
+          {TRY_SAMPLES.map((sample) => {
+            const r = results[sample.key]
+            return (
+              <div key={sample.key} className="space-y-1">
+                <button
+                  type="button"
+                  onClick={() => onTry(sample.key, sample.text, sample.lang)}
+                  disabled={running !== null}
+                  className="w-full px-3 py-2 rounded-lg border border-paper-border bg-white text-sm text-ink text-left disabled:opacity-50"
+                >
+                  {running === sample.key ? '正在读…' : sample.label}
+                  <span className="block text-xs text-ink-muted truncate">{sample.text}</span>
+                </button>
+                {r ? (
+                  <p className="px-1 text-xs leading-relaxed break-all">
+                    {r.ok ? (
+                      <span className="text-emerald-700">
+                        引擎说成功，用了 {r.ms} 毫秒
+                        {r.ms < 300 ? '（太快了 —— 它大概压根没开口）' : ''}
+                      </span>
+                    ) : (
+                      <span className="text-rose-600">
+                        失败（{r.ms} 毫秒）：{r.error}
+                      </span>
+                    )}
+                  </p>
+                ) : null}
+              </div>
+            )
+          })}
+        </div>
+        <p className="text-xs text-ink-muted leading-relaxed pt-1">
+          耗时是关键：插件是「念完才返回」的。说成功却几乎立刻返回，就是报成功不出声；
+          耗时和一句话差不多却听不见，那声音是丢在音量或者声音通道上了。
+        </p>
+      </Section>
+    </div>
+  )
+}
 
 /**
  * 设置页。
@@ -233,6 +338,14 @@ export function SettingsDialog({
   const [insetInfo, setInsetInfo] = useState<{ report: SafeAreaReport; applied: string } | null>(
     null
   )
+  /** 正在看「朗读引擎参数」那一屏 */
+  const [showSpeechDev, setShowSpeechDev] = useState(false)
+  /** 问引擎问出来的那几件事 */
+  const [speechDiag, setSpeechDiag] = useState<SpeechDiagnosis | null>(null)
+  /** 三颗试读按钮各自的结果 */
+  const [tryResults, setTryResults] = useState<Record<string, TryReadResult>>({})
+  /** 这会儿正在试读哪一句（按钮期间禁用，免得两句叠在一起，读数就废了） */
+  const [tryRunning, setTryRunning] = useState<string | null>(null)
 
   useEffect(() => {
     if (open) {
@@ -241,6 +354,10 @@ export function SettingsDialog({
       setShowAgreement(false)
       setShowGuide(false)
       setShowDev(false)
+      setShowSpeechDev(false)
+      setSpeechDiag(null)
+      setTryResults({})
+      setTryRunning(null)
       setAudioStats(null)
       void cacheStats().then(setAudioStats)
     }
@@ -262,6 +379,21 @@ export function SettingsDialog({
     setShowDev(true)
   }
 
+  /** 进「朗读引擎参数」那一屏时现问一次引擎 —— 装了新的语音包之后这些数会变 */
+  const openSpeechDev = () => {
+    setTryResults({})
+    setSpeechDiag(null)
+    setShowSpeechDev(true)
+    void diagnoseSpeech().then(setSpeechDiag)
+  }
+
+  const runTryRead = (key: string, text: string, lang: string) => {
+    setTryRunning(key)
+    void tryRead(text, lang)
+      .then((r) => setTryResults((prev) => ({ ...prev, [key]: r })))
+      .finally(() => setTryRunning(null))
+  }
+
   /**
    * 返回键只登记一层，自己判断退到哪：在子屏里退回列表，在列表里才关掉。
    * 分成两层登记的话，AI 那屏一开一关要多一轮注册注销，没必要。
@@ -270,6 +402,7 @@ export function SettingsDialog({
     if (editingAi) setEditingAi(false)
     else if (showAgreement) setShowAgreement(false)
     else if (showGuide) setShowGuide(false)
+    else if (showSpeechDev) setShowSpeechDev(false)
     else if (showDev) setShowDev(false)
     else onClose()
   })
@@ -283,25 +416,29 @@ export function SettingsDialog({
    * 而自定义供应商叫「自定义」等于没说，得显示实际域名。
    */
   const resolvedAi = resolveConfig(aiConfig)
-  const inSubScreen = editingAi || showAgreement || showGuide || showDev
+  const inSubScreen = editingAi || showAgreement || showGuide || showDev || showSpeechDev
   const title = editingAi
     ? 'AI 设置'
     : showAgreement
       ? AGREEMENT_TITLE
       : showGuide
         ? '使用说明'
-        : showDev
-          ? '开发者'
-          : '设置'
+        : showSpeechDev
+          ? '朗读引擎参数'
+          : showDev
+            ? '开发者'
+            : '设置'
   const back = editingAi
     ? () => setEditingAi(false)
     : showAgreement
       ? () => setShowAgreement(false)
       : showGuide
         ? () => setShowGuide(false)
-        : showDev
-          ? () => setShowDev(false)
-          : onClose
+        : showSpeechDev
+          ? () => setShowSpeechDev(false)
+          : showDev
+            ? () => setShowDev(false)
+            : onClose
 
   const setFontSize = (size: number) =>
     onReaderSettingsChange({ ...readerSettings, fontSize: size })
@@ -349,6 +486,13 @@ export function SettingsDialog({
                 <p key={line}>{line}</p>
               ))}
             </div>
+          ) : showSpeechDev ? (
+            <SpeechReadout
+              diag={speechDiag}
+              results={tryResults}
+              onTry={runTryRead}
+              running={tryRunning}
+            />
           ) : showDev ? (
             <SafeAreaReadout info={insetInfo} />
           ) : (
@@ -513,6 +657,19 @@ export function SettingsDialog({
                     <span className="block text-sm text-ink">系统栏参数</span>
                     <span className="block text-xs text-ink-muted">
                       顶上和底下各让出多少、这份网页是哪一版
+                    </span>
+                  </span>
+                  <ChevronRight className="w-4 h-4 text-ink-muted shrink-0" />
+                </button>
+                <button
+                  type="button"
+                  onClick={openSpeechDev}
+                  className="w-full flex items-center gap-2 text-left"
+                >
+                  <span className="flex-1 min-w-0">
+                    <span className="block text-sm text-ink">朗读引擎参数</span>
+                    <span className="block text-xs text-ink-muted">
+                      这台机器的朗读引擎认不认英文，还能当场试读
                     </span>
                   </span>
                   <ChevronRight className="w-4 h-4 text-ink-muted shrink-0" />
