@@ -1,6 +1,6 @@
 import { memo, useCallback, useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { BookOpen, FileText, Eye, EyeOff, Sparkles, GripVertical, X } from 'lucide-react'
+import { BookOpen, FileText, Eye, EyeOff, Sparkles, GripVertical } from 'lucide-react'
 import {
   DndContext,
   closestCenter,
@@ -29,6 +29,7 @@ import { EditedMark } from './EditedMark'
 import { AutoTextarea } from './AutoTextarea'
 import { getFolderReviewData } from '../hooks/getFolderReviewData'
 import { useSpeak } from '../hooks/useSpeak'
+import { SpeechNotice } from './SpeechNotice'
 import { usePrefetchAudio } from '../hooks/usePrefetchAudio'
 import { useBackHandler, BackPriority } from '../hooks/useBackHandler'
 import { SwipeToDelete } from './SwipeToDelete'
@@ -414,28 +415,8 @@ function VocabularyDashboardInner({
         </div>
       </div>
 
-      {speechError && (
-        <div className="shrink-0 flex items-start gap-2 px-4 py-2 bg-accent-50 border-b border-accent-200 text-xs text-accent-900 leading-relaxed">
-          <span className="flex-1 break-words">{speechError.message}</span>
-          {speechError.missingVoice && installVoice && (
-            <button
-              type="button"
-              onClick={installVoice}
-              className="shrink-0 px-2 py-0.5 rounded border border-accent-300 hover:bg-accent-100 font-medium"
-            >
-              去安装
-            </button>
-          )}
-          <button
-            type="button"
-            onClick={dismissError}
-            aria-label="知道了"
-            className="p-0.5 rounded hover:bg-accent-100"
-          >
-            <X className="w-3.5 h-3.5" />
-          </button>
-        </div>
-      )}
+      {/* 这一条从前只在这儿画，现在三处共用同一个（阅读页、生词板也要说话） */}
+      <SpeechNotice error={speechError} onInstall={installVoice} onDismiss={dismissError} />
 
       {/*
         底部让出导航栏：加在滚动区自己的内边距里（p-6 是 1.5rem），

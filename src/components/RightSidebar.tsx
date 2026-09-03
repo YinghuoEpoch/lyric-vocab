@@ -1,5 +1,6 @@
 import { memo, useState, useEffect } from 'react'
 import { useSpeak } from '../hooks/useSpeak'
+import { SpeechNotice } from './SpeechNotice'
 import { usePrefetchAudio } from '../hooks/usePrefetchAudio'
 import { BookOpen, ChevronRight, Trash2, Wand2, Undo2, X } from 'lucide-react'
 import type { Sentence } from '../types'
@@ -348,7 +349,7 @@ function RightSidebarInner({
    * 点词读出来，跟复习页是同一套：同时只读一个，正在读的那个亮起来。
    * 读不出声的手机 canSpeak 就是 false，那就只跳转、不发声。
    */
-  const { canSpeak, speakingId, speak } = useSpeak()
+  const { canSpeak, speakingId, speak, error: speechError, installVoice, dismissError } = useSpeak()
 
   /**
    * 这一篇的发音先备好，省掉每个词第一次点时等开口的那半秒。
@@ -379,6 +380,8 @@ function RightSidebarInner({
       /* 宽度由上面给：宽屏可以拖着改（见 App.tsx 那根拖杆），窄屏一律 260 */
       style={{ width: width ?? 260 }}
     >
+      {/* 读不出来时说一句。从前这里把 error 整个丢掉了 —— 见 SpeechNotice */}
+      <SpeechNotice error={speechError} onInstall={installVoice} onDismiss={dismissError} />
       <div className={BAND_TOP}>
           <span className="text-sm font-medium text-ink-muted flex items-center gap-2">
             <BookOpen className="w-4 h-4 text-accent-700/80" />

@@ -1,5 +1,6 @@
 import { memo, useState, useCallback, useRef, useLayoutEffect, useEffect, useMemo } from 'react'
 import { useSpeak } from '../hooks/useSpeak'
+import { SpeechNotice } from './SpeechNotice'
 import { tokenizeLine } from '../utils/tokenize'
 import { splitEdgePunctuation, stripEdgePunctuation } from '../utils/punctuation'
 import { BAND_SUB } from './chrome'
@@ -597,7 +598,7 @@ function LyricEditorInner({
    * 词典里没有的词会退回机器音，和别处一样；读不出声的手机就是不响，
    * 长按取词本身不受影响。
    */
-  const { speak } = useSpeak()
+  const { speak, error: speechError, installVoice, dismissError } = useSpeak()
 
   /** 长按取词：支持「词 → 句摘 → 修正范围」，始终使用底部抽屉 */
   const openWordDrawer = useCallback(
@@ -820,6 +821,15 @@ function LyricEditorInner({
 
   return (
     <div className="lyric-editor relative flex flex-col h-full overflow-hidden bg-white">
+      {/*
+        读不出来时说一句。**这一条是这次改动的重点**：长按取词就在这个组件里，
+        而这里从前把 useSpeak 的 error 整个丢掉了 —— 用户在平板上得到的
+        就是纯粹的「点了没用」，连「这台设备没有朗读引擎」都看不到。
+
+        摆在最上面、占一行（不是浮在正文上）：它是要人读一遍就关掉的一句话，
+        不是一闪而过的提示；正文被它推下去一行没什么损失。
+      */}
+      <SpeechNotice error={speechError} onInstall={installVoice} onDismiss={dismissError} />
       {/*
         沉浸态里这条带浮在正文上面，不占位置 —— 占位置的话每露出来一次正文就被
         往下推一次，读到哪儿都跟着跳。缘由和标题栏那边是同一份，见 App.tsx 里的说明。

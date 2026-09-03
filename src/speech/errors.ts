@@ -15,11 +15,31 @@ export interface SpeechFailure {
 /** 安卓朗读引擎缺语音数据时，报错文字里通常带这些字眼 */
 const MISSING_VOICE = /language|voice|not\s*installed|missing\s*data|unsupported|不支持|未安装/i
 
+/**
+ * 这台设备**压根没有朗读引擎**时插件说的话。
+ *
+ * 和「有引擎但缺英文」是两码事，所以先认它、再认上面那条 ——
+ * 这句里带着 language 之外的字眼，顺序反了会被误判成缺语音。
+ *
+ * 真实来历（后续规划.md 第五十七节）：用户的鸿蒙平板用卓易通跑这个 app，
+ * 那层兼容环境里一个朗读引擎都没有，于是启动时申请引擎就失败了。
+ * 这种情况**给「去安装」按钮是骗人的** —— 那颗键跳的是系统的语音包安装页，
+ * 而这台设备连那个页面都没有，点了什么也不会发生。
+ */
+const NO_ENGINE = /not\s*yet\s*initialized|not\s*available\s*on\s*this\s*device/i
+
 export function describeSpeechFailure(raw: unknown): SpeechFailure {
   const detail = (raw instanceof Error ? raw.message : String(raw ?? '')).trim()
 
   if (!detail) {
     return { message: '读不出来，检查一下系统的「文字转语音」设置', missingVoice: false }
+  }
+
+  if (NO_ENGINE.test(detail)) {
+    return {
+      message: '这台设备没有可用的朗读引擎，只有网上查得到发音的词能读',
+      missingVoice: false
+    }
   }
 
   if (MISSING_VOICE.test(detail)) {
