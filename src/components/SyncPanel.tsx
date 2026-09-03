@@ -13,15 +13,23 @@ import type { SyncStatus } from '../hooks/useSync'
  */
 export function SyncPanel({
   value,
-  onChange,
+  onSave,
+  onCancel,
   status,
   onSync
 }: {
   value: SyncConfig
-  onChange: (c: SyncConfig) => void
+  onSave: (c: SyncConfig) => void
+  onCancel: () => void
   status: SyncStatus
   onSync: () => void
 }) {
+  /**
+   * 改动先落在草稿里，**点了保存才算数**（用户要求，和 AI 设置那一屏对齐）。
+   * 这几格是粘贴进来的长串，手一抖改坏了又没有撤销，只能回坚果云再复制一遍。
+   */
+  const [draft, setDraft] = useState<SyncConfig>(value)
+  const dirty = JSON.stringify(draft) !== JSON.stringify(value)
   /**
    * 应用密码默不默认遮住，按**框里有没有东西**决定，不跟着动作走。
    * 这是这个项目定过的规矩（第四十节）：一律遮住会撞上「安卓密码框不给粘贴」那个老坑，
@@ -29,7 +37,7 @@ export function SyncPanel({
    */
   const [showPwd, setShowPwd] = useState(value.password.trim() === '')
 
-  const set = (patch: Partial<SyncConfig>) => onChange({ ...value, ...patch })
+  const set = (patch: Partial<SyncConfig>) => setDraft((d) => ({ ...d, ...patch }))
   const field =
     'w-full px-2.5 py-1.5 text-sm rounded-lg border border-paper-border bg-white text-ink focus:outline-none focus:ring-2 focus:ring-accent-500/30 focus:border-accent-500'
 
@@ -41,7 +49,7 @@ export function SyncPanel({
         <span className="text-xs text-ink-muted">坚果云账号（邮箱）</span>
         <input
           type="text"
-          value={value.username}
+          value={draft.username}
           onChange={(e) => set({ username: e.target.value })}
           placeholder="you@example.com"
           className={field}
@@ -54,7 +62,7 @@ export function SyncPanel({
         <div className="relative">
           <input
             type={showPwd ? 'text' : 'password'}
-            value={value.password}
+            value={draft.password}
             onChange={(e) => set({ password: e.target.value })}
             placeholder="坚果云「第三方应用管理」里生成的那一串"
             className={`${field} pr-9`}
@@ -75,18 +83,45 @@ export function SyncPanel({
         <span className="text-xs text-ink-muted">放在哪个文件夹</span>
         <input
           type="text"
-          value={value.folder}
+          value={draft.folder}
           onChange={(e) => set({ folder: e.target.value })}
-          placeholder="lyric-vocab"
+          placeholder="我的坚果云"
           className={field}
           autoComplete="off"
         />
+        <span className="block text-xs text-ink-muted leading-relaxed">
+          ⚠️ 这个文件夹必须在坚果云里已经存在，app 建不出来（手机上那套网络库不支持建文件夹）。
+          最省事的是直接填坚果云默认就有的那个：「我的坚果云」。
+        </span>
       </label>
+
+      <div className="flex gap-2 pt-1">
+        <button
+          type="button"
+          className="h-9 px-3 rounded-lg border border-stone-300 text-stone-600 text-sm hover:bg-stone-50"
+          onClick={onCancel}
+        >
+          取消
+        </button>
+        <button
+          type="button"
+          disabled={!dirty}
+          className="flex-1 h-9 rounded-lg bg-accent-600 hover:bg-accent-700 disabled:opacity-40 text-white text-sm font-medium"
+          onClick={() => onSave(draft)}
+        >
+          {dirty ? '保存' : '已保存'}
+        </button>
+      </div>
+
+      {/* 同步用的是**存下来的**那一份，不是草稿 —— 所以还没保存时先拦一下，别让人白等 */}
+      {dirty ? (
+        <p className="px-1 text-xs text-ink-muted">改了还没保存，先点「保存」再同步。</p>
+      ) : null}
 
       <button
         type="button"
         onClick={onSync}
-        disabled={status.state === 'syncing'}
+        disabled={status.state === 'syncing' || dirty}
         className="w-full px-3 py-2 rounded-lg border border-accent-300 bg-accent-50 text-sm text-accent-900 disabled:opacity-50"
       >
         {status.state === 'syncing' ? '正在同步…' : '立刻同步一次'}

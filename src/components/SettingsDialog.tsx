@@ -546,7 +546,7 @@ export function SettingsDialog({
     : editingCloud
     ? '云端朗读'
     : editingSync
-    ? '两台设备同步'
+    ? '云端同步'
     : showAgreement
       ? AGREEMENT_TITLE
       : showGuide
@@ -613,13 +613,24 @@ export function SettingsDialog({
           ) : editingSync ? (
             <SyncPanel
               value={syncConfig}
-              onChange={updateSync}
+              onSave={(c) => {
+                updateSync(c)
+                setEditingSync(false)
+              }}
+              onCancel={() => setEditingSync(false)}
               status={syncStatus}
               onSync={onSyncNow}
             />
           ) : editingCloud ? (
             <div className="space-y-4">
-              <CloudTtsPanel value={cloudConfig} onChange={updateCloud} />
+              <CloudTtsPanel
+                value={cloudConfig}
+                onSave={(c) => {
+                  updateCloud(c)
+                  setEditingCloud(false)
+                }}
+                onCancel={() => setEditingCloud(false)}
+              />
             </div>
           ) : showGuide ? (
             <UserGuide />
@@ -787,7 +798,7 @@ export function SettingsDialog({
                 >
                   <span className="flex-1 min-w-0">
                     <span className="block text-sm text-ink">
-                      两台设备同步{isSyncReady(syncConfig) ? '' : ' · 还没设置'}
+                      云端同步{isSyncReady(syncConfig) ? '' : ' · 还没设置'}
                     </span>
                     <span className="block text-xs text-ink-muted truncate">
                       {isSyncReady(syncConfig)
@@ -810,6 +821,12 @@ export function SettingsDialog({
                     e.target.value = ''
                   }}
                 />
+                {/*
+                  「手动同步」这个小标题是用户要的：这两颗键做的事和上面那行「云端同步」
+                  是同一类（把数据搬到另一台去），但一个自动一个手动 ——
+                  不点破的话，配了云端同步的人会以为这两颗是别的什么东西。
+                */}
+                <span className="block text-xs font-medium text-ink-muted pt-1">手动同步</span>
                 <div className="flex gap-2">
                   <button
                     type="button"
