@@ -150,7 +150,9 @@ export interface RemoteFile {
 export async function getRemote(c: SyncConfig): Promise<RemoteFile> {
   const dev = !Capacitor.isNativePlatform()
   const res = await request('GET', davUrl(c.folder, DATA_FILE, dev), c)
-  if (res.status === 404) return { text: null }
+  // 404 = 文件不在；409 = **上层文件夹都不在**（坚果云是这么回的）。
+  // 两种都是「云端还没有东西」，接下来该建文件夹再上传，不是报错
+  if (res.status === 404 || res.status === 409) return { text: null }
   if (res.status === 401) throw new SyncError('账号或应用密码不对（服务器回 401）')
   if (res.status < 200 || res.status >= 300) {
     throw new SyncError(`取云端那份失败：${res.status}${brief(res.text)}`)
@@ -198,17 +200,38 @@ export class StaleError extends Error {}
  * 建不成不报错：多半是**它本来就在**（405），那正是我们要的结果；
  * 真的建不了，后面 PUT 会报 409，那时的报错更说明问题。
  */
-export async function ensureFolder(c: SyncConfig): Promise<void> {
+export async function ensureFolder(c: SyncConfig): Promise<{ ok: boolean; detail: string }> {
   const dev = !Capacitor.isNativePlatform()
   const url = `${dev ? DEV_BASE : NATIVE_BASE}/${encodeURIComponent(c.folder.trim())}`
   try {
-    await request('MKCOL', url, c)
-  } catch {
-    /* 见上 */
+    const res = await request('MKCOL', url, c)
+    // 405 = 它本来就在，正是我们要的结果
+    const ok = (res.status >= 200 && res.status < 300) || res.status === 405
+    return { ok, detail: ok ? '' : `建文件夹返回 ${res.status}${brief(res.text)}` }
+  } catch (e) {
+    return { ok: false, detail: e instanceof Error ? e.message : String(e) }
   }
 }
 
+/**
+ * 把服务器的报错变成人能读的一句。
+ *
+ * ⚠️ WebDAV 报错是一整坨 XML，开头一百多个字符全是 `<?xml ... xmlns:d="DAV:" ...` 这种命名空间，
+ * **真正有用的那句在后面**。第一版直接截前 120 个字符，结果屏上显示的全是命名空间、
+ * 一个字的线索都没有 —— 用户第一次试就撞上了这个。
+ * 所以先把 `<s:message>` / `<s:exception>` 抠出来，抠不到才退回原文。
+ */
+export function davMessage(text: string): string {
+  const pick = (tag: string) => {
+    const m = text.match(new RegExp(`<[a-z]*:?${tag}[^>]*>([^]*?)</[a-z]*:?${tag}>`, 'i'))
+    return m?.[1]?.trim() ?? ''
+  }
+  const msg = pick('message') || pick('exception') || pick('responsedescription')
+  const out = (msg || text).trim().replace(/\s+/g, ' ').slice(0, 300)
+  return out
+}
+
 function brief(text: string): string {
-  const t = text.trim().slice(0, 120)
+  const t = davMessage(text)
   return t ? `：${t}` : ''
 }

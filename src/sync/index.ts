@@ -98,9 +98,20 @@ export async function syncNow(cfg: SyncConfig = loadSyncConfig()): Promise<SyncO
 
     // 云端还没有这个文件：第一次，直接把本地传上去
     if (remote.text === null) {
-      await ensureFolder(cfg)
-      const text = envelope(local)
-      await putRemote(cfg, text)
+      // 云端一个文件都没有：先把文件夹建出来（坚果云要求文件必须在已存在的文件夹里），
+      // 再把本地整份传上去。建不成也照样试着传 —— 万一它其实在，只是 MKCOL 不给建
+      const folder = await ensureFolder(cfg)
+      try {
+        await putRemote(cfg, envelope(local))
+      } catch (e) {
+        if (!folder.ok && e instanceof SyncError) {
+          throw new SyncError(
+            `${e.message}。自动建文件夹也没成（${folder.detail}）—— ` +
+              `去坚果云网页上手工建一个叫「${cfg.folder}」的同步文件夹，再回来试`
+          )
+        }
+        throw e
+      }
       await saveBase(local)
       return { report: zero(), localChanged: false, at: Date.now() }
     }
