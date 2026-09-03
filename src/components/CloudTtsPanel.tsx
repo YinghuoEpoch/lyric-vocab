@@ -12,11 +12,22 @@ import { getCloudCalls, resetCloudCalls, type CloudTtsConfig } from '../speech/c
  */
 export function CloudTtsPanel({
   value,
-  onChange
+  onSave,
+  onCancel
 }: {
   value: CloudTtsConfig
-  onChange: (c: CloudTtsConfig) => void
+  onSave: (c: CloudTtsConfig) => void
+  onCancel: () => void
 }) {
+  /**
+   * 改动先落在草稿里，**点了保存才算数**。
+   *
+   * 用户要求的，理由很实在：「不小心修改了内容又得重新输入」——
+   * 这几格是粘贴进来的长串，手一抖改坏了、又没有撤销，只能回坚果云/火山再复制一遍。
+   * 和 AI 设置那一屏对齐（那儿本来就是保存制）。
+   */
+  const [draft, setDraft] = useState<CloudTtsConfig>(value)
+  const dirty = JSON.stringify(draft) !== JSON.stringify(value)
   /**
    * 令牌默不默认遮住，按**框里有没有东西**决定，不跟着动作走。
    *
@@ -27,7 +38,7 @@ export function CloudTtsPanel({
   /** 这台机器上真发出去过多少次。进这一屏时读一次就够 */
   const [calls, setCalls] = useState(getCloudCalls)
 
-  const set = (patch: Partial<CloudTtsConfig>) => onChange({ ...value, ...patch })
+  const set = (patch: Partial<CloudTtsConfig>) => setDraft((d) => ({ ...d, ...patch }))
   const field = 'w-full px-2.5 py-1.5 text-sm rounded-lg border border-paper-border bg-white text-ink focus:outline-none focus:ring-2 focus:ring-accent-500/30 focus:border-accent-500'
 
   return (
@@ -36,7 +47,7 @@ export function CloudTtsPanel({
         <span className="text-xs text-ink-muted">应用 ID（APPID）</span>
         <input
           type="text"
-          value={value.appid}
+          value={draft.appid}
           onChange={(e) => set({ appid: e.target.value })}
           placeholder="控制台里那串数字"
           className={field}
@@ -49,7 +60,7 @@ export function CloudTtsPanel({
         <div className="relative">
           <input
             type={showToken ? 'text' : 'password'}
-            value={value.token}
+            value={draft.token}
             onChange={(e) => set({ token: e.target.value })}
             placeholder="粘贴进来"
             className={`${field} pr-9`}
@@ -71,7 +82,7 @@ export function CloudTtsPanel({
         <span className="text-xs text-ink-muted">音色（voice_type）</span>
         <input
           type="text"
-          value={value.voiceType}
+          value={draft.voiceType}
           onChange={(e) => set({ voiceType: e.target.value })}
           placeholder="BV001_streaming"
           className={field}
@@ -83,13 +94,31 @@ export function CloudTtsPanel({
         <span className="text-xs text-ink-muted">服务集群（一般不用改）</span>
         <input
           type="text"
-          value={value.cluster}
+          value={draft.cluster}
           onChange={(e) => set({ cluster: e.target.value })}
           placeholder="volcano_tts"
           className={field}
           autoComplete="off"
         />
       </label>
+
+      <div className="flex gap-2 pt-1">
+        <button
+          type="button"
+          className="h-9 px-3 rounded-lg border border-stone-300 text-stone-600 text-sm hover:bg-stone-50"
+          onClick={onCancel}
+        >
+          取消
+        </button>
+        <button
+          type="button"
+          disabled={!dirty}
+          className="flex-1 h-9 rounded-lg bg-accent-600 hover:bg-accent-700 disabled:opacity-40 text-white text-sm font-medium"
+          onClick={() => onSave(draft)}
+        >
+          {dirty ? '保存' : '已保存'}
+        </button>
+      </div>
 
       <div className="flex items-center justify-between gap-2 pt-1">
         <span className="flex-1 min-w-0 text-sm text-ink">

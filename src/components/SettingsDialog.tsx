@@ -8,6 +8,8 @@ import { describeTarget, loadConfig, resolveConfig, type AiConfig } from '../enr
 import { useBackHandler, BackPriority } from '../hooks/useBackHandler'
 import { getSafeAreaReport, type SafeAreaReport } from '../safeArea'
 import { CloudTtsPanel } from './CloudTtsPanel'
+import { SyncPanel } from './SyncPanel'
+import { loadSyncConfig, saveSyncConfig, isSyncReady, type SyncConfig } from '../sync'
 import {
   loadCloudConfig,
   saveCloudConfig,
@@ -25,6 +27,7 @@ import {
   type TryReadResult
 } from '../speech/diagnose'
 import type { AccentColor, ReaderSettings } from '../types'
+import type { SyncStatus } from '../hooks/useSync'
 
 /** 一问一答：问出来了就显示答案，报错了就把原文摊出来 —— 诊断要的正是原文 */
 function AnswerRow({ label, answer }: { label: string; answer: Answer }) {
@@ -175,6 +178,9 @@ function SpeechReadout({
 interface SettingsDialogProps {
   open: boolean
   onClose: () => void
+  /** 同步的状态和那颗手动按钮。时机住在 App 里（回前台、改完延迟传），这里只显示和触发 */
+  syncStatus: SyncStatus
+  onSyncNow: () => void
   readerSettings: ReaderSettings
   onReaderSettingsChange: (s: ReaderSettings) => void
   onExportBackup: () => void
@@ -359,7 +365,9 @@ export function SettingsDialog({
   readerSettings,
   onReaderSettingsChange,
   onExportBackup,
-  onRestoreBackup
+  onRestoreBackup,
+  syncStatus,
+  onSyncNow
 }: SettingsDialogProps) {
   /**
    * AI 配置当场读出来。理由和两个弹窗里一样：先渲染一帧空配置的话，
@@ -397,6 +405,9 @@ export function SettingsDialog({
   const [tryRunning, setTryRunning] = useState<string | null>(null)
   /** 云端朗读的凭证。打开设置页时读一次，改一下存一下 */
   const [cloudConfig, setCloudConfig] = useState<CloudTtsConfig>(loadCloudConfig)
+  /** 正在填坚果云的凭证 */
+  const [editingSync, setEditingSync] = useState(false)
+  const [syncConfig, setSyncConfig] = useState<SyncConfig>(loadSyncConfig)
 
   useEffect(() => {
     if (open) {
@@ -413,6 +424,8 @@ export function SettingsDialog({
       setTryResults({})
       setTryRunning(null)
       setCloudConfig(loadCloudConfig())
+      setEditingSync(false)
+      setSyncConfig(loadSyncConfig())
       setAudioStats(null)
       void cacheStats().then(setAudioStats)
     }
@@ -466,6 +479,11 @@ export function SettingsDialog({
     saveCloudConfig(c)
   }
 
+  const updateSync = (c: SyncConfig) => {
+    setSyncConfig(c)
+    saveSyncConfig(c)
+  }
+
   /**
    * 进子屏之前，把主列表滚到哪儿了记下来。
    *
@@ -488,7 +506,8 @@ export function SettingsDialog({
    *
    * 所以：进子屏一律从头看，退回来还你原来那个位置。
    */
-  const inSub = editingAi || editingCloud || showAgreement || showGuide || showDev || showSpeechDev
+  const inSub =
+    editingAi || editingCloud || editingSync || showAgreement || showGuide || showDev || showSpeechDev
   useLayoutEffect(() => {
     const el = scrollRef.current
     if (!el) return
@@ -504,6 +523,7 @@ export function SettingsDialog({
     else if (showAgreement) setShowAgreement(false)
     else if (showGuide) setShowGuide(false)
     else if (editingCloud) setEditingCloud(false)
+    else if (editingSync) setEditingSync(false)
     else if (showSpeechDev) setShowSpeechDev(false)
     else if (showDev) setShowDev(false)
     else onClose()
@@ -525,6 +545,8 @@ export function SettingsDialog({
     ? 'AI 设置'
     : editingCloud
     ? '云端朗读'
+    : editingSync
+    ? '云端同步'
     : showAgreement
       ? AGREEMENT_TITLE
       : showGuide
@@ -538,6 +560,8 @@ export function SettingsDialog({
     ? () => setEditingAi(false)
     : editingCloud
     ? () => setEditingCloud(false)
+    : editingSync
+    ? () => setEditingSync(false)
     : showAgreement
       ? () => setShowAgreement(false)
       : showGuide
@@ -586,9 +610,24 @@ export function SettingsDialog({
                 onCancel={() => setEditingAi(false)}
               />
             </div>
+          ) : editingSync ? (
+            <SyncPanel
+              value={syncConfig}
+              // 保存之后**留在这一屏**（用户要的）：他可能还要接着点「立刻同步一次」。
+              // 存没存住看那颗键本身 —— 保存完它会变成「已保存」并置灰
+              onSave={updateSync}
+              onCancel={() => setEditingSync(false)}
+              status={syncStatus}
+              onSync={onSyncNow}
+            />
           ) : editingCloud ? (
             <div className="space-y-4">
-              <CloudTtsPanel value={cloudConfig} onChange={updateCloud} />
+              <CloudTtsPanel
+                value={cloudConfig}
+                // 同上：保存之后留在这一屏，他可能还要去试读
+                onSave={updateCloud}
+                onCancel={() => setEditingCloud(false)}
+              />
             </div>
           ) : showGuide ? (
             <UserGuide />
@@ -749,6 +788,25 @@ export function SettingsDialog({
               </Section>
 
               <Section title="数据">
+                <button
+                  type="button"
+                  onClick={() => enterSub(() => setEditingSync(true))}
+                  className="w-full flex items-center gap-2 text-left"
+                >
+                  <span className="flex-1 min-w-0">
+                    <span className="block text-sm text-ink">
+                      云端同步{isSyncReady(syncConfig) ? '' : ' · 还没设置'}
+                    </span>
+                    <span className="block text-xs text-ink-muted truncate">
+                      {isSyncReady(syncConfig)
+                        ? syncStatus.lastAt > 0
+                          ? `上次同步 ${new Date(syncStatus.lastAt).toLocaleString('zh-CN')}`
+                          : '还没同步过'
+                        : '手机和平板通过坚果云共用同一份数据'}
+                    </span>
+                  </span>
+                  <ChevronRight className="w-4 h-4 text-ink-muted shrink-0" />
+                </button>
                 <input
                   ref={backupInputRef}
                   type="file"
@@ -760,6 +818,12 @@ export function SettingsDialog({
                     e.target.value = ''
                   }}
                 />
+                {/*
+                  「手动同步」这个小标题是用户要的：这两颗键做的事和上面那行「云端同步」
+                  是同一类（把数据搬到另一台去），但一个自动一个手动 ——
+                  不点破的话，配了云端同步的人会以为这两颗是别的什么东西。
+                */}
+                <span className="block text-sm text-ink pt-1">手动同步</span>
                 <div className="flex gap-2">
                   <button
                     type="button"

@@ -38,6 +38,7 @@ import { useIsWide } from './hooks/useWideLayout'
 import { shouldImmerse, useImmersiveReading } from './hooks/useImmersiveReading'
 import { usePanelWidth } from './hooks/usePanelWidth'
 import { useLastReadByBook } from './hooks/useLastReadByBook'
+import { useSync } from './hooks/useSync'
 import { useAutoFill } from './hooks/useAutoFill'
 import { useAutoMark } from './hooks/useAutoMark'
 import { AutoMarkDialog } from './components/AutoMarkDialog'
@@ -303,6 +304,25 @@ export default function App() {
       // 读取失败时保持现有内存数据
     }
   }, [])
+
+  /**
+   * 两台设备同步（坚果云）。
+   *
+   * 时机住在这儿而不是设置页里：**设置页关着的时候也要同步** ——
+   * 回到前台自动拉一次、改完东西过几秒自动传一次，见 useSync。
+   * 设置页只负责显示状态和那颗手动按钮。
+   */
+  const { status: syncStatus, syncManually, notifyChanged } = useSync(refreshData)
+
+  /**
+   * 数据一变就知会同步一声（它自己会等几秒，连续编辑只传一次）。
+   *
+   * 挂在这儿是因为**所有写操作最后都会走一遍 refreshData** ——
+   * 逐个写入口去挂钩子迟早漏一处，而漏掉的那处就是「改了不同步」。
+   */
+  useEffect(() => {
+    notifyChanged()
+  }, [appData, notifyChanged])
 
   useEffect(() => {
     let cancelled = false
@@ -1314,6 +1334,8 @@ export default function App() {
           trashCount={trashCount}
           currentPageId={currentPageId}
           lastReadPages={lastReadPages}
+          syncStatus={syncStatus}
+          onSyncNow={syncManually}
           onAddBook={handleAddBook}
           onMoveBookToTrash={handleMoveBookToTrash}
           onMovePageToTrash={handleMovePageToTrash}
