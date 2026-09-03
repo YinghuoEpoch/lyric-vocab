@@ -1,14 +1,27 @@
 import localforage from 'localforage'
 import { getAppData, replaceAllData } from '../storage'
 import type { AppData } from '../types'
-import { mergeAppData, onlyProgressChanged, type MergeReport } from './merge'
 import { formatSize } from './codec'
+import { mergeAppData, onlyProgressChanged, type MergeReport } from './merge'
 import {
+  contentsOf,
+  fromIndex,
+  looksLikeLegacy,
+  orphanPages,
+  pagesToDownload,
+  pagesToUpload,
+  toIndex,
+  type SyncIndex
+} from './split'
+import {
+  deletePageContent,
   ensureFolder,
+  getPageContent,
   getRemote,
   headRemoteEtag,
   isSyncReady,
   loadSyncConfig,
+  putPageContent,
   putPrev,
   putRemote,
   StaleError,
@@ -19,11 +32,16 @@ import {
 /**
  * 同步一次是怎么走的。
  *
- * 取云端 → 和本地、底本三方合并 → 本地存合并结果 → 写回云端 → 把合并结果记成新底本。
+ * 取索引 → 和本地、底本三方合并 → 只取／只传**真变过的那几篇正文** →
+ * 本地存合并结果 → 写回索引 → 把合并结果记成新底本。
  *
  * **底本**（上次同步完是什么样）是三方合并的依据，见 merge.ts 开头那段。
  * 存在单独的库里，不进主数据、也不进导出的备份 ——
  * 它是「这台机器同步到哪儿了」，换台机器毫无意义。
+ * 底本存的是**完整数据**（含正文）：它只在本机、不走网络，存全了才好比。
+ *
+ * **正文和索引拆开存**的缘由见 split.ts —— 一句话：用户划一个词改的是 17 KB，
+ * 而原先要把 1.44 MB 整个重传一遍。
  */
 
 const baseStore = localforage.createInstance({
@@ -33,7 +51,7 @@ const baseStore = localforage.createInstance({
 })
 
 const BASE_KEY = 'base'
-/** 上次见到的云端版本号。用来判断「云端没变过」，从而**整份下载都省掉** */
+/** 上次见到的云端版本号。用来判断「云端没变过」，从而**连索引都不用下** */
 const ETAG_KEY = 'lyric-vocab-sync-etag'
 
 function loadEtag(): string | null {
@@ -49,7 +67,7 @@ function saveEtag(etag: string | undefined): void {
     if (etag) localStorage.setItem(ETAG_KEY, etag)
     else localStorage.removeItem(ETAG_KEY)
   } catch {
-    /* 忽略：最坏就是下次多下一次 */
+    /* 忽略：最坏就是下次多问一次 */
   }
 }
 
@@ -69,7 +87,7 @@ async function saveBase(data: AppData): Promise<void> {
   }
 }
 
-/** 忘掉底本。换账号、或者用户想强制走一次「并集」时用 */
+/** 忘掉底本。换账号、或者想强制走一次「并集」时用 */
 export async function clearBase(): Promise<void> {
   try {
     await baseStore.removeItem(BASE_KEY)
@@ -78,21 +96,32 @@ export async function clearBase(): Promise<void> {
   }
 }
 
-/** 存进云端那个文件长什么样 */
+/** 存进云端那个索引文件长什么样 */
 interface SyncEnvelope {
-  version: 1
+  /** 1 = 旧格式（正文就在这一整块里）；2 = 索引，正文另存 */
+  version: 1 | 2
   savedAt: number
-  data: AppData
+  data: SyncIndex | AppData
 }
 
-function parseEnvelope(text: string): AppData {
+/**
+ * 把云端那份读成索引。
+ *
+ * ⚠️ **旧格式也要认**：用户云端已经有一份 version 1 的（正文就在里面），
+ * 读不出来等于把他同步上去的东西弄丢。认出来之后正文直接从那一份里取，
+ * 下一次写回去时自动变成新格式。
+ */
+function parseRemote(text: string): { index: SyncIndex; contents: Map<string, string> | null } {
   const parsed = JSON.parse(text)
-  // 直接就是一份 AppData 也认（比如用户自己把备份文件传上去了）
   const data = parsed?.data ?? parsed
   if (!data || typeof data !== 'object' || !Array.isArray(data.pages)) {
     throw new SyncError('云端那个文件不像是这个 app 的数据')
   }
-  return data as AppData
+  if (looksLikeLegacy(data)) {
+    const full = data as AppData
+    return { index: toIndex(full), contents: contentsOf(full) }
+  }
+  return { index: data as SyncIndex, contents: null }
 }
 
 export interface SyncOutcome {
@@ -100,7 +129,7 @@ export interface SyncOutcome {
   /** 本地被合并结果改动了吗 —— 界面据此决定要不要刷新 */
   localChanged: boolean
   at: number
-  /** 这一次实际走了多少流量，写成人看的样子。「没走」就是两边都没变，只问了一句 */
+  /** 这一次实际走了多少流量，写成人看的样子 */
   traffic: string
 }
 
@@ -109,11 +138,11 @@ export interface SyncOutcome {
  *
  * ⚠️ **「云端在这中间被改过」要重来一遍，不能硬盖**（StaleError）。
  * 两台设备几乎同时同步时会撞上，硬盖就会吃掉一边的改动，而且神不知鬼不觉。
- * 重来一次是安全的：三方合并是幂等的，再合一遍只会把对面新写的那些也吸收进来。
+ * 重来一次是安全的：三方合并是幂等的，再合一遍只会把对面新写的也吸收进来。
  */
 export async function syncNow(
   cfg: SyncConfig = loadSyncConfig(),
-  /** 自动跑的（回前台、改完延迟）。手动那颗按钮传 false —— 它不受省流量那几道闸限制 */
+  /** 自动跑的（回前台、改完延迟）。手动那颗按钮传 false —— 不受省流量那几道闸限制 */
   auto = false
 ): Promise<SyncOutcome> {
   if (!isSyncReady(cfg)) throw new SyncError('还没填全（账号、应用密码、文件夹）')
@@ -123,24 +152,18 @@ export async function syncNow(
     const base = await loadBase()
 
     /*
-     * ⚠️ **先问一句「变了没有」，别张口就把整份拉下来。**
-     *
-     * 用户问过「这么高频率的同步会不会用完额度」—— 会。他那份数据是整本整本的小说，
-     * 好几兆；而绝大多数次同步其实两边都没动过。一次 HEAD 几百字节，一次 GET 好几兆，
-     * 差着四个数量级。
-     *
-     * 两个条件同时成立才敢跳过：**云端版本号和上次一样**（对面没动），
-     * 且**本地和底本一模一样**（我也没动）。少一个都不能跳。
-     */
-    /*
      * 「我这边没动过」——自动同步时，**只有阅读进度变了也算没动过**。
-     * 那是流量的头号大户，见 merge.ts 里 onlyProgressChanged 的说明。
+     * 见 merge.ts 里 onlyProgressChanged 的说明。
      * 进度不会因此丢：下次有别的东西要传时，它顺路就一起走了。
      */
     const localIdle = base
       ? sameJson(local, base) || (auto && onlyProgressChanged(base, local))
       : false
 
+    /*
+     * ⚠️ **先问一句「变了没有」，别张口就把索引拉下来。** 一次 HEAD 几百字节。
+     * 两个条件同时成立才敢跳过：云端版本号和上次一样，且本地没动过。
+     */
     const seenEtag = loadEtag()
     if (seenEtag && localIdle) {
       const nowEtag = await headRemoteEtag(cfg)
@@ -150,15 +173,14 @@ export async function syncNow(
     }
 
     const remote = await getRemote(cfg)
+    let down = remote.bytes ?? 0
+    let up = 0
 
-    // 云端还没有这个文件：第一次，直接把本地传上去
+    // 云端一个文件都没有：第一次，索引和每篇正文都传上去
     if (remote.text === null) {
-      // 云端一个文件都没有：先把文件夹建出来（坚果云要求文件必须在已存在的文件夹里），
-      // 再把本地整份传上去。建不成也照样试着传 —— 万一它其实在，只是 MKCOL 不给建
       const folder = await ensureFolder(cfg)
-      let up = { bytes: 0 }
       try {
-        up = await putRemote(cfg, envelope(local))
+        up += (await putRemote(cfg, envelope(toIndex(local)))).bytes
       } catch (e) {
         if (!folder.ok && e instanceof SyncError) {
           throw new SyncError(
@@ -168,55 +190,89 @@ export async function syncNow(
         }
         throw e
       }
+      for (const [id, content] of contentsOf(local)) {
+        up += (await putPageContent(cfg, id, content)).bytes
+      }
       await saveBase(local)
-      // 刚写完，云端版本号得重新问一次才准 —— 不问就会白下一次
       saveEtag((await headRemoteEtag(cfg)) ?? undefined)
       return {
         report: zero(),
         localChanged: false,
         at: Date.now(),
-        traffic: `传了 ${formatSize(up.bytes)}`
+        traffic: `传了 ${formatSize(up)}`
       }
     }
 
-    const remoteData = parseEnvelope(remote.text)
-    const { merged, report } = mergeAppData(base, local, remoteData)
+    const { index: remoteIndex, contents: legacyContents } = parseRemote(remote.text)
 
+    /*
+     * 合并走的是**索引**，不是完整数据 —— 正文在索引里只是一枚指纹。
+     * 「正文改了」照样会被合并看见（指纹变了，那条记录就不一样了），
+     * 而合并本身完全不必碰那几兆正文。**merge.ts 一个字都没动。**
+     */
+    const localIndex = toIndex(local)
+    const baseIndex = base ? toIndex(base) : null
+    const { merged: mergedIndex, report } = mergeAppData(
+      baseIndex as unknown as AppData | null,
+      localIndex as unknown as AppData,
+      remoteIndex as unknown as AppData
+    ) as unknown as { merged: SyncIndex; report: MergeReport }
+
+    /* 正文：手上有的就用手上的，只把对不上的那几篇取回来 */
+    const contents = contentsOf(local)
+    if (legacyContents) {
+      // 旧格式那一份里带着正文，先拿来用，省得再下一遍
+      for (const [id, c] of legacyContents) if (!contents.has(id)) contents.set(id, c)
+    }
+    for (const id of pagesToDownload(mergedIndex, contents)) {
+      const got = await getPageContent(cfg, id)
+      if (got !== null) {
+        contents.set(id, got)
+        down += got.length
+      }
+    }
+
+    const merged = fromIndex(mergedIndex, contents)
     const localChanged = !sameJson(merged, local)
-    const remoteNeedsWrite = !sameJson(merged, remoteData)
+    const remoteNeedsWrite = !sameJson(mergedIndex, remoteIndex) || legacyContents !== null
 
-    let upBytes = 0
     if (remoteNeedsWrite) {
       /*
        * 覆盖之前把云端那一版另存一份 —— 合并要是有 bug，这是唯一能捞回来的东西
-       * （第二十一节的教训）。
-       *
-       * 但**不必每次都存**：那等于每次同步的上传量翻倍，而用户的免费额度是按月算的。
-       * 一小时一份足够了 —— 真出事也是「最多丢一小时内的合并结果」，
-       * 而且本地还留着底本，两头都不是唯一副本。
+       * （第二十一节的教训）。但**不必每次都存**：一小时一份足够，
+       * 真出事也就是「最多丢一小时内的合并结果」，何况本地还留着底本。
        */
       if (shouldWritePrev()) {
         await putPrev(cfg, remote.text)
         markPrevWritten()
       }
+      /*
+       * ⚠️ **先传正文，再写索引，顺序不能反。**
+       * 索引先写成功而正文还没传完的话，另一台会看到一篇「有壳没正文」的文档，
+       * 而且它那边一比对指纹，会当成「对面把正文改成空的了」——
+       * 那就不是慢一步的问题，是真会把正文冲掉。
+       */
+      for (const id of pagesToUpload(mergedIndex, remoteIndex)) {
+        up += (await putPageContent(cfg, id, contents.get(id) ?? '')).bytes
+      }
       try {
-        const up = await putRemote(cfg, envelope(merged), remote.etag)
-        upBytes = up.bytes
+        up += (await putRemote(cfg, envelope(mergedIndex), remote.etag)).bytes
       } catch (e) {
         if (e instanceof StaleError && attempt === 0) continue // 重来一遍
         throw e
       }
+      // 顺手清掉没人要的正文文件。失败无所谓，留个死文件不影响任何事
+      for (const id of orphanPages(mergedIndex, remoteIndex)) await deletePageContent(cfg, id)
     }
 
     if (localChanged) await replaceAllData(merged)
     await saveBase(merged)
     saveEtag(remoteNeedsWrite ? ((await headRemoteEtag(cfg)) ?? undefined) : remote.etag)
-    const down = remote.bytes ?? 0
     return {
       report,
       localChanged,
       at: Date.now(),
-      traffic: `下 ${formatSize(down)}${upBytes ? ` / 上 ${formatSize(upBytes)}` : ''}`
+      traffic: `下 ${formatSize(down)}${up ? ` / 上 ${formatSize(up)}` : ''}`
     }
   }
 
@@ -244,8 +300,8 @@ function markPrevWritten(): void {
   }
 }
 
-function envelope(data: AppData): string {
-  const payload: SyncEnvelope = { version: 1, savedAt: Date.now(), data }
+function envelope(index: SyncIndex): string {
+  const payload: SyncEnvelope = { version: 2, savedAt: Date.now(), data: index }
   return JSON.stringify(payload)
 }
 
@@ -279,3 +335,4 @@ export function setLastSyncAt(at: number): void {
 
 export * from './webdav'
 export * from './merge'
+export * from './split'

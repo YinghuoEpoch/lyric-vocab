@@ -71,6 +71,16 @@ export const DATA_FILE = 'data.json'
 export const PREV_FILE = 'data.prev.json'
 
 /**
+ * 每篇正文一个文件。
+ *
+ * ⚠️ **平铺，不放子目录** —— CapacitorHttp 不支持 MKCOL，建不出子目录
+ * （第六十一节的坑）。所有文件只能待在用户手工建的那一个文件夹里。
+ */
+export function pageFile(pageId: string): string {
+  return `page-${pageId}.json`
+}
+
+/**
  * 路径里的每一段都要转义。
  *
  * 文件夹名用户可以自己填，写个中文或者带空格的名字很正常 ——
@@ -208,6 +218,43 @@ export async function putRemote(
     throw new SyncError(`写云端失败：${res.status}${brief(res.text)}`)
   }
   return { bytes: body.length }
+}
+
+/** 取一篇正文。云端没有就返回 null（那篇多半是别处刚加的，还没传完） */
+export async function getPageContent(c: SyncConfig, pageId: string): Promise<string | null> {
+  const dev = !Capacitor.isNativePlatform()
+  const res = await request('GET', davUrl(c.folder, pageFile(pageId), dev), c)
+  if (res.status === 404 || res.status === 409) return null
+  if (res.status < 200 || res.status >= 300) {
+    throw new SyncError(`取正文失败：${res.status}${brief(res.text)}`)
+  }
+  const parsed = JSON.parse(unpack(res.text))
+  return typeof parsed?.content === 'string' ? parsed.content : ''
+}
+
+/** 传一篇正文上去。返回实际走了多少字节，界面要报流量 */
+export async function putPageContent(
+  c: SyncConfig,
+  pageId: string,
+  content: string
+): Promise<{ bytes: number }> {
+  const dev = !Capacitor.isNativePlatform()
+  const body = pack(JSON.stringify({ id: pageId, content }))
+  const res = await request('PUT', davUrl(c.folder, pageFile(pageId), dev), c, body)
+  if (res.status < 200 || res.status >= 300) {
+    throw new SyncError(`传正文失败：${res.status}${brief(res.text)}`)
+  }
+  return { bytes: body.length }
+}
+
+/** 清掉没人要的正文文件。失败就算了 —— 留一个死文件不影响任何事，报错反而吓人 */
+export async function deletePageContent(c: SyncConfig, pageId: string): Promise<void> {
+  const dev = !Capacitor.isNativePlatform()
+  try {
+    await request('DELETE', davUrl(c.folder, pageFile(pageId), dev), c)
+  } catch {
+    /* 见上 */
+  }
 }
 
 /** 云端被覆盖之前那一版，另存一份。第二十一节的教训：救得回来才敢动 */
