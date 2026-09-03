@@ -58,15 +58,16 @@ export interface ImmersiveReading {
  * 用户要的：平板横屏、两侧栏都收起来时，像看视频一样只剩正文 ——
  * app 的顶栏、安卓的两条系统栏、右边那颗「笔记」键全收掉。
  *
- * 两样东西分两套人马管，别搞混：
+ * **状态栏、顶栏、「笔记」键三样绑成一体**：点正文空白处一起出来，3 秒后一起收，
+ * 再点一下立刻收。这是第二版定下的 —— 第一版只有顶栏和「笔记」键跟着走，
+ * 系统栏另有一套作息，于是同一条顶栏在两种形态下厚度不一样，
+ * 退出沉浸时还分两段长出来。缘由见下面那个开关的注释，以及 safeArea.ts 的 --sa-top-real。
  *
- * - **系统栏**：交给系统。藏起来之后从屏幕顶端往下滑就临时浮出来、过会儿自己收，
- *   这套行为是安卓自带的（见 SafeAreaPlugin.setImmersive），这里只管开关。
- * - **顶栏和「笔记」键**：自己管。点正文空白处露出来，3 秒后收回去，
- *   再点一下立刻收。计时器只在沉浸态里跑。
- *
- * 顶栏和「笔记」键绑在一起出没，是因为汉堡键长在顶栏里 ——
+ * 顶栏和「笔记」键必须绑在一起，还有个硬理由：汉堡键长在顶栏里 ——
  * 顶栏不跟着出来，沉浸之后就没路再打开文库了。
+ *
+ * 系统栏藏起来之后，从屏幕顶端往下滑还能临时把它叫出来、过会儿自己收，
+ * 那一套是安卓自带的（见 SafeAreaPlugin.setImmersive），这里不掐那块表。
  */
 export function useImmersiveReading(immersive: boolean): ImmersiveReading {
   const [chromeVisible, setChromeVisible] = useState(false)
@@ -79,12 +80,26 @@ export function useImmersiveReading(immersive: boolean): ImmersiveReading {
     }
   }, [])
 
-  /* 进出沉浸：告诉原生藏还是放，并且把顶栏那一套收回初始状态 */
+  /* 进出沉浸：把顶栏那一套收回初始状态 */
   useEffect(() => {
-    void setSystemBarsHidden(immersive)
     setChromeVisible(false)
     clearTimer()
   }, [immersive, clearTimer])
+
+  /*
+   * **系统栏跟着顶栏一起出没**，不是跟着「沉不沉浸」走。
+   *
+   * 三样绑成一体（状态栏 / 顶栏 / 「笔记」键）是用户定的，起因是两种形态跨度太大：
+   * 从前沉浸里点出来的顶栏贴着屏幕最顶上（84px），正常模式下同一条顶栏上面还顶着
+   * 状态栏（108px）—— 同一条栏两种厚度。而且退出沉浸时这两截是**分两次**长出来的：
+   * 网页那一步是瞬间的，状态栏那一步要等安卓滑完动画再报尺寸。
+   *
+   * 现在露出顶栏就把状态栏一起放出来，且顶栏按 `--sa-top-real`（状态栏**本来**多高，
+   * 见 safeArea.ts）预先留好它的位置 —— 两种形态从此一样厚，退出沉浸也没有第二段了。
+   */
+  useEffect(() => {
+    void setSystemBarsHidden(immersive && !chromeVisible)
+  }, [immersive, chromeVisible])
 
   /*
    * 兜底：整个组件没了也要把系统栏放回来。
@@ -109,11 +124,11 @@ export function useImmersiveReading(immersive: boolean): ImmersiveReading {
   useEffect(() => {
     if (!immersive) return
     const onVisible = () => {
-      if (!document.hidden) void setSystemBarsHidden(true)
+      if (!document.hidden) void setSystemBarsHidden(!chromeVisible)
     }
     document.addEventListener('visibilitychange', onVisible)
     return () => document.removeEventListener('visibilitychange', onVisible)
-  }, [immersive])
+  }, [immersive, chromeVisible])
 
   /* 露出来之后开始倒计时。chromeVisible 每翻一次都重排一次表 */
   useEffect(() => {

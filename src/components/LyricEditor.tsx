@@ -821,14 +821,18 @@ function LyricEditorInner({
   return (
     <div className="lyric-editor relative flex flex-col h-full overflow-hidden bg-white">
       {/*
-        沉浸态里这条带浮在正文上面（`top-11` 正好让开上面那条 44px 的标题栏），
-        不占位置 —— 占位置的话每露出来一次正文就被往下推一次，读到哪儿都跟着跳。
-        缘由和标题栏那边是同一份，见 App.tsx 里 header 上方的说明。
+        沉浸态里这条带浮在正文上面，不占位置 —— 占位置的话每露出来一次正文就被
+        往下推一次，读到哪儿都跟着跳。缘由和标题栏那边是同一份，见 App.tsx 里的说明。
+
+        `top` 是「状态栏那一截 + 标题栏那条 44px」：露出来的这一套必须和正常模式
+        一样厚，两种形态之间才没有跨度。状态栏那一截取的是 --sa-top-real
+        （状态栏**本来**多高，见 safeArea.ts）—— 沉浸时系统栏藏着，
+        实时的 --sa-top 已经掉到保底值了，拿它算就会短一截。
       */}
       <div
         className={`${BAND_SUB} bg-white ${
           immersive
-            ? `absolute inset-x-0 top-11 z-20 transition-opacity duration-200 ${
+            ? `absolute inset-x-0 top-[calc(var(--sa-top-real)+2.75rem)] z-20 transition-opacity duration-200 ${
                 chromeVisible ? 'opacity-100' : 'opacity-0 pointer-events-none'
               }`
             : ''

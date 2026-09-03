@@ -21,6 +21,9 @@ import { Capacitor, registerPlugin } from '@capacitor/core'
 /** 顶部保底：万一两条路都没报上来值，也不能让正文顶到时钟上去。状态栏本来就是 24dp 上下 */
 const MIN_TOP = 24
 
+/** 上一次「系统栏看得见的时候」状态栏有多高。见 apply() 里 --sa-top-real 的说明 */
+let lastRealTop = 0
+
 /**
  * 打包时刻（vite.config.ts 里 define 进来的）。
  *
@@ -152,6 +155,19 @@ function apply(
 ) {
   const s = document.documentElement.style
   s.setProperty('--sa-top', `${Math.max(top, MIN_TOP)}px`)
+  /*
+   * 状态栏**本来**有多高（沉浸阅读要用）。
+   *
+   * 沉浸时系统栏藏起来了，原生报的 top 是 0，`--sa-top` 会掉到保底的 24 ——
+   * 拿它给顶栏留位置就留窄了。这一格记着「上一次看得见的时候有多高」：
+   * 报 0 就不更新，报了真值就跟上（所以转屏、换机器都自动跟着走）。
+   *
+   * 退出沉浸的那一瞬间尤其要紧：网页那一步是瞬间的，而系统栏要等安卓滑完动画
+   * 才把新尺寸报上来。中间那一小段若按 `--sa-top` 留位置，顶栏就会先长一截、
+   * 再长一截 —— 用户报过的「变宽然后再变宽一点」。
+   */
+  if (top > 0) lastRealTop = top
+  s.setProperty('--sa-top-real', `${Math.max(lastRealTop, MIN_TOP)}px`)
   s.setProperty('--sa-right', `${right}px`)
   s.setProperty('--sa-bottom', `${bottom}px`)
   s.setProperty('--sa-bottom-tap', `${tappableBottom}px`)

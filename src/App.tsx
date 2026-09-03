@@ -1360,10 +1360,11 @@ export default function App() {
       */}
       <div
         className={`relative flex flex-col flex-1 min-w-0 min-h-0 overflow-hidden bg-white ${
-          // 沉浸时状态栏已经藏起来了，这条留白得跟着取消 —— `--sa-top` 有个 24px 的保底
-          // （见 safeArea.ts），不特意让开的话顶上会剩一道白边，就不是满屏了。
-          // 保底本身不能动：那是手机上「正文顶到时钟底下」的护栏。
-          immersive ? '' : 'pt-[var(--sa-top)]'
+          // 沉浸时状态栏已经藏起来了，这条留白得跟着取消，否则顶上剩一道白边、就不是满屏。
+          // 平时用的是 --sa-top-real（状态栏**本来**多高）而不是 --sa-top：
+          // 退出沉浸那一瞬间系统栏还在路上，实时值这时是保底的 24，
+          // 按它留位置会先长一截再长一截 —— 用户报过的「变宽然后再变宽一点」。
+          immersive ? '' : 'pt-[var(--sa-top-real)]'
         } ${editMode ? 'pb-[var(--kb,0px)]' : ''}`}
       >
         {/*
@@ -1377,16 +1378,17 @@ export default function App() {
           沉浸态下藏起来的还有右边那颗「笔记」键，两样一起出没：
           汉堡键长在这条栏里，它不跟着出来，沉浸之后就没路再打开文库了。
         */}
-        <header
-          className={`${BAND_TOP} bg-white ${
+        <div
+          className={`shrink-0 bg-white ${
             immersive
-              ? `absolute inset-x-0 top-0 z-20 transition-opacity duration-200 ${
+              ? `absolute inset-x-0 top-0 z-20 pt-[var(--sa-top-real)] transition-opacity duration-200 ${
                   chromeVisible ? 'opacity-100' : 'opacity-0 pointer-events-none'
                 }`
               : ''
           }`}
           aria-hidden={chromeHidden}
         >
+        <header className={`${BAND_TOP} bg-white`}>
           {/*
             汉堡键在宽屏上也留着 —— 宽屏点它是「把左栏收起/放出来」，
             窄屏点它是「呼出浮层」。两种宽度下这颗键的含义一致：管左边那一栏。
@@ -1430,6 +1432,7 @@ export default function App() {
             )}
           </button>
         </header>
+        </div>
 
         {/*
           中间区域：阅读模式 = 编辑器，复习模式 = 生词看板。

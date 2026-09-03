@@ -143,6 +143,12 @@ body {
  */
 :root {
   --sa-top: env(safe-area-inset-top, 0px);
+  /*
+   * 状态栏**本来**有多高 —— 沉浸阅读把系统栏藏起来时，--sa-top 会掉到保底值，
+   * 而顶栏要按「放出来之后有多高」留位置。真值由 safeArea.ts 填，
+   * 这里只给一个还没拿到真值时的起点（和 --sa-top 同一个来源）。
+   */
+  --sa-top-real: env(safe-area-inset-top, 0px);
   --sa-right: env(safe-area-inset-right, 0px);
   --sa-bottom: env(safe-area-inset-bottom, 0px);
   --sa-left: env(safe-area-inset-left, 0px);
@@ -162,6 +168,7 @@ body {
 
 .native {
   --sa-top: max(env(safe-area-inset-top, 0px), 24px);
+  --sa-top-real: max(env(safe-area-inset-top, 0px), 24px);
 }
 
 /*
