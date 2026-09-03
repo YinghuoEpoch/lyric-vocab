@@ -37,6 +37,15 @@ export default defineConfig({
        * 于是书目永远读不出来 —— 而且拿回来的是人家的 404 页面，
        * 状态码和内容都对不上，查起来很费劲。这个坑当场踩过一次。
        */
+      /**
+       * 云端语音合成（火山引擎）。同理：手机上走原生网络不经过这里，
+       * 这条只为开发时能在电脑上把这一段验一验。
+       */
+      '/volctts/': {
+        target: 'https://openspeech.bytedance.com',
+        changeOrigin: true,
+        rewrite: (p) => p.replace(/^\/volctts/, '')
+      },
       '/gutenberg/': {
         target: 'https://www.gutenberg.org',
         changeOrigin: true,

@@ -195,3 +195,87 @@ describe('发音地址', () => {
     expect(dictAudioUrl('  stumble ')).toContain('audio=stumble&')
   })
 })
+
+/**
+ * 三级回退：真人录音 → 云端合成 → 系统引擎。
+ *
+ * 这一级是为「没有系统朗读引擎的设备」加的（用户的鸿蒙平板，见第五十七、五十八节）。
+ * 那台机器上第三级永远是哑的，所以**第二级有没有被走到**就是全部 ——
+ * 少了它，句子一句也读不出来。
+ */
+describe('三级回退', () => {
+  function three(opts: { dictFails?: boolean; cloudFails?: boolean } = {}) {
+    const log: string[] = []
+    const system: Speaker = {
+      speak: (t) => {
+        log.push(`引擎念:${t}`)
+        return Promise.resolve()
+      },
+      cancel: () => log.push('引擎停')
+    }
+    const player: DictPlayer = {
+      play: (w) => {
+        log.push(`录音:${w}`)
+        return opts.dictFails ? Promise.reject(new Error('没有录音')) : Promise.resolve()
+      },
+      cancel: () => log.push('录音停')
+    }
+    const cloud: DictPlayer = {
+      play: (t) => {
+        log.push(`云端:${t}`)
+        return opts.cloudFails ? Promise.reject(new Error('没配 key')) : Promise.resolve()
+      },
+      cancel: () => log.push('云端停')
+    }
+    return { log, speaker: createHumanFirstSpeaker(system, player, cloud) }
+  }
+
+  it('词有真人录音：就用录音，不碰云端，也不花调用次数', async () => {
+    const { log, speaker } = three()
+    await speaker.speak('hello', { lookup: true })
+    expect(log.filter((l) => l.startsWith('云端:'))).toEqual([])
+    expect(log.filter((l) => l.startsWith('引擎念'))).toEqual([])
+  })
+
+  it('词典里没有这个词：落到云端，**不再**直接掉到引擎', async () => {
+    const { log, speaker } = three({ dictFails: true })
+    await speaker.speak('zzqqxx', { lookup: true })
+    expect(log).toContain('云端:zzqqxx')
+    expect(log.filter((l) => l.startsWith('引擎念'))).toEqual([])
+  })
+
+  it('句子（不查词典）：直接走云端', async () => {
+    const { log, speaker } = three()
+    await speaker.speak('I never stood up very tall')
+    expect(log.filter((l) => l.startsWith('录音:'))).toEqual([])
+    expect(log).toContain('云端:I never stood up very tall')
+  })
+
+  it('云端也不行（没配 key / 额度没了 / 没网）：才轮到系统引擎', async () => {
+    const { log, speaker } = three({ dictFails: true, cloudFails: true })
+    await speaker.speak('zzqqxx', { lookup: true })
+    expect(log.some((l) => l.startsWith('引擎念'))).toBe(true)
+  })
+
+  it('⚠️ 没传云端那一级时，老行为一点不变（录音 → 引擎）', async () => {
+    const log: string[] = []
+    const system: Speaker = {
+      speak: (t) => {
+        log.push(`引擎念:${t}`)
+        return Promise.resolve()
+      },
+      cancel: () => {}
+    }
+    const player: DictPlayer = { play: () => Promise.reject(new Error('无')), cancel: () => {} }
+    await createHumanFirstSpeaker(system, player).speak('x', { lookup: true })
+    expect(log.some((l) => l.startsWith('引擎念'))).toBe(true)
+  })
+
+  it('按停时三级都要停下 —— 少停一级就是「按了停还在响」', () => {
+    const { log, speaker } = three()
+    speaker.cancel()
+    expect(log).toContain('录音停')
+    expect(log).toContain('云端停')
+    expect(log).toContain('引擎停')
+  })
+})

@@ -1,5 +1,6 @@
 import { Capacitor } from '@capacitor/core'
 import { TextToSpeech } from '@capacitor-community/text-to-speech'
+import { isCloudReady, newReqId, synthesizeCloud, type CloudTtsConfig } from './cloudTts'
 
 /**
  * 朗读引擎读数。
@@ -138,3 +139,40 @@ export const TRY_SAMPLES = [
   { key: 'sentence', label: '读一句英文', text: 'I never stood up very tall', lang: 'en-US' },
   { key: 'chinese', label: '读一句中文', text: '你好，这是一句中文', lang: 'zh-CN' }
 ] as const
+
+/**
+ * 云端试读。
+ *
+ * **这颗按钮是用户能自己查下去的唯一凭据** —— 我手上没有他的 Key，
+ * 验不了通不通，只能把服务商的原话原样交给他：
+ * Key 填错、额度用完、服务没开通、音色名不对，火山各有各的说法，
+ * 而这四种的处理办法完全不同。翻译成一句「读不出来」等于把线索扔了。
+ *
+ * 走的是**和真正朗读同一条路**（synthesizeCloud），不是另写一个请求 ——
+ * 试读通了而实际用不了，那种诊断还不如没有。
+ */
+export async function tryCloudRead(cfg: CloudTtsConfig): Promise<TryReadResult> {
+  const t0 = Date.now()
+  if (!isCloudReady(cfg)) {
+    return { ok: false, ms: 0, error: '还没填全（应用 ID / 令牌 / 音色，三样都要）' }
+  }
+  try {
+    const bytes = await synthesizeCloud(cfg, CLOUD_SAMPLE, newReqId())
+    const ms = Date.now() - t0
+    if (bytes.byteLength < 200) {
+      return { ok: false, ms, error: `拿回来的音频只有 ${bytes.byteLength} 字节，不像是一句话` }
+    }
+    // 拿到音频就当场放出来 —— 「有没有声音」才是用户真正要验的那件事
+    const url = URL.createObjectURL(new Blob([bytes], { type: 'audio/mpeg' }))
+    const audio = new Audio(url)
+    void audio.play().catch(() => {})
+    audio.onended = () => URL.revokeObjectURL(url)
+    return { ok: true, ms, error: `拿到 ${bytes.byteLength} 字节，正在放` }
+  } catch (e) {
+    const msg = (e instanceof Error ? e.message : String(e ?? '')).trim()
+    return { ok: false, ms: Date.now() - t0, error: msg || '报了个空错误' }
+  }
+}
+
+/** 试读用的句子。用英文，因为要验的正是「这个音色念不念得了英文」 */
+export const CLOUD_SAMPLE = 'I never stood up very tall'
