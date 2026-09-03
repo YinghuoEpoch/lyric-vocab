@@ -47,7 +47,27 @@ type NativeInsets = {
   density?: number
 }
 
-const SafeArea = registerPlugin<{ getInsets(): Promise<NativeInsets> }>('SafeArea')
+const SafeArea = registerPlugin<{
+  getInsets(): Promise<NativeInsets>
+  setImmersive(options: { on: boolean }): Promise<void>
+}>('SafeArea')
+
+/**
+ * 沉浸阅读：把两条系统栏藏起来 / 放回来。
+ *
+ * 只在装成 app 时有意义，浏览器里是空转（网页没权力动浏览器的界面）。
+ * **调用方要保证只在宽屏时开** —— 这是手机平板共用的地基，见 SafeAreaPlugin 里的说明。
+ *
+ * 失败了就当没发生：藏不藏系统栏不影响读书，为它弹个错误提示反而碍事。
+ */
+export async function setSystemBarsHidden(hidden: boolean): Promise<void> {
+  if (!Capacitor.isNativePlatform()) return
+  try {
+    await SafeArea.setImmersive({ on: hidden })
+  } catch {
+    /* 老包里没有这个方法，或者这台机器不认 —— 都不该拦着人读书 */
+  }
+}
 
 /** 这次到底走的哪条路、拿到了什么。设置页「开发者 → 系统栏参数」那一屏显示它 */
 export type SafeAreaReport = {

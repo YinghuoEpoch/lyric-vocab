@@ -120,6 +120,15 @@ interface LyricEditorProps {
   onReadingProgressChange?: (percent: number) => void
   /** 阅读外观（字号、字体、主题） */
   readerSettings?: ReaderSettings
+  /**
+   * 沉浸阅读（只在宽屏两侧栏都收起来时）：这一条工具带改成浮在正文上面。
+   *
+   * 顶上其实是两条带 —— app 的标题栏（App.tsx 里的 header）和这一条。
+   * 只藏一条不算沉浸，所以两条一起收、一起出。见 useImmersiveReading。
+   */
+  immersive?: boolean
+  /** 沉浸态下这会儿露没露出来。和标题栏同进同出 */
+  chromeVisible?: boolean
 }
 
 function getAnchorId(lineIndex: number, wordIndex: number): string {
@@ -180,7 +189,9 @@ function LyricEditorInner({
   nextPage,
   onSelectPage,
   onReadingProgressChange,
-  readerSettings = { fontSize: 18, fontFamily: 'sans', theme: 'pure', accent: 'amber' }
+  readerSettings = { fontSize: 18, fontFamily: 'sans', theme: 'pure', accent: 'amber' },
+  immersive = false,
+  chromeVisible = false
 }: LyricEditorProps) {
   const lines = content ? content.split(/\n/) : ['']
 
@@ -808,8 +819,22 @@ function LyricEditorInner({
   }
 
   return (
-    <div className="lyric-editor flex flex-col h-full overflow-hidden bg-white">
-      <div className={`${BAND_SUB} bg-white`}>
+    <div className="lyric-editor relative flex flex-col h-full overflow-hidden bg-white">
+      {/*
+        沉浸态里这条带浮在正文上面（`top-11` 正好让开上面那条 44px 的标题栏），
+        不占位置 —— 占位置的话每露出来一次正文就被往下推一次，读到哪儿都跟着跳。
+        缘由和标题栏那边是同一份，见 App.tsx 里 header 上方的说明。
+      */}
+      <div
+        className={`${BAND_SUB} bg-white ${
+          immersive
+            ? `absolute inset-x-0 top-11 z-20 transition-opacity duration-200 ${
+                chromeVisible ? 'opacity-100' : 'opacity-0 pointer-events-none'
+              }`
+            : ''
+        }`}
+        aria-hidden={immersive && !chromeVisible}
+      >
         <span className="text-sm opacity-80 truncate">{interactionHint}</span>
         <button
           type="button"

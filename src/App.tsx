@@ -35,6 +35,7 @@ import { importFile } from './importers'
 import { AGREEMENT_CLAUSES, AGREEMENT_TITLE } from './agreement'
 import { useBackHandler, handleBackPress, BackPriority } from './hooks/useBackHandler'
 import { useIsWide } from './hooks/useWideLayout'
+import { shouldImmerse, useImmersiveReading } from './hooks/useImmersiveReading'
 import { usePanelWidth } from './hooks/usePanelWidth'
 import { useAutoFill } from './hooks/useAutoFill'
 import { useAutoMark } from './hooks/useAutoMark'
@@ -1205,6 +1206,24 @@ export default function App() {
   const showRight = activePanel === 'right'
 
   const overlayVisible = showLeft || showRight
+
+  /*
+    沉浸阅读（只在宽屏）。两侧栏都收起来时，顶栏、两条系统栏、「笔记」键一起消失，
+    正文占满整块屏；点正文空白处，顶栏和「笔记」键露出来 3 秒。
+
+    进出的条件抽在 shouldImmerse 里，那边有单独的测试 —— 尤其「窄屏一律不进」那条：
+    手机上两侧栏本来就总是收着的，漏了那条手机会一直待在沉浸里。
+  */
+  const immersive = shouldImmerse({
+    isWide,
+    mode,
+    editMode,
+    leftHidden: wideLeftHidden,
+    rightOpen: showRight
+  })
+  const { chromeVisible, toggleChrome } = useImmersiveReading(immersive)
+  /** 此刻顶栏和「笔记」键是不是收着的 */
+  const chromeHidden = immersive && !chromeVisible
   /** 「一键填充」：范围跟着当前复习的文档或文库走 */
   const autoFill = useAutoFill({
     appData,
@@ -1340,12 +1359,34 @@ export default function App() {
         第一版我不分场合地让，于是一开键盘正文底部就被吃掉一截。
       */}
       <div
-        className={`flex flex-col flex-1 min-w-0 min-h-0 overflow-hidden bg-white pt-[var(--sa-top)] ${
-          editMode ? 'pb-[var(--kb,0px)]' : ''
-        }`}
+        className={`relative flex flex-col flex-1 min-w-0 min-h-0 overflow-hidden bg-white ${
+          // 沉浸时状态栏已经藏起来了，这条留白得跟着取消 —— `--sa-top` 有个 24px 的保底
+          // （见 safeArea.ts），不特意让开的话顶上会剩一道白边，就不是满屏了。
+          // 保底本身不能动：那是手机上「正文顶到时钟底下」的护栏。
+          immersive ? '' : 'pt-[var(--sa-top)]'
+        } ${editMode ? 'pb-[var(--kb,0px)]' : ''}`}
       >
-        {/* 顶部栏：始终显示；桌面端仅保留标题与复习模式下的编辑按钮 */}
-        <header className={`${BAND_TOP} bg-white`}>
+        {/*
+          顶部栏。平时排在正文上面占一行；**沉浸态里改成浮在正文上面**。
+
+          浮着是关键：沉浸时点一下空白处它就出来，3 秒后又收回去 —— 要是它还占着
+          一行，每出来一次正文就被往下推一次、收回去再弹上来，读到哪儿都跟着跳。
+          浮在上面则正文一动不动，和视频播放器的控制条是同一个道理。
+          （容器那个 `relative` 就是为它加的。）
+
+          沉浸态下藏起来的还有右边那颗「笔记」键，两样一起出没：
+          汉堡键长在这条栏里，它不跟着出来，沉浸之后就没路再打开文库了。
+        */}
+        <header
+          className={`${BAND_TOP} bg-white ${
+            immersive
+              ? `absolute inset-x-0 top-0 z-20 transition-opacity duration-200 ${
+                  chromeVisible ? 'opacity-100' : 'opacity-0 pointer-events-none'
+                }`
+              : ''
+          }`}
+          aria-hidden={chromeHidden}
+        >
           {/*
             汉堡键在宽屏上也留着 —— 宽屏点它是「把左栏收起/放出来」，
             窄屏点它是「呼出浮层」。两种宽度下这颗键的含义一致：管左边那一栏。
@@ -1405,13 +1446,19 @@ export default function App() {
         <main
           className="flex-1 flex flex-col min-w-0 min-h-0 overflow-hidden relative"
           onClick={(e) => {
-            if (!isWide || activePanel !== 'right') return
+            if (!isWide) return
             const target = e.target as HTMLElement | null
             if (!target) return
             if (target.closest('button, a, input, textarea, select, label')) return
             if (target.closest('[data-word-span="true"]')) return
             if (document.querySelector('[data-full-popup="true"]')) return
-            setActivePanel(null)
+            // 笔记栏开着：这一下是「收起笔记栏」。收完往往正好进沉浸，那是下一次点的事
+            if (activePanel === 'right') {
+              setActivePanel(null)
+              return
+            }
+            // 已经沉浸了：这一下是「把顶栏和笔记键叫出来 / 收回去」
+            if (immersive) toggleChrome()
           }}
         >
         {initializing && (
@@ -1444,6 +1491,8 @@ export default function App() {
                 onSelectPage={handleSelectPageById}
                 onReadingProgressChange={setDocumentReadingProgress}
                 readerSettings={readerSettings}
+                immersive={immersive}
+                chromeVisible={chromeVisible}
               />
             ) : (
               <div className="flex-1 flex items-center justify-center text-ink-muted">
@@ -1464,12 +1513,15 @@ export default function App() {
                 setActivePanel('right')
               }}
               className={`hidden wide:flex fixed right-4 top-1/2 -translate-y-1/2 z-10 items-center gap-2 px-3 py-2 rounded-full border border-paper-border bg-white shadow-md hover:bg-accent-50 hover:border-accent-300 text-ink-muted hover:text-accent-800 transition-opacity ${
-                showRight
+                showRight || chromeHidden
                   ? 'opacity-0 pointer-events-none duration-100'
-                  : 'opacity-100 duration-150 delay-200'
+                  : immersive
+                    ? // 沉浸态里它跟着顶栏一起出没，不用等 —— 那 200ms 等的是侧栏
+                      'opacity-100 duration-200'
+                    : 'opacity-100 duration-150 delay-200'
               }`}
               title="打开笔记"
-              aria-hidden={showRight}
+              aria-hidden={showRight || chromeHidden}
             >
               <BookOpen className="w-4 h-4" />
               <span className="text-sm font-medium">笔记</span>
