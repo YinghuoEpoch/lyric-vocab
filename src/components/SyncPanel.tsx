@@ -141,6 +141,7 @@ export function SyncPanel({
           {r.conflicts > 0
             ? `另有 ${r.conflicts} 条两边都改过、又分不出谁晚，留的是这台机器上的。`
             : ''}
+          {status.traffic ? `（${status.traffic}）` : ''}
         </p>
       ) : null}
 
@@ -151,7 +152,9 @@ export function SyncPanel({
       </p>
 
       <p className="text-xs text-ink-muted leading-relaxed">
-        填好之后就不用管了：回到 app 的时候自动拉一次，改完东西过几秒自动传一次。
+        填好之后就不用管了：回到 app 的时候先问一句「云端变了没有」，变了才拉；
+        改完东西过几秒自动传一次（两次自动同步之间至少隔一分钟）。
+        传的时候会先压缩 —— 你的书库是整本的小说，不压很费流量。
         两台设备各加各的都会保留；只有两边改了同一条才需要取舍，取舍结果上面会报给你。
         发音录音不同步 —— 那是丢了能重下的东西，没必要占你的网盘。
       </p>

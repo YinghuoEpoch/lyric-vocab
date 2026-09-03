@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { mergeAppData } from './merge'
+import { mergeAppData, onlyProgressChanged } from './merge'
 import type { Annotation, AppData, LyricPage } from '../types'
 
 function page(id: string, title: string, updatedAt = 100): LyricPage {
@@ -176,5 +176,50 @@ describe('三方合并', () => {
     const ab = mergeAppData(base, a, b).merged.pages.map((p) => p.id).sort()
     const ba = mergeAppData(base, b, a).merged.pages.map((p) => p.id).sort()
     expect(ab).toEqual(ba)
+  })
+})
+
+/**
+ * 阅读进度是流量的头号大户 —— 一路往下读，滚动位置一直在存。
+ * 判错了要么白传一整份小说（费额度），要么换设备接不上上次读到的那一行。
+ */
+describe('只有阅读进度变了吗', () => {
+  it('只有进度变了：算「没动过」，不值得为它单独传一整份上去', () => {
+    const base = data({ pages: [page('p1', '文', 100)] })
+    const local = data({ pages: [{ ...page('p1', '文', 100), progress: 1200 }] })
+    expect(onlyProgressChanged(base, local)).toBe(true)
+  })
+
+  it('内容也改了：那就不是「只有进度」，该传', () => {
+    const base = data({ pages: [page('p1', '旧', 100)] })
+    const local = data({ pages: [{ ...page('p1', '改了', 200), progress: 1200 }] })
+    expect(onlyProgressChanged(base, local)).toBe(false)
+  })
+
+  it('加了一条笔记（进度也顺带变了）：该传', () => {
+    const base = data({ pages: [page('p1', '文')] })
+    const local = data({
+      pages: [{ ...page('p1', '文'), progress: 900 }],
+      annotations: [ann('a1', '新笔记')]
+    })
+    expect(onlyProgressChanged(base, local)).toBe(false)
+  })
+
+  it('什么都没变：不算「只有进度变了」—— 那种情况本来就不会走到这儿', () => {
+    const d = data({ pages: [{ ...page('p1', '文'), progress: 300 }] })
+    expect(onlyProgressChanged(d, d)).toBe(false)
+  })
+
+  it('删了一篇：该传', () => {
+    const base = data({ pages: [page('p1', '文'), page('p2', '文')] })
+    const local = data({ pages: [page('p1', '文')] })
+    expect(onlyProgressChanged(base, local)).toBe(false)
+  })
+
+  it('⚠️ 进度照样会被合并同步 —— 只是不由它单独触发上传', () => {
+    const base = data({ pages: [page('p1', '文', 100)] })
+    const local = data({ pages: [page('p1', '文', 100)] })
+    const remote = data({ pages: [{ ...page('p1', '文', 200), progress: 4200 }] })
+    expect(mergeAppData(base, local, remote).merged.pages[0].progress).toBe(4200)
   })
 })
