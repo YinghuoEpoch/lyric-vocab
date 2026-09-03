@@ -1,3 +1,4 @@
+import { annotationGroupOf } from '../types'
 import type { Annotation, AppData, LyricBook, LyricPage, NotesMap } from '../types'
 
 /**
@@ -181,6 +182,108 @@ export function onlyProgressChanged(base: AppData, local: AppData): boolean {
   return JSON.stringify(base) !== JSON.stringify(local)
 }
 
+/**
+ * 三方合并「**顺序**」。
+ *
+ * ⚠️ 用户问出来的：「要是文档文库的排序变了，这个又会怎么样」——
+ * 会被悄悄还原。因为**顺序是数组位置表达的，不是存一个字段**
+ * （见 storage.ts 的 reorderBooks / reorderPages），
+ * 而按 id 建表再吐出来的合并天然不认识「位置」：拖动之后每条记录**内容都没变**，
+ * 合并只会说「谁都没动过」，然后按底本的次序吐出来 —— 你那一下白拖了。
+ *
+ * 判断「谁拖过」时**只比两边都有的那些 id**：
+ * 否则「删了一篇」「加了一篇」都会被误判成拖动过。
+ *
+ * 取舍和别处一致：只有一边拖过就听那一边的，两边都拖过本机赢。
+ */
+export function mergeOrder(
+  baseIds: readonly string[],
+  localIds: readonly string[],
+  remoteIds: readonly string[],
+  surviving: ReadonlySet<string>
+): string[] {
+  /** 只留两边都有的那些，再比次序 —— 增删不该被当成拖动 */
+  const common = (a: readonly string[], b: readonly string[]) => {
+    const inB = new Set(b)
+    return a.filter((id) => inB.has(id))
+  }
+  const moved = (side: readonly string[]) =>
+    common(side, baseIds).join() !== common(baseIds, side).join()
+
+  const chosen = moved(localIds) ? localIds : moved(remoteIds) ? remoteIds : baseIds
+
+  const out: string[] = []
+  const used = new Set<string>()
+  for (const id of chosen) {
+    if (surviving.has(id) && !used.has(id)) {
+      out.push(id)
+      used.add(id)
+    }
+  }
+  // 选中那条次序里没提到的（新加的），按「本机先、对面后」补在后面
+  for (const id of [...localIds, ...remoteIds]) {
+    if (surviving.has(id) && !used.has(id)) {
+      out.push(id)
+      used.add(id)
+    }
+  }
+  return out
+}
+
+/** 按给定的 id 次序把记录排好 */
+function inOrder<T extends { id: string }>(map: Map<string, T>, order: readonly string[]): T[] {
+  const out: T[] = []
+  for (const id of order) {
+    const v = map.get(id)
+    if (v) out.push(v)
+  }
+  return out
+}
+
+/**
+ * 复习页卡片的排序，按「同一文档、同一类型」一组一组地合。
+ *
+ * ⚠️ **为什么不能逐条合。** 卡片顺序是每条记录上的 `order` 字段，
+ * 逐条合看着能work，实际会**交错**：本机把 A 挪到最后、对面把 B 挪到最前，
+ * 逐条各取各的，最后两张卡可能都编号 0 —— 排出一个**谁都没要过的乱序**。
+ * 用户追问「复习模式下的卡片也有排序功能，这个有考虑到吗」时，
+ * 测试当场把这个抓出来了。
+ *
+ * 所以整组取一边的次序，规矩和文库文档那边一致：
+ * 只有一边动过就听那一边的，两边都动过本机赢。合完**重新编号 0..n-1**，
+ * 顺手把历史遗留的重复编号也抹平了。
+ */
+export function mergeCardOrder(
+  base: readonly Annotation[],
+  local: readonly Annotation[],
+  remote: readonly Annotation[],
+  survivors: Map<string, Annotation>
+): Map<string, Annotation> {
+  const key = (a: Annotation) => `${a.docId}|${annotationGroupOf(a.type)}`
+  const seq = (list: readonly Annotation[], k: string) =>
+    list
+      .filter((a) => key(a) === k)
+      .slice()
+      .sort((x, y) => x.order - y.order)
+      .map((a) => a.id)
+
+  const groups = new Set<string>()
+  for (const a of survivors.values()) groups.add(key(a))
+
+  const out = new Map(survivors)
+  for (const k of groups) {
+    const alive = new Set(
+      [...survivors.values()].filter((a) => key(a) === k).map((a) => a.id)
+    )
+    const order = mergeOrder(seq(base, k), seq(local, k), seq(remote, k), alive)
+    order.forEach((id, i) => {
+      const a = out.get(id)
+      if (a && a.order !== i) out.set(id, { ...a, order: i })
+    })
+  }
+  return out
+}
+
 function byId<T extends { id: string }>(list: readonly T[] | undefined): Map<string, T> {
   return new Map((list ?? []).map((x) => [x.id, x]))
 }
@@ -218,11 +321,18 @@ export function mergeAppData(
     report,
     byUpdatedAt
   )
-  const annotations = mergeById<Annotation>(
+  const annotationsById = mergeById<Annotation>(
     byId(b.annotations),
     byId(local.annotations),
     byId(remote.annotations),
     report
+  )
+  // 卡片顺序整组合一遍，逐条合会交错成乱序 —— 见 mergeCardOrder
+  const annotations = mergeCardOrder(
+    b.annotations ?? [],
+    local.annotations ?? [],
+    remote.annotations ?? [],
+    annotationsById
   )
 
   // 旧模型的 notes 是「文档 id -> 一堆笔记」的表。运行期已经不写它了
@@ -234,9 +344,26 @@ export function mergeAppData(
     report
   )
 
+  /*
+   * 顺序单独合一遍。**必须在按 id 合完之后做** —— 先要知道哪些活下来了，
+   * 才谈得上把它们排成什么次序。
+   */
+  const bookOrder = mergeOrder(
+    (b.books ?? []).map((x) => x.id),
+    (local.books ?? []).map((x) => x.id),
+    (remote.books ?? []).map((x) => x.id),
+    new Set(books.keys())
+  )
+  const pageOrder = mergeOrder(
+    (b.pages ?? []).map((x) => x.id),
+    (local.pages ?? []).map((x) => x.id),
+    (remote.pages ?? []).map((x) => x.id),
+    new Set(pages.keys())
+  )
+
   const merged: AppData = {
-    books: [...books.values()],
-    pages: [...pages.values()],
+    books: inOrder(books, bookOrder),
+    pages: inOrder(pages, pageOrder),
     annotations: [...annotations.values()],
     notes: Object.fromEntries(notes),
     // 迁移标记取大的：任意一台跑过迁移，就不该再跑第二遍

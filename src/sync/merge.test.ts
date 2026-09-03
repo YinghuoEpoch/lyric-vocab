@@ -223,3 +223,122 @@ describe('只有阅读进度变了吗', () => {
     expect(mergeAppData(base, local, remote).merged.pages[0].progress).toBe(4200)
   })
 })
+
+/**
+ * 顺序。**用户问出来的**：「要是文档文库的排序变了，这个又会怎么样」。
+ *
+ * ⚠️ 文库和文档的顺序是**数组位置**表达的，不是存一个字段
+ * （见 storage.ts 的 reorderBooks / reorderPages）。
+ * 而按 id 建表再吐出来的合并，天然不认识「位置」——
+ * 少了专门的处理，你在一台上拖动排序，下一次同步就被悄悄还原了。
+ */
+describe('排序', () => {
+  const P = (id: string) => page(id, id)
+
+  it('⚠️ 本机拖动过顺序：合完要保住，不能被还原', () => {
+    const base = data({ pages: [P('p1'), P('p2'), P('p3')] })
+    const local = data({ pages: [P('p3'), P('p1'), P('p2')] })
+    const remote = data({ pages: [P('p1'), P('p2'), P('p3')] })
+    const { merged } = mergeAppData(base, local, remote)
+    expect(merged.pages.map((p) => p.id)).toEqual(['p3', 'p1', 'p2'])
+  })
+
+  it('对面拖动过顺序：本机跟着变', () => {
+    const base = data({ pages: [P('p1'), P('p2'), P('p3')] })
+    const local = data({ pages: [P('p1'), P('p2'), P('p3')] })
+    const remote = data({ pages: [P('p2'), P('p3'), P('p1')] })
+    const { merged } = mergeAppData(base, local, remote)
+    expect(merged.pages.map((p) => p.id)).toEqual(['p2', 'p3', 'p1'])
+  })
+
+  it('两边都拖过：本机赢（和别处的取舍一致），不丢任何一篇', () => {
+    const base = data({ pages: [P('p1'), P('p2'), P('p3')] })
+    const local = data({ pages: [P('p3'), P('p2'), P('p1')] })
+    const remote = data({ pages: [P('p2'), P('p1'), P('p3')] })
+    const { merged } = mergeAppData(base, local, remote)
+    expect(merged.pages.map((p) => p.id)).toEqual(['p3', 'p2', 'p1'])
+  })
+
+  it('谁都没拖：原样', () => {
+    const base = data({ pages: [P('p1'), P('p2')] })
+    const { merged } = mergeAppData(base, base, base)
+    expect(merged.pages.map((p) => p.id)).toEqual(['p1', 'p2'])
+  })
+
+  it('一边拖了顺序、另一边加了新的一篇：顺序保住，新的排在后面', () => {
+    const base = data({ pages: [P('p1'), P('p2')] })
+    const local = data({ pages: [P('p2'), P('p1')] })
+    const remote = data({ pages: [P('p1'), P('p2'), P('p9')] })
+    const { merged } = mergeAppData(base, local, remote)
+    expect(merged.pages.map((p) => p.id)).toEqual(['p2', 'p1', 'p9'])
+  })
+
+  it('⚠️ 只是删了一篇，不能被当成「拖动过顺序」', () => {
+    const base = data({ pages: [P('p1'), P('p2'), P('p3')] })
+    const local = data({ pages: [P('p1'), P('p3')] })
+    const remote = data({ pages: [P('p1'), P('p2'), P('p3')] })
+    const { merged } = mergeAppData(base, local, remote)
+    expect(merged.pages.map((p) => p.id)).toEqual(['p1', 'p3'])
+  })
+
+  it('文库的顺序同理', () => {
+    const b = (id: string) => ({ id, name: id, createdAt: 1 })
+    const base = data({ books: [b('b1'), b('b2'), b('b3')] })
+    const local = data({ books: [b('b2'), b('b3'), b('b1')] })
+    const remote = data({ books: [b('b1'), b('b2'), b('b3')] })
+    const { merged } = mergeAppData(base, local, remote)
+    expect(merged.books.map((x) => x.id)).toEqual(['b2', 'b3', 'b1'])
+  })
+})
+
+/**
+ * 复习页卡片的排序。**用户追问出来的**：
+ * 「复习模式下的卡片也有排序功能，这个有考虑到吗」。
+ *
+ * 结论是**这一种天生就没问题**，但值得钉住，因为原因很不显眼：
+ * 卡片排序改的是每条记录上的 `order` **字段**（见 storage.ts 的 reorderAnnotations），
+ * 而文库和文档的顺序是**数组位置**。前者天然会被三方合并看见（记录内容变了），
+ * 后者不会 —— 那才是上面那个 bug 的来头。
+ *
+ * 两种机制混在一个 app 里，下一个人很容易以为「排序都一样处理」。不一样。
+ */
+describe('复习页卡片的排序（order 字段）', () => {
+  const card = (id: string, order: number): Annotation => ({ ...ann(id, '释义'), order })
+
+  it('本机重排了卡片：合完保住', () => {
+    const base = data({ annotations: [card('a1', 0), card('a2', 1), card('a3', 2)] })
+    const local = data({ annotations: [card('a1', 2), card('a2', 0), card('a3', 1)] })
+    const { merged } = mergeAppData(base, local, base)
+    const byId = new Map(merged.annotations!.map((a) => [a.id, a.order]))
+    expect([byId.get('a1'), byId.get('a2'), byId.get('a3')]).toEqual([2, 0, 1])
+  })
+
+  it('对面重排了：本机跟着变', () => {
+    const base = data({ annotations: [card('a1', 0), card('a2', 1)] })
+    const remote = data({ annotations: [card('a1', 1), card('a2', 0)] })
+    const { merged } = mergeAppData(base, base, remote)
+    const byId = new Map(merged.annotations!.map((a) => [a.id, a.order]))
+    expect([byId.get('a1'), byId.get('a2')]).toEqual([1, 0])
+  })
+
+  it('⚠️ 两边都重排了：整份取本机的，不能一半本机一半对面', () => {
+    // 交错的话会排出一个谁都没要过的乱序，比「听某一边的」难受得多
+    const base = data({ annotations: [card('a1', 0), card('a2', 1), card('a3', 2)] })
+    const local = data({ annotations: [card('a1', 2), card('a2', 1), card('a3', 0)] })
+    const remote = data({ annotations: [card('a1', 1), card('a2', 0), card('a3', 2)] })
+    const { merged } = mergeAppData(base, local, remote)
+    const byId = new Map(merged.annotations!.map((a) => [a.id, a.order]))
+    expect([byId.get('a1'), byId.get('a2'), byId.get('a3')]).toEqual([2, 1, 0])
+  })
+
+  it('一边重排、另一边加了新卡：重排保住，新卡也在', () => {
+    const base = data({ annotations: [card('a1', 0), card('a2', 1)] })
+    const local = data({ annotations: [card('a1', 1), card('a2', 0)] })
+    const remote = data({ annotations: [card('a1', 0), card('a2', 1), card('a9', 2)] })
+    const { merged } = mergeAppData(base, local, remote)
+    const byId = new Map(merged.annotations!.map((a) => [a.id, a.order]))
+    expect(byId.get('a1')).toBe(1)
+    expect(byId.get('a2')).toBe(0)
+    expect(byId.has('a9')).toBe(true)
+  })
+})
