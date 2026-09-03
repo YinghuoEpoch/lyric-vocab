@@ -738,8 +738,19 @@ function LeftSidebarInner({
                                       className="fixed inset-0 z-40 pointer-events-none"
                                       aria-hidden
                                     />
+                                    {/*
+                                      「更多」菜单。同一串类名在这个文件里有三处
+                                      （文档、文库、回收站里的条目），改一处记得三处都改。
+
+                                      `whitespace-nowrap` 是必需的：140px 只是**下限**，
+                                      菜单本该按里面最长那条撑开。少了它，绝对定位的盒子
+                                      会照可用宽度去挤，「移至回收站」在平板上折成两行 ——
+                                      用户报的。根子不是这个数不够大，是**系统把字放大了**
+                                      （WebView 的 textZoom），写死多宽都只是把门槛往后挪。
+                                      量过：根字号 16→22 时，那一项从 50px 高变成 77px。
+                                    */}
                                     <div
-                                      className="absolute right-0 top-full mt-1 z-50 min-w-[140px] py-1 rounded-lg border border-paper-border bg-white shadow-lg pointer-events-auto"
+                                      className="absolute right-0 top-full mt-1 z-50 min-w-[140px] whitespace-nowrap py-1 rounded-lg border border-paper-border bg-white shadow-lg pointer-events-auto"
                                       data-menu-popup
                                     >
                                       <button
@@ -880,7 +891,7 @@ function LeftSidebarInner({
                                   aria-hidden
                                 />
                                 <div
-                                  className="absolute right-0 top-full mt-1 z-50 min-w-[140px] py-1 rounded-lg border border-paper-border bg-white shadow-lg pointer-events-auto"
+                                  className="absolute right-0 top-full mt-1 z-50 min-w-[140px] whitespace-nowrap py-1 rounded-lg border border-paper-border bg-white shadow-lg pointer-events-auto"
                                   data-menu-popup
                                 >
                                   <button
@@ -1005,7 +1016,7 @@ function LeftSidebarInner({
                                                 aria-hidden
                                               />
                                               <div
-                                                className="absolute right-0 top-full mt-1 z-50 min-w-[140px] py-1 rounded-lg border border-paper-border bg-white shadow-lg pointer-events-auto"
+                                                className="absolute right-0 top-full mt-1 z-50 min-w-[140px] whitespace-nowrap py-1 rounded-lg border border-paper-border bg-white shadow-lg pointer-events-auto"
                                                 data-menu-popup
                                               >
                                                 <button
