@@ -66,6 +66,20 @@ describe('错误说人话', () => {
     expect(describeSpeechFailure(new Error('voice data missing')).missingVoice).toBe(true)
   })
 
+  it('原生：压根没有朗读引擎，说人话，而且不给「去安装」', () => {
+    // 用户的鸿蒙平板（卓易通）真机上报的就是这一句，见 后续规划.md 第五十七节
+    const f = describeSpeechFailure(new Error('Not yet initialized or not available on this device.'))
+    expect(f.message).toBe('这台设备没有可用的朗读引擎，只有网上查得到发音的词能读')
+    // ⚠️ 关键：这台设备连语音包安装页都没有，给「去安装」是骗人的
+    expect(f.missingVoice).toBe(false)
+  })
+
+  it('⚠️ 没有引擎那一句里带着 available，不能被「缺语音包」抢先认走', () => {
+    // MISSING_VOICE 里有 unsupported / language 之类，顺序反了这句就会被判成缺语音包
+    expect(describeSpeechFailure(new Error('Not yet initialized')).missingVoice).toBe(false)
+    expect(describeSpeechFailure(new Error('not available on this device')).missingVoice).toBe(false)
+  })
+
   it('原生：别的错原样带出来，排查时有据可查', () => {
     const f = describeSpeechFailure(new Error('engine busy'))
     expect(f.missingVoice).toBe(false)
