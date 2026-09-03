@@ -43,8 +43,21 @@ const MIN_POPUP_H = 200
  * 也就是说基线以下约 15px 都是安全的。三条线分别落在 2 / 6.5 / 10.8px，
  * 彼此隔开 1.5px 以上，最深的一条离下一行还有 3px 富余。
  */
+/*
+ * 单词那条直线。
+ *
+ * `[text-decoration-skip-ink:auto]` 就是浏览器的默认值，写出来是为了**挡住继承**。
+ * `text-decoration-skip-ink` 是可继承属性，而单词的 span 是套在短语的 span 里面的
+ * （见下面 renderInnerSegment 那一段的结构），短语为了不让波浪线断在 g 上关掉了让路
+ * （见 PHRASE_LINE_CLASS），单词这条线就跟着一起穿过去了 —— 同一个词，
+ * 单独划是断的，一旦它同时落在某个短语里就变成不断的，两幅样子。
+ *
+ * 用户报的：「fuck you」里单独给 you 划词，y 的尾巴截断那条线，这是对的；
+ * 再把 fuck you 存成短语，那条线就强行连起来了。单词的线该断就断，
+ * 词长把线截开不碍事 —— 它标的是「这一个词」，本来就不必连成一条。
+ */
 const WORD_LINE_CLASS =
-  'underline decoration-solid decoration-accent-600 decoration-2 underline-offset-2'
+  'underline decoration-solid decoration-accent-600 decoration-2 underline-offset-2 [text-decoration-skip-ink:auto]'
 /*
  * 短语那条波浪线。
  *
