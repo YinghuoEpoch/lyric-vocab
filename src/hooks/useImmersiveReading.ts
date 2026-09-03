@@ -6,7 +6,7 @@ export const CHROME_AUTO_HIDE_MS = 3000
 
 /** 进不进沉浸，要看的几件事 */
 export interface ImmersiveConditions {
-  /** 够不够宽（1024 起）。窄屏一律不进 —— 手机上两侧栏本来就总是收着的 */
+  /** 够不够宽（1024 起）。宽窄两套的**触发方式**不一样，见 shouldImmerse */
   isWide: boolean
   /** 阅读还是复习 */
   mode: 'read' | 'review'
@@ -14,8 +14,10 @@ export interface ImmersiveConditions {
   editMode: boolean
   /** 左边那栏收起来了没有（只在宽屏下有意义） */
   leftHidden: boolean
-  /** 右边笔记栏开着没有 */
-  rightOpen: boolean
+  /** 有没有哪一侧栏开着（宽屏是笔记栏，窄屏是浮层，两种都算） */
+  panelOpen: boolean
+  /** 窄屏那个手动开关此刻是开着的吗（宽屏不看这一格） */
+  narrowOn: boolean
 }
 
 /**
@@ -24,23 +26,23 @@ export interface ImmersiveConditions {
  * 抽成纯函数是为了能单独测：真机上的表现（系统栏、真实手感）我验不了，
  * 但「什么时候该进、什么时候一定不能进」是可以钉死的。
  *
- * **窄屏一律 false，这一条最要紧。** 手机上两侧栏本来就总是收着的，
- * 不拦住的话手机会一直待在沉浸里 —— 而藏系统栏是两边共用的地基，
- * 第四十八节就是栽在「为平板改了共用的东西，手机跟着遭殃」上。
+ * ## 宽窄两套触发方式，是用户分两次定的
  *
- * 另外三条是「这时候你需要那些按钮」：复习模式要编辑键，编辑全文要工具栏，
- * 任一侧栏放出来了说明用户正在用界面、不是在沉浸读书。
+ * - **宽屏（平板横屏）**：自动。两侧栏都收起来就进；点空白处顶栏露 3 秒又自己收。
+ *   那种时候屏幕够大，侧栏收起来本身就说明「我要安静读书」。
+ * - **窄屏（手机、平板竖屏）**：手动。点一下空白处收起顶栏，**不会自己回来**，
+ *   再点一下才回来。窄屏上侧栏本来就总是收着的，拿它当信号会变成一直沉浸；
+ *   而且手机上顶栏是唯一的出口（侧栏、笔记都从那儿开），不能让它自作主张地消失。
  *
- * 弹窗不必单列一条：设置在左栏里、AI 那几个从右栏开，
- * 开着的时候必有一侧栏是放出来的，这里自然就是 false 了。
+ * 三条共同的否决项是「这时候你需要那些按钮」：复习模式要编辑键、编辑全文要工具栏、
+ * 侧栏开着说明用户正在用界面。弹窗不必单列 —— 设置在左栏里、AI 那几个从右栏开，
+ * 开着的时候必有一侧栏是放出来的。
  */
 export function shouldImmerse(c: ImmersiveConditions): boolean {
-  if (!c.isWide) return false
   if (c.mode !== 'read') return false
   if (c.editMode) return false
-  if (!c.leftHidden) return false
-  if (c.rightOpen) return false
-  return true
+  if (c.panelOpen) return false
+  return c.isWide ? c.leftHidden : c.narrowOn
 }
 
 export interface ImmersiveReading {
@@ -55,8 +57,13 @@ export interface ImmersiveReading {
 /**
  * 沉浸阅读。
  *
- * 用户要的：平板横屏、两侧栏都收起来时，像看视频一样只剩正文 ——
- * app 的顶栏、安卓的两条系统栏、右边那颗「笔记」键全收掉。
+ * 像看视频一样只剩正文：app 的顶栏（两条带）、安卓的两条系统栏、
+ * 右边那颗「笔记」键（宽屏才有）一起收掉。
+ *
+ * 什么时候进由外面算好了传进来（见 shouldImmerse，宽窄两套触发方式）。
+ * 这里只管进去之后的事：系统栏的开关、顶栏那一套的出没和那块表。
+ * **窄屏没有表** —— 那边收起来就一直收着，chromeVisible 永远是 false，
+ * 下面那个计时器自然也不会起来。
  *
  * **状态栏、顶栏、「笔记」键三样绑成一体**：点正文空白处一起出来，3 秒后一起收，
  * 再点一下立刻收。这是第二版定下的 —— 第一版只有顶栏和「笔记」键跟着走，

@@ -1208,18 +1208,25 @@ export default function App() {
   const overlayVisible = showLeft || showRight
 
   /*
-    沉浸阅读（只在宽屏）。两侧栏都收起来时，顶栏、两条系统栏、「笔记」键一起消失，
-    正文占满整块屏；点正文空白处，顶栏和「笔记」键露出来 3 秒。
+    沉浸阅读：顶栏（两条带）、两条系统栏、「笔记」键一起消失，正文占满整块屏。
 
-    进出的条件抽在 shouldImmerse 里，那边有单独的测试 —— 尤其「窄屏一律不进」那条：
-    手机上两侧栏本来就总是收着的，漏了那条手机会一直待在沉浸里。
+    **宽窄两套触发方式**，条件抽在 shouldImmerse 里，那边有单独的测试：
+
+    - 宽屏（平板横屏）：自动。两侧栏都收起来就进；点空白处顶栏露 3 秒又自己收
+    - 窄屏（手机、平板竖屏）：手动。点空白处收起，不会自己回来，再点一下才回来
+
+    窄屏那个开关的状态就在下面这一格。窄屏上侧栏本来就总是收着的，
+    拿它当信号会变成一直沉浸；而且窄屏的顶栏是唯一的出口（侧栏、笔记都从那儿开），
+    不能让它自作主张地消失 —— 所以那边只认手指。
   */
+  const [narrowImmersive, setNarrowImmersive] = useState(false)
   const immersive = shouldImmerse({
     isWide,
     mode,
     editMode,
     leftHidden: wideLeftHidden,
-    rightOpen: showRight
+    panelOpen: activePanel !== null,
+    narrowOn: narrowImmersive
   })
   const { chromeVisible, toggleChrome } = useImmersiveReading(immersive)
   /** 此刻顶栏和「笔记」键是不是收着的 */
@@ -1449,19 +1456,28 @@ export default function App() {
         <main
           className="flex-1 flex flex-col min-w-0 min-h-0 overflow-hidden relative"
           onClick={(e) => {
-            if (!isWide) return
+            // 复习页和编辑全文里这一下什么都不做 —— 那两处沉浸本来就进不去，
+            // 在那儿悄悄翻开关，等回到阅读页顶栏会莫名其妙地不见了
+            if (mode !== 'read' || editMode) return
             const target = e.target as HTMLElement | null
             if (!target) return
             if (target.closest('button, a, input, textarea, select, label')) return
             if (target.closest('[data-word-span="true"]')) return
             if (document.querySelector('[data-full-popup="true"]')) return
-            // 笔记栏开着：这一下是「收起笔记栏」。收完往往正好进沉浸，那是下一次点的事
-            if (activePanel === 'right') {
-              setActivePanel(null)
+
+            if (isWide) {
+              // 笔记栏开着：这一下是「收起笔记栏」。收完往往正好进沉浸，那是下一次点的事
+              if (activePanel === 'right') {
+                setActivePanel(null)
+                return
+              }
+              // 已经沉浸了：这一下是「把顶栏和笔记键叫出来 / 收回去」，3 秒后自己收
+              if (immersive) toggleChrome()
               return
             }
-            // 已经沉浸了：这一下是「把顶栏和笔记键叫出来 / 收回去」
-            if (immersive) toggleChrome()
+
+            // 窄屏：这一下就是沉浸本身的开关，没有计时器，收起来就一直收着
+            setNarrowImmersive((v) => !v)
           }}
         >
         {initializing && (
