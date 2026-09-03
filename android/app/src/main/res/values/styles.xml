@@ -35,7 +35,45 @@
     </style>
 
 
+    <!--
+        启动那一瞬间的画面（清后台再打开 app 时会看见）。
+
+        改之前这里只有一行 `android:background="@drawable/splash"`，是 Capacitor
+        生成安卓工程时的原样 —— 和桌面图标一样（见后续规划第四十一节），一直没换过。
+        用户在平板上看到的那一屏（中间一个蓝色的 X、顶上一条写着「我的文库」的
+        原生标题栏、标题栏里两道拉扁的蓝色波浪）三样全出自这三行：
+
+        - 蓝 X = @drawable/splash，Capacitor 自带的默认启动图
+        - 标题栏 = Theme.SplashScreen 在安卓 12 以上继承自
+          android:Theme.DeviceDefault.DayNight，**那是带标题栏的**，
+          这里没关掉，系统就照 activity 的名字画了一条
+        - 两道波浪 = 同一张蓝 X。`android:background` 是**给控件用的**属性，
+          写在主题里，凡是没自己指定背景的控件都会拿它当底 ——
+          标题栏里那些窄控件把这张图横着拉扁，X 就成了波浪
+
+        现在四件事：
+
+        1. **系统启动屏画纸色底 + 中间一个 A**（安卓 12 起走这条路）。
+           图标用桌面图标那张前景，不另存一份。288dp 是系统规定的图标尺寸。
+        2. **窗口底换成 @drawable/launch_screen** —— 启动屏退场之后、网页画出来
+           之前露的是这一层。那张图画的是同一件东西，交接才不跳。
+        3. **关掉标题栏。**
+        4. **两条系统栏跟运行时主题一样透明**，图标按浅色底画。
+           这里得写 windowLightStatusBar：MainActivity 里那句要等 app 起来才跑，
+           启动屏比它早。DayNight 的父主题一遇上系统深色模式就会把图标画成白的，
+           而我们底下是纸色 —— 第四十九节栽过同一个坑。
+           windowLightNavigationBar 要 API 27，为它单开一个 values-v27 不划算，
+           且手势导航下那几个像素看不出来，略过。
+    -->
     <style name="AppTheme.NoActionBarLaunch" parent="Theme.SplashScreen">
-        <item name="android:background">@drawable/splash</item>
+        <item name="windowSplashScreenBackground">@color/paper</item>
+        <item name="windowSplashScreenAnimatedIcon">@mipmap/ic_launcher_foreground</item>
+        <item name="android:windowBackground">@drawable/launch_screen</item>
+        <item name="windowActionBar">false</item>
+        <item name="windowNoTitle">true</item>
+        <item name="android:windowNoTitle">true</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+        <item name="android:windowLightStatusBar">true</item>
     </style>
 </resources>

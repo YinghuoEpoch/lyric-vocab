@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    启动窗口的底。
+
+    安卓 12 起，那一瞬间的画面由系统的启动屏负责（styles.xml 里
+    windowSplashScreenBackground / windowSplashScreenAnimatedIcon 两条）；
+    这张图管的是**启动屏退场之后、网页画出来之前**露出来的那一层窗口底，
+    以及安卓 12 以下没有系统启动屏时的整个启动画面。
+
+    两处画的是同一件东西 —— 纸色底 + 中间一个 A —— 交接时才不会跳一下。
+    288dp 是系统启动屏图标的尺寸（不带图标底色时），照抄过来对齐。
+
+    图用的就是桌面图标那张前景（衬线 A + 琥珀下划线，见后续规划第四十一节），
+    不另存一份，图标改了这边跟着改。
+-->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:drawable="@color/paper" />
+    <item
+        android:width="288dp"
+        android:height="288dp"
+        android:gravity="center"
+        android:drawable="@mipmap/ic_launcher_foreground" />
+</layer-list>
