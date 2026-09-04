@@ -69,6 +69,13 @@ const DEV_BASE = '/jgy/dav'
 /** 数据文件叫什么，以及被覆盖前那一版存哪儿 */
 export const DATA_FILE = 'data.json'
 export const PREV_FILE = 'data.prev.json'
+/**
+ * 阅读进度单独一个小文件。
+ *
+ * 它和 data.json 分开，是为了让「一路往下读」不再重传整份索引 ——
+ * 缘由见 sync/progress.ts。几百字节，随时传得起。
+ */
+export const PROGRESS_FILE = 'progress.json'
 
 /**
  * 每篇正文一个文件。
@@ -243,6 +250,40 @@ export async function putPageContent(
   const res = await request('PUT', davUrl(c.folder, pageFile(pageId), dev), c, body)
   if (res.status < 200 || res.status >= 300) {
     throw new SyncError(`传正文失败：${res.status}${brief(res.text)}`)
+  }
+  return { bytes: body.length }
+}
+
+/**
+ * 取云端的进度表。
+ *
+ * ⚠️ 取不到一律当**空表**，不抛错 —— 第一次同步时这个文件本来就不存在
+ * （坚果云在文件夹不存在时回 409 不是 404，两个都要认，第六十一节的坑）。
+ * 内容坏了也当空表：进度丢了顶多是回到上次的位置，
+ * 而为它抛错会把整轮同步（笔记、正文）一起拖垮，那才是真损失。
+ */
+export async function getProgress(c: SyncConfig): Promise<{ map: unknown; bytes: number }> {
+  const dev = !Capacitor.isNativePlatform()
+  const res = await request('GET', davUrl(c.folder, PROGRESS_FILE, dev), c)
+  if (res.status === 404 || res.status === 409) return { map: {}, bytes: 0 }
+  if (res.status < 200 || res.status >= 300) return { map: {}, bytes: 0 }
+  try {
+    return { map: JSON.parse(unpack(res.text)), bytes: res.text.length }
+  } catch {
+    return { map: {}, bytes: res.text.length }
+  }
+}
+
+/** 传进度表上去。返回实际走了多少字节，界面要报流量 */
+export async function putProgress(
+  c: SyncConfig,
+  map: unknown
+): Promise<{ bytes: number }> {
+  const dev = !Capacitor.isNativePlatform()
+  const body = pack(JSON.stringify(map))
+  const res = await request('PUT', davUrl(c.folder, PROGRESS_FILE, dev), c, body)
+  if (res.status < 200 || res.status >= 300) {
+    throw new SyncError(`传进度失败：${res.status}${brief(res.text)}`)
   }
   return { bytes: body.length }
 }

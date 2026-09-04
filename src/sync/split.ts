@@ -30,11 +30,28 @@ import type { AppData, LyricPage } from '../types'
  * 拿它判断「正文变没变」会把大量没变的正文误判成变了，等于白拆。
  */
 
-/** 文档在索引里的样子：把正文换成一枚指纹 */
-export type PageMeta = Omit<LyricPage, 'content'> & { contentRev: string }
+/**
+ * 文档在索引里的样子：正文换成一枚指纹，**而且不带阅读进度**。
+ *
+ * ⚠️ 进度（`progress` / `progressAt`）单独走 `progress.json`（见 progress.ts）。
+ * 留在这里的话，一路往下读时索引每分钟都在变 —— 等于把整份 data.json 重传一遍。
+ */
+export type PageMeta = Omit<LyricPage, 'content' | 'progress' | 'progressAt'> & {
+  contentRev: string
+}
 
-/** 索引：和 AppData 一样，只是 pages 里没有正文 */
-export interface SyncIndex extends Omit<AppData, 'pages'> {
+/**
+ * 索引：和 AppData 一样，只是 pages 里没有正文，**而且不带旧模型的 `notes`**。
+ *
+ * ⚠️ 为什么把 `notes` 排除在外（2026-09-04）：那是换代之前的老笔记表，
+ * 迁移早就跑完了、内容已经在 `annotations` 里，运行期**只有一次性迁移会写它**
+ * （见 storage.ts 的 replacePageNotes，唯一调用方是启动时的分词迁移）。
+ * 也就是说它是**冻着的**，每次同步却要把它传一遍 —— 用户那份占了 6%。
+ *
+ * 它照样留在**本地**当保险（恢复换代之前导出的老备份还得靠它），
+ * 只是不再上云。两台设备各留各的，反正谁也不会再改它。
+ */
+export interface SyncIndex extends Omit<AppData, 'pages' | 'notes'> {
   pages: PageMeta[]
 }
 
@@ -55,14 +72,20 @@ export function contentRev(content: string): string {
   return `${(h >>> 0).toString(36)}-${content.length.toString(36)}`
 }
 
-/** 完整数据 -> 索引（正文换成指纹） */
+/**
+ * 完整数据 -> 索引。三样东西被摘掉：
+ * 正文（换成指纹）、旧的 `notes`（不上云）、阅读进度（单独走小文件）。
+ */
 export function toIndex(data: AppData): SyncIndex {
+  const { notes: _legacyNotes, ...rest } = data
   return {
-    ...data,
-    pages: (data.pages ?? []).map(({ content, ...rest }) => ({
-      ...rest,
-      contentRev: contentRev(content ?? '')
-    }))
+    ...rest,
+    pages: (data.pages ?? []).map(
+      ({ content, progress: _progress, progressAt: _progressAt, ...p }) => ({
+        ...p,
+        contentRev: contentRev(content ?? '')
+      })
+    )
   }
 }
 
@@ -78,15 +101,32 @@ export function contentsOf(data: AppData): Map<string, string> {
  * **宁可显示成一篇空文档，也不能让它从文库里消失** ——
  * 前者一眼看得出不对、下次同步还会补回来，后者用户会以为自己的书没了。
  */
-export function fromIndex(index: SyncIndex, contents: Map<string, string>): AppData {
+export function fromIndex(
+  index: SyncIndex,
+  contents: Map<string, string>,
+  /**
+   * 本地那份旧 `notes`。**必须传，而且必须是本地的那一份。**
+   *
+   * ⚠️ 它不上云，所以合并结果里没有它。忘了带回来的话，
+   * `replaceAllData` 会拿 `next.notes ?? {}` 把本地那份**抹成空的** ——
+   * 那是「不报错、过几天才发现老备份恢复不回来了」的那种错。
+   */
+  legacyNotes: AppData['notes']
+): AppData {
   return {
     ...index,
+    notes: legacyNotes,
     pages: index.pages.map(({ contentRev: _rev, ...rest }) => ({
       ...rest,
       content: contents.get(rest.id) ?? ''
     }))
   }
 }
+
+/*
+ * ⚠️ 拼回来的数据里**没有阅读进度** —— 它不在索引里。
+ * 调用方要自己用 applyProgress 把进度补上（见 progress.ts 和 index.ts 的 syncNow）。
+ */
 
 /**
  * 合并完之后，哪几篇的正文要**下载**（本地手上那份不是合并结果要的那一版）。

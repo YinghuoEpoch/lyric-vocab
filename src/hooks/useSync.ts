@@ -8,6 +8,7 @@ import {
   type MergeReport,
   type SyncOutcome
 } from '../sync'
+import { addUsage } from '../sync/usage'
 
 /**
  * 什么时候同步。
@@ -33,8 +34,55 @@ const PUSH_DELAY_MS = 8000
  * 光靠上面那个延迟不够：停手八秒传一次，接着读、再停、又传一次，一章下来传很多回。
  *
  * 手动那颗按钮不受这道闸限制 —— 人明确要同步时不该被拦。
+ *
+ * ⚠️ **被这道闸拦下来时要补一次，不能就地放弃**（2026-09-04 用户要求）。
+ * 从前是直接 return，那一次改动就得等下一个触发点（切后台再回来、或者再改点别的）
+ * 才会上去 —— 现象是「我明明改了，另一台没更新」。现在改成**约到闸开的那一刻再来**，
+ * 于是「改了迟早会传上去」成立，而每分钟至多一次这个上限一点没松。
  */
 const MIN_AUTO_GAP_MS = 60 * 1000
+
+/**
+ * 撞上「已经有一轮在跑」时，隔多久回来看一眼。
+ *
+ * 短一点没关系：回来之后还要过 MIN_AUTO_GAP_MS 那道闸，
+ * 真正的上限仍然是每分钟一次，这里只是别把这次改动丢了。
+ */
+const RUNNING_RETRY_MS = 2000
+
+/** 这一次到底走不走。`retry` 是「现在不行，afterMs 毫秒之后再来」 */
+export type SyncGate = { kind: 'go' } | { kind: 'retry'; afterMs: number } | { kind: 'skip' }
+
+/**
+ * 该不该现在同步 —— 时机判断里唯一有分支的那一块，抽出来好钉住。
+ *
+ * 真身在真机上（网络、坚果云的脾气），但**走不走、什么时候补**是纯判断。
+ * 两条规矩：
+ *
+ * 1. **手动的不受任何闸限制**，除非已经有一轮在跑（那时按钮本来就是禁用的）
+ * 2. **自动的一旦被拦，一律改约，不就地放弃** —— 放弃的后果是
+ *    「我明明改了，另一台没更新」，而那正是这一版要治的
+ */
+export function decideAutoSync(o: {
+  /** 自动触发的（回前台、改完延迟）。手动那颗按钮传 false */
+  silent: boolean
+  /** 已经有一轮在跑 */
+  running: boolean
+  now: number
+  /** 上一次**自动**同步是什么时候。手动的不记 */
+  lastAutoAt: number
+  minGapMs?: number
+  runningRetryMs?: number
+}): SyncGate {
+  const minGap = o.minGapMs ?? MIN_AUTO_GAP_MS
+  const retry = o.runningRetryMs ?? RUNNING_RETRY_MS
+
+  if (o.running) return o.silent ? { kind: 'retry', afterMs: retry } : { kind: 'skip' }
+  if (!o.silent) return { kind: 'go' }
+
+  const wait = minGap - (o.now - o.lastAutoAt)
+  return wait > 0 ? { kind: 'retry', afterMs: wait } : { kind: 'go' }
+}
 
 export type SyncState = 'idle' | 'syncing' | 'ok' | 'error'
 
@@ -69,16 +117,36 @@ export function useSync(onDataChanged: () => void) {
     async (silent: boolean) => {
       const cfg = loadSyncConfig()
       if (!isSyncReady(cfg)) return
-      if (running.current) return
-      // 自动那条路要守最小间隔；手动（silent=false）随时可以
-      if (silent && Date.now() - lastAutoAt.current < MIN_AUTO_GAP_MS) return
+
+      const gate = decideAutoSync({
+        silent,
+        running: running.current,
+        now: Date.now(),
+        lastAutoAt: lastAutoAt.current
+      })
+      if (gate.kind === 'skip') return
+      if (gate.kind === 'retry') {
+        /*
+         * 改约，不放弃。借用 notifyChanged 那个定时器槽：
+         * 期间用户又改了东西，那边会把这次预约顶掉、重新排一轮 ——
+         * 最终还是「停手之后传一次」，不会叠加成好几次。
+         */
+        if (timer.current) clearTimeout(timer.current)
+        timer.current = setTimeout(() => {
+          timer.current = null
+          void run(true)
+        }, gate.afterMs)
+        return
+      }
       if (silent) lastAutoAt.current = Date.now()
       running.current = true
       if (!silent) setStatus((s) => ({ ...s, state: 'syncing', error: null }))
       try {
         suppress.current = true
-        const outcome: SyncOutcome = await syncNow(cfg, silent)
+        const outcome: SyncOutcome = await syncNow(cfg)
         setLastSyncAt(outcome.at)
+        // 记真账。估算这条路错过两次了，见 sync/usage.ts
+        addUsage(outcome.up, outcome.down)
         setStatus({
           state: 'ok',
           lastAt: outcome.at,

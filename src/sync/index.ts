@@ -2,7 +2,14 @@ import localforage from 'localforage'
 import { getAppData, replaceAllData } from '../storage'
 import type { AppData } from '../types'
 import { formatSize } from './codec'
-import { mergeAppData, onlyProgressChanged, type MergeReport } from './merge'
+import { mergeAppData, type MergeReport } from './merge'
+import {
+  applyProgress,
+  mergeProgress,
+  progressOf,
+  sameProgress,
+  type ProgressMap
+} from './progress'
 import {
   contentsOf,
   fromIndex,
@@ -28,6 +35,7 @@ import {
   SyncError,
   type SyncConfig
 } from './webdav'
+import { getProgress, putProgress } from './webdav'
 
 /**
  * 同步一次是怎么走的。
@@ -131,6 +139,9 @@ export interface SyncOutcome {
   at: number
   /** 这一次实际走了多少流量，写成人看的样子 */
   traffic: string
+  /** 这一次上下行各多少字节。给流量记账用（见 usage.ts）—— 从前算完就扔了 */
+  up: number
+  down: number
 }
 
 /**
@@ -140,11 +151,55 @@ export interface SyncOutcome {
  * 两台设备几乎同时同步时会撞上，硬盖就会吃掉一边的改动，而且神不知鬼不觉。
  * 重来一次是安全的：三方合并是幂等的，再合一遍只会把对面新写的也吸收进来。
  */
-export async function syncNow(
-  cfg: SyncConfig = loadSyncConfig(),
-  /** 自动跑的（回前台、改完延迟）。手动那颗按钮传 false —— 不受省流量那几道闸限制 */
-  auto = false
-): Promise<SyncOutcome> {
+/**
+ * 和云端对一次阅读进度。**只碰 progress.json，绝不碰索引。**
+ *
+ * 云端那份读坏了当空表处理（见 webdav 的 getProgress）——
+ * 进度丢了顶多回到上次的位置，为它把整轮同步拖垮才是真损失。
+ */
+async function exchangeProgress(
+  cfg: SyncConfig,
+  localProgress: ProgressMap
+): Promise<{ merged: ProgressMap; localChanged: boolean; up: number; down: number }> {
+  const got = await getProgress(cfg)
+  const remoteProgress = sanitizeProgress(got.map)
+  const merged = mergeProgress(localProgress, remoteProgress)
+
+  let up = 0
+  if (!sameProgress(merged, remoteProgress)) {
+    up = (await putProgress(cfg, merged)).bytes
+  }
+  return {
+    merged,
+    localChanged: !sameProgress(merged, localProgress),
+    up,
+    down: got.bytes
+  }
+}
+
+/**
+ * 云端那份进度表是别人写的，**当成不可信的输入过一遍**。
+ *
+ * 形状不对的整条丢掉而不是抛错：一条坏记录不该让所有篇的进度都用不了。
+ */
+function sanitizeProgress(raw: unknown): ProgressMap {
+  const out: ProgressMap = {}
+  if (!raw || typeof raw !== 'object') return out
+  for (const [id, e] of Object.entries(raw as Record<string, unknown>)) {
+    if (!e || typeof e !== 'object') continue
+    const { v, at } = e as { v?: unknown; at?: unknown }
+    if (typeof v !== 'number' || !Number.isFinite(v) || v < 0) continue
+    out[id] = { v, at: typeof at === 'number' && Number.isFinite(at) ? at : 0 }
+  }
+  return out
+}
+
+/*
+ * ⚠️ 从前这里有个 `auto` 参数，用来放宽自动同步的省流量规则
+ * （只有阅读进度变了就先别传）。进度拆出去单独走小文件之后，
+ * 那条规则和这个参数一起没了 —— 每分钟至多一次那道闸在 useSync 里，不在这儿。
+ */
+export async function syncNow(cfg: SyncConfig = loadSyncConfig()): Promise<SyncOutcome> {
   if (!isSyncReady(cfg)) throw new SyncError('还没填全（账号、应用密码、文件夹）')
 
   for (let attempt = 0; attempt < 2; attempt++) {
@@ -152,23 +207,40 @@ export async function syncNow(
     const base = await loadBase()
 
     /*
-     * 「我这边没动过」——自动同步时，**只有阅读进度变了也算没动过**。
-     * 见 merge.ts 里 onlyProgressChanged 的说明。
-     * 进度不会因此丢：下次有别的东西要传时，它顺路就一起走了。
+     * 「我这边索引没动过」。
+     *
+     * ⚠️ 阅读进度**已经不在索引里**了（2026-09-04 拆出去走 progress.json），
+     * 所以这里不必再像从前那样为它开特例（`onlyProgressChanged` 已删）——
+     * 一路往下读时索引本来就纹丝不动。
      */
-    const localIdle = base
-      ? sameJson(local, base) || (auto && onlyProgressChanged(base, local))
-      : false
+    const localIdle = base ? sameJson(toIndex(local), toIndex(base)) : false
+    const localProgress = progressOf(local)
 
     /*
      * ⚠️ **先问一句「变了没有」，别张口就把索引拉下来。** 一次 HEAD 几百字节。
-     * 两个条件同时成立才敢跳过：云端版本号和上次一样，且本地没动过。
+     * 两个条件同时成立才敢跳过：云端版本号和上次一样，且本地索引没动过。
      */
     const seenEtag = loadEtag()
     if (seenEtag && localIdle) {
       const nowEtag = await headRemoteEtag(cfg)
       if (nowEtag && nowEtag === seenEtag) {
-        return { report: zero(), localChanged: false, at: Date.now(), traffic: '没走流量' }
+        /*
+         * 索引两边都没动。**但进度还得对一对** —— 它不受这个版本号管
+         * （不是同一个文件），而且这正是「读书时」最常见的那条路：
+         * 只传几百字节的小文件，整份 data.json 一个字节都不碰。
+         */
+        const r = await exchangeProgress(cfg, localProgress)
+        if (r.localChanged) await replaceAllData(applyProgress(local, r.merged))
+        await saveBase(applyProgress(local, r.merged))
+        const moved = r.up > 0 || r.down > 0
+        return {
+          report: zero(),
+          localChanged: r.localChanged,
+          at: Date.now(),
+          traffic: moved ? `进度 下 ${formatSize(r.down)} / 上 ${formatSize(r.up)}` : '没走流量',
+          up: r.up,
+          down: r.down
+        }
       }
     }
 
@@ -199,7 +271,9 @@ export async function syncNow(
         report: zero(),
         localChanged: false,
         at: Date.now(),
-        traffic: `传了 ${formatSize(up)}`
+        traffic: `传了 ${formatSize(up)}`,
+        up,
+        down
       }
     }
 
@@ -232,7 +306,23 @@ export async function syncNow(
       }
     }
 
-    const merged = fromIndex(mergedIndex, contents)
+    /*
+     * ⚠️ **索引里没有的两样东西，必须在这里补回来，否则 replaceAllData 会把它们抹掉。**
+     *
+     * 一是旧的 `notes`（不上云，见 split.ts）—— 本地那份原样带回。
+     * 二是**阅读进度**（单独走 progress.json，见 progress.ts）——
+     * 顺便在这一轮里和云端对一次，省得再跑一趟。
+     *
+     * 少任何一下都是「不报错、过几天才发现东西没了」的那种错。
+     */
+    const prog = await exchangeProgress(cfg, localProgress)
+    down += prog.down
+    up += prog.up
+
+    const merged = applyProgress(
+      fromIndex(mergedIndex, contents, local.notes ?? {}),
+      prog.merged
+    )
     const localChanged = !sameJson(merged, local)
     const remoteNeedsWrite = !sameJson(mergedIndex, remoteIndex) || legacyContents !== null
 
@@ -272,7 +362,9 @@ export async function syncNow(
       report,
       localChanged,
       at: Date.now(),
-      traffic: `下 ${formatSize(down)}${up ? ` / 上 ${formatSize(up)}` : ''}`
+      traffic: `下 ${formatSize(down)}${up ? ` / 上 ${formatSize(up)}` : ''}`,
+      up,
+      down
     }
   }
 

@@ -15,8 +15,20 @@ export interface LyricPage {
   content: string
   updatedAt: number
   deletedAt?: number
-  /** 阅读进度：滚动位置 scrollTop，用于恢复上次阅读位置 */
+  /**
+   * 阅读进度：滚动位置 scrollTop，用于恢复上次阅读位置。
+   *
+   * ⚠️ **它和 progressAt 都不进同步索引**（见 sync/split.ts）——
+   * 单独走一个小文件 `progress.json`。缘由：一路往下读时它一直在变，
+   * 留在索引里就等于每分钟把整份 data.json 重传一遍。
+   */
   progress?: number
+  /**
+   * 进度是什么时候记的。**两台设备各读各的时，靠它决定谁的位置更新。**
+   *
+   * 没有这一格的老数据当 0 处理 —— 谁记了时间谁赢，都没记就保持原样。
+   */
+  progressAt?: number
 }
 
 export interface WordNote {

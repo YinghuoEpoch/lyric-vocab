@@ -333,6 +333,28 @@ export async function savePage(page: LyricPage): Promise<AppData> {
   return commit(data)
 }
 
+/**
+ * 只存阅读进度。
+ *
+ * ⚠️ **不碰 `updatedAt`** —— 这正是它必须和 savePage 分开的理由。
+ * savePage 每次都刷 `updatedAt`，而那一格在同步索引里；
+ * 一路往下读时滚动位置一直在存，索引就跟着一直变，
+ * 「把进度拆出去单独传」也就白拆了（见 sync/split.ts）。
+ *
+ * 顺手挡掉「值没变还写一遍」：滚动回同一个位置不该惊动同步。
+ */
+export async function savePageProgress(pageId: string, progress: number): Promise<AppData> {
+  const data = await ensureLoaded()
+  const idx = data.pages.findIndex((p) => p.id === pageId)
+  if (idx < 0) return snapshot(data)
+  const cur = data.pages[idx]
+  if (cur.progress === progress) return snapshot(data)
+  data.pages = data.pages.map((p, i) =>
+    i === idx ? { ...p, progress, progressAt: Date.now() } : p
+  )
+  return commit(data)
+}
+
 /*
  * ============================================================
  * 旧模型（notes）唯一还留着的写入口。

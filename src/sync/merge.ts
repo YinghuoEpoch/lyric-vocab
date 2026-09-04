@@ -158,30 +158,6 @@ export function mergeById<T>(
 }
 
 /**
- * 和底本比，**除了阅读进度以外什么都没变**吗。
- *
- * ⚠️ 这是流量的头号大户，值得单拎出来。你一路往下读，滚动位置一直在存
- * （LyricPage.progress），每一次都算「数据变了」，于是自动同步就要传一整份上去 ——
- * 而那一份是整本整本的小说，好几兆。读一天书能把一个月的免费额度读光。
- *
- * 治法不是不同步进度（换设备接着读那一行是有用的），而是**不让它单独触发上传**：
- * 只要有别的东西变了，进度就顺路一起传走；只有它自己变，就等着。
- *
- * 手动那颗按钮不看这个 —— 人明确要同步时，进度也该立刻传上去。
- */
-export function onlyProgressChanged(base: AppData, local: AppData): boolean {
-  const strip = (d: AppData) => ({
-    ...d,
-    pages: (d.pages ?? []).map(({ progress: _progress, ...rest }) => rest)
-  })
-  const a = JSON.stringify(strip(base))
-  const b = JSON.stringify(strip(local))
-  if (a !== b) return false
-  // 去掉进度之后完全一样：那么要么进度也没变（不该走到这儿），要么变的只有进度
-  return JSON.stringify(base) !== JSON.stringify(local)
-}
-
-/**
  * 三方合并「**顺序**」。
  *
  * ⚠️ 用户问出来的：「要是文档文库的排序变了，这个又会怎么样」——
