@@ -9,6 +9,15 @@ import { useBackHandler, BackPriority } from '../hooks/useBackHandler'
 import { getSafeAreaReport, type SafeAreaReport } from '../safeArea'
 import { CloudTtsPanel } from './CloudTtsPanel'
 import { SyncPanel } from './SyncPanel'
+import {
+  measureSyncData,
+  estimateMonthlyUpload,
+  headroomNotes,
+  SYNCS_PER_DAY_ESTIMATE,
+  type SyncSizeReport
+} from '../sync/measure'
+import { formatSize } from '../sync/codec'
+import { getAppData } from '../storage'
 import { loadSyncConfig, saveSyncConfig, isSyncReady, type SyncConfig } from '../sync'
 import {
   loadCloudConfig,
@@ -235,6 +244,78 @@ function Row({ label, value }: { label: string; value: React.ReactNode }) {
 }
 
 /**
+ * 「开发者 → 同步数据」那一屏。
+ *
+ * 起因：用户问「笔记越来越多，存储占用增长快吗」，我拿交接文档里**另一个数据集**
+ * 的数字估了一遍，差了将近一个数量级。他一句「我才划了 300 多条就已经 30 KB 了」
+ * 把结论推翻。**这一屏就是为了以后不用再猜** —— 和第四十九、五十七节同一招。
+ *
+ * 数字全是**真算**的：跑的是同步那套真代码（toIndex + pack），
+ * 算出来的就是每次真正要传的那份。
+ */
+function SyncSizeReadout({ report }: { report: SyncSizeReport | null }) {
+  if (!report) return <p className="text-sm text-ink-muted">正在算…</p>
+
+  const 月 = estimateMonthlyUpload(report.totalBytes)
+  const 余量 = headroomNotes(report)
+
+  return (
+    <div className="space-y-4">
+      <Section title="每次同步要传多大">
+        <Row label="data.json（压缩后）" value={formatSize(report.totalBytes)} />
+        <p className="pt-1 text-xs text-ink-muted leading-relaxed">
+          这就是同步时上传和下载的那一份。app 里显示的「上 xx / 下 xx」对的就是它。
+        </p>
+      </Section>
+
+      <Section title="这些字节花在哪儿了">
+        {report.parts.map((p) => (
+          <Row
+            key={p.label}
+            label={`${p.label}（${p.detail}）`}
+            value={`${formatSize(p.bytes)}　${Math.round((p.bytes / report.totalBytes) * 100)}%`}
+          />
+        ))}
+        <p className="pt-1 text-xs text-ink-muted leading-relaxed">
+          几块加起来不等于总数是正常的 —— 压缩时它们互相占便宜（重复的释义、成片的坐标）。
+          这里要看的是谁是大头。
+        </p>
+      </Section>
+
+      <Section title="一条笔记平均多重">
+        {report.notes.map((n) => (
+          <Row key={n.kind} label={`${n.kind}（${n.count} 条）`} value={`${n.avgBytes} 字节`} />
+        ))}
+        <p className="pt-1 text-xs text-ink-muted leading-relaxed">
+          句摘比单词重得多 —— 它带着整句英文原文、句型说明和翻译。
+        </p>
+      </Section>
+
+      <Section title="照这个大小推算">
+        <Row label="一个月上传" value={`约 ${月.text}（约占 1 G 的 ${月.percent}%）`} />
+        {余量 !== null && <Row label="还能再划" value={`约 ${余量} 条笔记`} />}
+        <p className="pt-1 text-xs text-ink-muted leading-relaxed">
+          按「一天边读边划三小时、同步 {SYNCS_PER_DAY_ESTIMATE} 次」估的，只能当个数量级看。
+          真实次数取决于你怎么用；自动同步每分钟至多一次，那是天花板。
+          「还能再划」是按你现在这批笔记的平均大小推的。
+        </p>
+      </Section>
+
+      <Section title="正文（不在上面那份里）">
+        <Row label="文库 / 文档" value={`${report.bookCount} 个 / ${report.pageCount} 篇`} />
+        <Row label="正文合计" value={`${(report.contentChars / 1024 / 1024).toFixed(2)} MB（未压缩）`} />
+        <p className="pt-1 text-xs text-ink-muted leading-relaxed">
+          正文一篇一个文件单独存，<strong className="font-medium text-ink">
+            只在你编辑正文或导入新书时才传
+          </strong>
+          。平时划词改的只有上面那份 data.json。
+        </p>
+      </Section>
+    </div>
+  )
+}
+
+/**
  * 系统栏参数。
  *
  * 本来是为了验一次沉浸式临时加的，用户验完说留着 —— 确实值得留：
@@ -405,6 +486,10 @@ export function SettingsDialog({
   const [tryRunning, setTryRunning] = useState<string | null>(null)
   /** 云端朗读的凭证。打开设置页时读一次，改一下存一下 */
   const [cloudConfig, setCloudConfig] = useState<CloudTtsConfig>(loadCloudConfig)
+  /** 正在看「同步数据」那一屏 */
+  const [showSyncSize, setShowSyncSize] = useState(false)
+  /** 同步数据的读数。进那一屏时现算一次 —— 划了新词之后这些数就变了 */
+  const [syncSize, setSyncSize] = useState<SyncSizeReport | null>(null)
   /** 正在填坚果云的凭证 */
   const [editingSync, setEditingSync] = useState(false)
   const [syncConfig, setSyncConfig] = useState<SyncConfig>(loadSyncConfig)
@@ -425,6 +510,8 @@ export function SettingsDialog({
       setTryRunning(null)
       setCloudConfig(loadCloudConfig())
       setEditingSync(false)
+      setShowSyncSize(false)
+      setSyncSize(null)
       setSyncConfig(loadSyncConfig())
       setAudioStats(null)
       void cacheStats().then(setAudioStats)
@@ -445,6 +532,18 @@ export function SettingsDialog({
       .join(' / ')
     setInsetInfo({ report: getSafeAreaReport(), applied })
     setShowDev(true)
+  }
+
+  /**
+   * 进「同步数据」那一屏时**现算一次**。
+   *
+   * 不在打开设置页时就算：那要把整份数据压一遍（正文还得逐字算指纹），
+   * 白白卡一下 —— 而这一屏十次里有九次不会被点开。
+   */
+  const openSyncSize = () => {
+    setSyncSize(null)
+    setShowSyncSize(true)
+    void getAppData().then((d) => setSyncSize(measureSyncData(d)))
   }
 
   /** 进「朗读引擎参数」那一屏时现问一次引擎 —— 装了新的语音包之后这些数会变 */
@@ -551,7 +650,9 @@ export function SettingsDialog({
       ? AGREEMENT_TITLE
       : showGuide
         ? '使用说明'
-        : showSpeechDev
+        : showSyncSize
+          ? '同步数据'
+          : showSpeechDev
           ? '朗读引擎参数'
           : showDev
             ? '开发者'
@@ -566,7 +667,9 @@ export function SettingsDialog({
       ? () => setShowAgreement(false)
       : showGuide
         ? () => setShowGuide(false)
-        : showSpeechDev
+        : showSyncSize
+          ? () => setShowSyncSize(false)
+          : showSpeechDev
           ? () => setShowSpeechDev(false)
           : showDev
             ? () => setShowDev(false)
@@ -637,6 +740,8 @@ export function SettingsDialog({
                 <p key={line}>{line}</p>
               ))}
             </div>
+          ) : showSyncSize ? (
+            <SyncSizeReadout report={syncSize} />
           ) : showSpeechDev ? (
             <SpeechReadout
               diag={speechDiag}
@@ -860,6 +965,19 @@ export function SettingsDialog({
                     <span className="block text-sm text-ink">系统栏参数</span>
                     <span className="block text-xs text-ink-muted">
                       顶上和底下各让出多少、这份网页是哪一版
+                    </span>
+                  </span>
+                  <ChevronRight className="w-4 h-4 text-ink-muted shrink-0" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => enterSub(openSyncSize)}
+                  className="w-full flex items-center gap-2 text-left"
+                >
+                  <span className="flex-1 min-w-0">
+                    <span className="block text-sm text-ink">同步数据</span>
+                    <span className="block text-xs text-ink-muted">
+                      每次同步要传多大、字节都花在哪儿了
                     </span>
                   </span>
                   <ChevronRight className="w-4 h-4 text-ink-muted shrink-0" />
