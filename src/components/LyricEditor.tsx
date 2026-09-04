@@ -15,6 +15,13 @@ import { useKeyboardHeight } from '../hooks/useKeyboardHeight'
 import { buildWordList, getRangeText as sliceRangeText } from '../utils/reconcile'
 
 const PROGRESS_DEBOUNCE_MS = 700
+/**
+ * 「读到第几行」多久算一次。
+ *
+ * 算一次要把这一篇所有的 <p> 问一遍位置 —— 长文里是几百次 getBoundingClientRect，
+ * 而滚动每一帧都会触发。笔记栏跟着滚不需要 60fps，压到这个数够用了。
+ */
+const TOP_LINE_THROTTLE_MS = 120
 
 /** 宽屏上那个小弹窗有多宽，以及离屏幕边缘至少留多少 */
 const POPUP_W = 320
@@ -119,6 +126,14 @@ interface LyricEditorProps {
   onSelectPage?: (pageId: string) => void
   /** 当前文档阅读进度 0–100，供侧栏进度条显示 */
   onReadingProgressChange?: (percent: number) => void
+  /**
+   * 屏幕最上面露出来的是第几行，变了才报。笔记栏据此跟着正文滚（见 followScroll.ts）。
+   *
+   * **不给就一次也不算** —— 算一次要遍历这一篇所有的 <p> 并读它们的位置，
+   * 而笔记栏收起来的时候这个数没人要。编辑模式下也不给：那时候在滚的是
+   * textarea 自己，「第几行」这个坐标源根本不在阅读容器里（见第三十四节）。
+   */
+  onTopLineChange?: (line: number) => void
   /** 阅读外观（字号、字体、主题） */
   readerSettings?: ReaderSettings
   /**
@@ -190,6 +205,7 @@ function LyricEditorInner({
   nextPage,
   onSelectPage,
   onReadingProgressChange,
+  onTopLineChange,
   readerSettings = { fontSize: 18, fontFamily: 'sans', theme: 'pure', accent: 'amber' },
   immersive = false,
   chromeVisible = false
@@ -269,6 +285,34 @@ function LyricEditorInner({
     onReadingProgressChange(percent)
   }, [onReadingProgressChange])
 
+  /** 上一次报出去的行号。没变就不报，省掉上层一整轮重渲染 */
+  const lastTopLineRef = useRef(-1)
+  const topLineTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  /** 把「屏幕最上面是第几行」报给上层。不给回调就一次也不算 —— 见 onTopLineChange */
+  const reportTopLine = useCallback(() => {
+    if (!onTopLineChange) return
+    const line = topVisibleLine()
+    if (line === lastTopLineRef.current) return
+    lastTopLineRef.current = line
+    onTopLineChange(line)
+  }, [onTopLineChange, topVisibleLine])
+
+  // 换一篇就把上次那个行号忘掉，否则新文档的第 0 行会被当成「没变」而不报
+  useLayoutEffect(() => {
+    lastTopLineRef.current = -1
+  }, [pageId])
+
+  /**
+   * 报一次「现在读到第几行」。三个时机走的都是这一条：
+   * 打开文档（滚动位置刚恢复完）、换一篇、以及**笔记栏刚被打开**
+   * —— 后者的表现是 onTopLineChange 从 undefined 变成有值。
+   */
+  useEffect(() => {
+    if (editMode) return
+    reportTopLine()
+  }, [editMode, pageId, reportTopLine])
+
   // 打开 / 切换文档时恢复滚动位置，在绘制前执行避免闪烁；随后上报一次阅读进度
   useLayoutEffect(() => {
     const el = scrollContainerRef.current
@@ -280,6 +324,13 @@ function LyricEditorInner({
 
   const handleScroll = useCallback(() => {
     reportProgress()
+    // 尾随节流：第一次滚动约一次，这段时间内的后续滚动并成同一次
+    if (onTopLineChange && !topLineTimerRef.current) {
+      topLineTimerRef.current = setTimeout(() => {
+        topLineTimerRef.current = null
+        reportTopLine()
+      }, TOP_LINE_THROTTLE_MS)
+    }
     if (editMode || !onSaveProgress) return
     if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current)
     debounceTimerRef.current = setTimeout(() => {
@@ -287,11 +338,12 @@ function LyricEditorInner({
       const el = scrollContainerRef.current
       if (el) onSaveProgress(el.scrollTop)
     }, PROGRESS_DEBOUNCE_MS)
-  }, [editMode, onSaveProgress, reportProgress])
+  }, [editMode, onSaveProgress, reportProgress, onTopLineChange, reportTopLine])
 
   useEffect(() => {
     return () => {
       if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current)
+      if (topLineTimerRef.current) clearTimeout(topLineTimerRef.current)
     }
   }, [])
 

@@ -238,6 +238,25 @@ export default function App() {
     resolve: (shouldDelete: boolean) => void
   } | null>(null)
   const [documentReadingProgress, setDocumentReadingProgress] = useState(0)
+  /**
+   * 正文里屏幕最上面露出来的是第几行。笔记栏据此跟着滚（见 followScroll.ts）。
+   *
+   * 只在**笔记栏开着而且不在编辑模式**时才让阅读器去算 —— 见 onTopLineChange
+   * 那条注释：算一次要遍历这一篇所有的 <p>，收起来的时候这个数没人要。
+   */
+  const [readingLine, setReadingLine] = useState(0)
+  /**
+   * 刚亲手划下的那条笔记的起点坐标。
+   *
+   * 它是唯一能**盖过「手动滚了侧栏就暂停跟随」**的东西：那是用户上一秒的动作，
+   * 注意力就在那儿。带一个时间戳是因为同一个坐标可能连着划两次（改了释义再存），
+   * 光看坐标本身值没变，跟随就不会重新触发。
+   */
+  const [savedNoteFocus, setSavedNoteFocus] = useState<{ anchor: string; at: number } | null>(null)
+  /** 亲手存下一条笔记时记一下落点。AI 划词那一批**不走这里**（见第七十节） */
+  const focusSavedNote = useCallback((anchor: string | null | undefined) => {
+    if (anchor) setSavedNoteFocus({ anchor, at: Date.now() })
+  }, [])
   const [reviewVocabCount, setReviewVocabCount] = useState(0)
   const [readerSettings, setReaderSettings] = useState<ReaderSettings>(loadReaderSettings)
 
@@ -656,9 +675,10 @@ export default function App() {
         // 用户亲手写的，就不再算 AI 填的 —— 那个标记本质是「待复核清单」
         delete next.auto
         setAppData(await saveAnnotation(next))
+        focusSavedNote(next.start)
       })()
     },
-    [currentPageId]
+    [currentPageId, focusSavedNote]
   )
 
   const handleNoteDelete = useCallback(
@@ -1037,9 +1057,10 @@ export default function App() {
             }
         delete next.auto // 用户亲手写的，不再算 AI 填的
         setAppData(await saveAnnotation(next))
+        focusSavedNote(next.start)
       })()
     },
-    []
+    [focusSavedNote]
   )
 
   /**
@@ -1084,9 +1105,10 @@ export default function App() {
             }
         delete next.auto // 用户亲手写的，不再算 AI 填的
         setAppData(await saveAnnotation(next))
+        focusSavedNote(next.start)
       })()
     },
-    []
+    [focusSavedNote]
   )
 
   /** 从阅读页删除一条短语（按范围找） */
@@ -1535,6 +1557,11 @@ export default function App() {
                 nextPage={nextPage}
                 onSelectPage={handleSelectPageById}
                 onReadingProgressChange={setDocumentReadingProgress}
+                /*
+                  笔记栏收起来（窄屏上滚正文时必然收着）或者在编辑模式，就整个不算 ——
+                  给 undefined，阅读器那边一次都不会去遍历 <p>。
+                */
+                onTopLineChange={showRight && !editMode ? setReadingLine : undefined}
                 readerSettings={readerSettings}
                 immersive={immersive}
                 chromeVisible={chromeVisible}
@@ -1615,6 +1642,9 @@ export default function App() {
             onDeleteSentence={handleDeleteSentenceById}
             currentPageId={currentPageId}
             documentProgress={documentReadingProgress}
+            open={showRight}
+            readingLine={readingLine}
+            savedNoteFocus={savedNoteFocus}
             currentDocIndex={currentDocIndex}
             totalDocsInFolder={totalDocsInFolder}
           />

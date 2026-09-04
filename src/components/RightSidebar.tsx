@@ -1,4 +1,4 @@
-import { memo, useState, useEffect } from 'react'
+import { memo, useState, useEffect, useRef } from 'react'
 import { useSpeak } from '../hooks/useSpeak'
 import { SpeechNotice } from './SpeechNotice'
 import { usePrefetchAudio } from '../hooks/usePrefetchAudio'
@@ -8,6 +8,7 @@ import { AutoMark } from './AutoMark'
 import { useIsClamped } from '../hooks/useIsClamped'
 import { EditedMark } from './EditedMark'
 import { BAND_TOP, BAND_SUB } from './chrome'
+import { findFollowIndex } from '../utils/followScroll'
 
 interface VocabItem {
   word: string
@@ -176,6 +177,15 @@ interface RightSidebarProps {
   onDismissMark?: () => void
   /** 当前文档阅读进度 0–100 */
   documentProgress?: number
+  /** 这一栏此刻是不是露着的。收起来时不跟随，重新打开算一次全新的对应 */
+  open?: boolean
+  /** 正文里屏幕最上面露出来的是第几行。跟随的依据，见 followScroll.ts */
+  readingLine?: number
+  /**
+   * 刚亲手划下的那条笔记（起点坐标 + 时间戳）。**唯一能盖过「暂停跟随」的东西**。
+   * AI 一键划词那一批不走这里 —— 一次进来几十条，战报条就在顶上，列表一甩就找不着撤销了。
+   */
+  savedNoteFocus?: { anchor: string; at: number } | null
   /** 当前文档在同组内的索引（0-based） */
   currentDocIndex?: number
   /** 同组内文档总数 */
@@ -336,6 +346,9 @@ function RightSidebarInner({
   onUndoMark,
   onDismissMark,
   documentProgress = 0,
+  open = true,
+  readingLine = 0,
+  savedNoteFocus = null,
   currentDocIndex = 0,
   totalDocsInFolder = 0,
   className = '',
@@ -364,6 +377,67 @@ function RightSidebarInner({
     filtered.map((v) => v.word),
     canSpeak && tab === 'vocab'
   )
+
+  /**
+   * 跟着正文滚。
+   *
+   * 「跟到哪一条」是算出来的（findFollowIndex，有测试钉着）；
+   * 「怎么滚过去」交给 scrollIntoView({ block: 'nearest' }) —— 浏览器自己就懂
+   * 「看得见就别动，看不见才滚，而且只滚到刚好露出来」，不必自己算像素。
+   * 这正是用户选的那种停法（另两种是永远贴顶 / 永远居中）。
+   */
+  const listRef = useRef<HTMLUListElement>(null)
+  /** 手动滚过侧栏就先别跟了。用 ref 不用 state：它只影响下一次要不要滚，不该引发重渲染 */
+  const pausedRef = useRef(false)
+  const lastLineRef = useRef(readingLine)
+  /** 已经处理过的那次「刚划完」的时间戳，免得同一条反复把列表拽回去 */
+  const handledFocusRef = useRef(0)
+
+  /** 这一屏每条笔记的起点坐标，次序和下面渲染出来的 <li> 一一对应 */
+  const anchors =
+    tab === 'vocab'
+      ? filtered.map((v) => v.startAnchorId ?? null)
+      : filteredSentences.map((s) => s.startAnchorId)
+  /** 当前该落在第几条。左边那道竖线画在它身上，跟随也奔它去 */
+  const followIndex = findFollowIndex(anchors, readingLine)
+  const focusIndex = savedNoteFocus ? anchors.indexOf(savedNoteFocus.anchor) : -1
+
+  /**
+   * 这几件事一律解除暂停，因为它们都意味着「重新对一次」：
+   * 打开这一栏、切标签、换文档。（正文动了也解除，在下面单独判。）
+   */
+  useEffect(() => {
+    pausedRef.current = false
+  }, [open, tab, currentPageId])
+
+  // 正文动了就恢复跟随 —— 用户定的：手动滚过侧栏只是暂停一会儿，不是永久关掉
+  useEffect(() => {
+    if (readingLine !== lastLineRef.current) {
+      lastLineRef.current = readingLine
+      pausedRef.current = false
+    }
+  }, [readingLine])
+
+  useEffect(() => {
+    if (!open) return
+    let index = followIndex
+    // 刚亲手划完一条：跟到它身上，而且盖过暂停
+    if (savedNoteFocus && savedNoteFocus.at !== handledFocusRef.current) {
+      handledFocusRef.current = savedNoteFocus.at
+      if (focusIndex >= 0) {
+        pausedRef.current = false
+        index = focusIndex
+      }
+    } else if (pausedRef.current) return
+    if (index < 0) return
+    const li = listRef.current?.children[index] as HTMLElement | undefined
+    li?.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
+  }, [open, tab, currentPageId, readingLine, followIndex, focusIndex, savedNoteFocus])
+
+  /** 用手碰了侧栏就先别跟。听指针动作而不是 scroll 事件 —— 后者分不清是谁滚的 */
+  const pauseFollow = () => {
+    pausedRef.current = true
+  }
 
   const folderPercent =
     totalDocsInFolder > 0
@@ -504,27 +578,43 @@ function RightSidebarInner({
           )}
         </div>
       )}
-      <div className="flex-1 min-h-0 overflow-y-auto scroll-area py-2 px-2">
+      <div
+        className="flex-1 min-h-0 overflow-y-auto scroll-area py-2 px-2"
+        onWheel={pauseFollow}
+        onTouchMove={pauseFollow}
+      >
         {tab === 'vocab' ? (
           filtered.length === 0 ? (
             <p className="px-2 py-6 text-sm text-ink-muted leading-relaxed">
               在文档中长按英文单词并保存笔记，生词会自动出现在这里。点单词可跳转到文中位置。
             </p>
           ) : (
-            <ul className="space-y-2">
+            <ul className="space-y-2" ref={listRef}>
               {filtered.map((item, index) => (
-              <li key={`${item.pageId}-${item.anchorId}`}>
+              <li
+                key={`${item.pageId}-${item.anchorId}`}
+                /*
+                  当前那条左边一道细竖线。两种状态都画 2px 边（不当前的透明），
+                  这样切换时**布局一个像素都不动** —— 只画当前那条的话，
+                  竖线一出现整列就往右挪 2px。
+                */
+                className={`border-l-2 pl-1.5 ${
+                  index === followIndex ? 'border-accent-600' : 'border-transparent'
+                }`}
+              >
                 <VocabCard
                   item={item}
                   alt={index % 2 !== 0}
                   isActive={activeVocabKey === `${item.pageId}-${item.anchorId}`}
-                  onToggle={() =>
+                  onToggle={() => {
+                    // 展开会把卡片撑高，正赶上跟随滚动就会跳一下 —— 算手动，先别跟
+                    pauseFollow()
                     setActiveVocabKey((cur) =>
                       cur === `${item.pageId}-${item.anchorId}`
                         ? null
                         : `${item.pageId}-${item.anchorId}`
                     )
-                  }
+                  }}
                   onScrollToWord={onScrollToWord}
                   onDeleteVocab={onDeleteVocab}
                   canSpeak={canSpeak}
@@ -542,16 +632,22 @@ function RightSidebarInner({
             暂无句摘。在后续步骤中可从文中选中句子并保存到这里。
           </p>
         ) : (
-          <ul className="space-y-2">
+          <ul className="space-y-2" ref={listRef}>
             {filteredSentences.map((s, index) => (
-              <li key={s.id}>
+              <li
+                key={s.id}
+                className={`border-l-2 pl-1.5 ${
+                  index === followIndex ? 'border-accent-600' : 'border-transparent'
+                }`}
+              >
                 <SentenceCard
                   sentence={s}
                   alt={index % 2 === 1}
                   isActive={activeSentenceId === s.id}
-                  onToggle={() =>
+                  onToggle={() => {
+                    pauseFollow()
                     setActiveSentenceId((prev) => (prev === s.id ? null : s.id))
-                  }
+                  }}
                   onJump={() => onScrollToSentence(s)}
                   onDelete={onDeleteSentence}
                 />
