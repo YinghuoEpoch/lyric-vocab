@@ -479,6 +479,31 @@ function AccentChoices({
   )
 }
 
+/**
+ * 设置里的子屏，全部登记在这儿。
+ *
+ * ⚠️ **加一屏只从这里下手。** 从前每块子屏各开一个布尔，而「现在在子屏吗」
+ * 「返回键退到哪」「标题写什么」「返回按钮做什么」「关掉再开时重置什么」
+ * 是五份各自手写的清单 —— 第六十七节加「同步数据」那一屏时漏在了其中两份里，
+ * 症状是**点进去不在顶部**、**手机返回键把整个设置都关了**（第六十九节）。
+ *
+ * 现在只有一个 sub 状态。往 SubScreen 里加一个成员，编译器会在
+ * SUB_TITLE 和下面那串渲染分支上把该改的地方一处处指出来 —— 不靠记性。
+ */
+type SubScreen = 'ai' | 'cloudTts' | 'sync' | 'agreement' | 'guide' | 'syncSize' | 'speechDev' | 'dev'
+
+/** 每块子屏顶栏写什么。Record 是完整的，少一屏编译不过 */
+const SUB_TITLE: Record<SubScreen, string> = {
+  ai: 'AI 设置',
+  cloudTts: '云端朗读',
+  sync: '云端同步',
+  agreement: AGREEMENT_TITLE,
+  guide: '使用说明',
+  syncSize: '同步数据',
+  speechDev: '朗读引擎参数',
+  dev: '开发者'
+}
+
 export function SettingsDialog({
   open,
   onClose,
@@ -494,12 +519,8 @@ export function SettingsDialog({
    * 密码框会一闪而过，手机上足够把安全键盘叫出来，而框随即消失就关不掉了。
    */
   const [aiConfig, setAiConfig] = useState<AiConfig>(loadConfig)
-  /** 正在配 AI：整屏换成设置面板，标题跟着换 */
-  const [editingAi, setEditingAi] = useState(false)
-  /** 正在看用户协议 */
-  const [showAgreement, setShowAgreement] = useState(false)
-  /** 正在看使用说明 */
-  const [showGuide, setShowGuide] = useState(false)
+  /** 哪一块子屏正开着，null 就是主列表。**子屏只有这一个状态** —— 见 SubScreen */
+  const [sub, setSub] = useState<SubScreen | null>(null)
   const backupInputRef = useRef<HTMLInputElement>(null)
   /** 那块能滚的区域。所有屏共用同一个，所以滚到哪儿要自己管 —— 见下面 enterSub */
   const scrollRef = useRef<HTMLDivElement>(null)
@@ -507,16 +528,10 @@ export function SettingsDialog({
   const savedScroll = useRef(0)
   /** 存了多少发音。打开设置页时读一次就够，不用一直盯着 */
   const [audioStats, setAudioStats] = useState<CacheStats | null>(null)
-  /** 正在看开发者那一屏 */
-  const [showDev, setShowDev] = useState(false)
   /** 系统栏留白这次取到了什么。进开发者那一屏时读一次 */
   const [insetInfo, setInsetInfo] = useState<{ report: SafeAreaReport; applied: string } | null>(
     null
   )
-  /** 正在填云端朗读的凭证（AI 那一栏点进来的第二行） */
-  const [editingCloud, setEditingCloud] = useState(false)
-  /** 正在看「朗读引擎参数」那一屏 */
-  const [showSpeechDev, setShowSpeechDev] = useState(false)
   /** 问引擎问出来的那几件事 */
   const [speechDiag, setSpeechDiag] = useState<SpeechDiagnosis | null>(null)
   /** 三颗试读按钮各自的结果 */
@@ -525,33 +540,22 @@ export function SettingsDialog({
   const [tryRunning, setTryRunning] = useState<string | null>(null)
   /** 云端朗读的凭证。打开设置页时读一次，改一下存一下 */
   const [cloudConfig, setCloudConfig] = useState<CloudTtsConfig>(loadCloudConfig)
-  /** 正在看「同步数据」那一屏 */
-  const [showSyncSize, setShowSyncSize] = useState(false)
   /** 同步数据的读数。进那一屏时现算一次 —— 划了新词之后这些数就变了 */
   const [syncSize, setSyncSize] = useState<SyncSizeReport | null>(null)
   /** 本月实际用掉的流量。真账，进那一屏时读一次 */
   const [syncUsage, setSyncUsage] = useState<SyncUsage | null>(null)
-  /** 正在填坚果云的凭证 */
-  const [editingSync, setEditingSync] = useState(false)
   const [syncConfig, setSyncConfig] = useState<SyncConfig>(loadSyncConfig)
 
   useEffect(() => {
     if (open) {
       setAiConfig(loadConfig())
-      setEditingAi(false)
-      setShowAgreement(false)
-      setShowGuide(false)
-      setShowDev(false)
-      setEditingCloud(false)
+      setSub(null)
       // 关掉再打开就从头开始 —— 用户明确说了不用一直记着
       savedScroll.current = 0
-      setShowSpeechDev(false)
       setSpeechDiag(null)
       setTryResults({})
       setTryRunning(null)
       setCloudConfig(loadCloudConfig())
-      setEditingSync(false)
-      setShowSyncSize(false)
       setSyncSize(null)
       setSyncUsage(null)
       setSyncConfig(loadSyncConfig())
@@ -573,7 +577,7 @@ export function SettingsDialog({
       .map((k) => cs.getPropertyValue(`--sa-${k}`).trim() || '?')
       .join(' / ')
     setInsetInfo({ report: getSafeAreaReport(), applied })
-    setShowDev(true)
+    setSub('dev')
   }
 
   /**
@@ -585,7 +589,7 @@ export function SettingsDialog({
   const openSyncSize = () => {
     setSyncSize(null)
     setSyncUsage(loadUsage())
-    setShowSyncSize(true)
+    setSub('syncSize')
     void getAppData().then((d) => setSyncSize(measureSyncData(d)))
   }
 
@@ -593,7 +597,7 @@ export function SettingsDialog({
   const openSpeechDev = () => {
     setTryResults({})
     setSpeechDiag(null)
-    setShowSpeechDev(true)
+    setSub('speechDev')
     void diagnoseSpeech().then(setSpeechDiag)
   }
 
@@ -648,8 +652,7 @@ export function SettingsDialog({
    *
    * 所以：进子屏一律从头看，退回来还你原来那个位置。
    */
-  const inSub =
-    editingAi || editingCloud || editingSync || showAgreement || showGuide || showDev || showSpeechDev
+  const inSub = sub !== null
   useLayoutEffect(() => {
     const el = scrollRef.current
     if (!el) return
@@ -661,13 +664,7 @@ export function SettingsDialog({
    * 分成两层登记的话，AI 那屏一开一关要多一轮注册注销，没必要。
    */
   useBackHandler(open, BackPriority.settings, () => {
-    if (editingAi) setEditingAi(false)
-    else if (showAgreement) setShowAgreement(false)
-    else if (showGuide) setShowGuide(false)
-    else if (editingCloud) setEditingCloud(false)
-    else if (editingSync) setEditingSync(false)
-    else if (showSpeechDev) setShowSpeechDev(false)
-    else if (showDev) setShowDev(false)
+    if (sub) setSub(null)
     else onClose()
   })
 
@@ -683,40 +680,8 @@ export function SettingsDialog({
   /** 云端朗读配全了没有 —— AI 那一栏第二行据此显示「已配好的音色」还是「还没设置」 */
   const cloudOn = isCloudReady(cloudConfig)
   const inSubScreen = inSub
-  const title = editingAi
-    ? 'AI 设置'
-    : editingCloud
-    ? '云端朗读'
-    : editingSync
-    ? '云端同步'
-    : showAgreement
-      ? AGREEMENT_TITLE
-      : showGuide
-        ? '使用说明'
-        : showSyncSize
-          ? '同步数据'
-          : showSpeechDev
-          ? '朗读引擎参数'
-          : showDev
-            ? '开发者'
-            : '设置'
-  const back = editingAi
-    ? () => setEditingAi(false)
-    : editingCloud
-    ? () => setEditingCloud(false)
-    : editingSync
-    ? () => setEditingSync(false)
-    : showAgreement
-      ? () => setShowAgreement(false)
-      : showGuide
-        ? () => setShowGuide(false)
-        : showSyncSize
-          ? () => setShowSyncSize(false)
-          : showSpeechDev
-          ? () => setShowSpeechDev(false)
-          : showDev
-            ? () => setShowDev(false)
-            : onClose
+  const title = sub ? SUB_TITLE[sub] : '设置'
+  const back = sub ? () => setSub(null) : onClose
 
   const setFontSize = (size: number) =>
     onReaderSettingsChange({ ...readerSettings, fontSize: size })
@@ -746,46 +711,46 @@ export function SettingsDialog({
         </div>
 
         <div ref={scrollRef} className="flex-1 min-h-0 overflow-y-auto scroll-area p-3 space-y-4">
-          {editingAi ? (
+          {sub === 'ai' ? (
             <div className="space-y-3">
               <AiSettingsPanel
                 onSaved={(cfg) => {
                   setAiConfig(cfg)
-                  setEditingAi(false)
+                  setSub(null)
                 }}
-                onCancel={() => setEditingAi(false)}
+                onCancel={() => setSub(null)}
               />
             </div>
-          ) : editingSync ? (
+          ) : sub === 'sync' ? (
             <SyncPanel
               value={syncConfig}
               // 保存之后**留在这一屏**（用户要的）：他可能还要接着点「立刻同步一次」。
               // 存没存住看那颗键本身 —— 保存完它会变成「已保存」并置灰
               onSave={updateSync}
-              onCancel={() => setEditingSync(false)}
+              onCancel={() => setSub(null)}
               status={syncStatus}
               onSync={onSyncNow}
             />
-          ) : editingCloud ? (
+          ) : sub === 'cloudTts' ? (
             <div className="space-y-4">
               <CloudTtsPanel
                 value={cloudConfig}
                 // 同上：保存之后留在这一屏，他可能还要去试读
                 onSave={updateCloud}
-                onCancel={() => setEditingCloud(false)}
+                onCancel={() => setSub(null)}
               />
             </div>
-          ) : showGuide ? (
+          ) : sub === 'guide' ? (
             <UserGuide />
-          ) : showAgreement ? (
+          ) : sub === 'agreement' ? (
             <div className="space-y-2 text-xs leading-relaxed text-ink-muted">
               {AGREEMENT_CLAUSES.map((line) => (
                 <p key={line}>{line}</p>
               ))}
             </div>
-          ) : showSyncSize ? (
+          ) : sub === 'syncSize' ? (
             <SyncSizeReadout report={syncSize} usage={syncUsage} />
-          ) : showSpeechDev ? (
+          ) : sub === 'speechDev' ? (
             <SpeechReadout
               diag={speechDiag}
               results={tryResults}
@@ -794,14 +759,14 @@ export function SettingsDialog({
               cloudReady={isCloudReady(cloudConfig)}
               onCloudTry={runCloudTry}
             />
-          ) : showDev ? (
+          ) : sub === 'dev' ? (
             <SafeAreaReadout info={insetInfo} />
           ) : (
             <>
               <Section title="上手">
                 <button
                   type="button"
-                  onClick={() => enterSub(() => setShowGuide(true))}
+                  onClick={() => enterSub(() => setSub('guide'))}
                   className="w-full flex items-center gap-2 text-left"
                 >
                   <span className="flex-1 min-w-0">
@@ -872,7 +837,7 @@ export function SettingsDialog({
               <Section title="AI">
                 <button
                   type="button"
-                  onClick={() => enterSub(() => setEditingAi(true))}
+                  onClick={() => enterSub(() => setSub('ai'))}
                   className="w-full flex items-center gap-2 text-left"
                 >
                   <span className="flex-1 min-w-0">
@@ -900,7 +865,7 @@ export function SettingsDialog({
                 */}
                 <button
                   type="button"
-                  onClick={() => enterSub(() => setEditingCloud(true))}
+                  onClick={() => enterSub(() => setSub('cloudTts'))}
                   className="w-full flex items-center gap-2 text-left"
                 >
                   <span className="flex-1 min-w-0">
@@ -946,7 +911,7 @@ export function SettingsDialog({
               <Section title="数据">
                 <button
                   type="button"
-                  onClick={() => enterSub(() => setEditingSync(true))}
+                  onClick={() => enterSub(() => setSub('sync'))}
                   className="w-full flex items-center gap-2 text-left"
                 >
                   <span className="flex-1 min-w-0">
@@ -1043,7 +1008,7 @@ export function SettingsDialog({
               <Section title="关于">
                 <button
                   type="button"
-                  onClick={() => enterSub(() => setShowAgreement(true))}
+                  onClick={() => enterSub(() => setSub('agreement'))}
                   className="w-full flex items-center gap-2 text-left"
                 >
                   <span className="flex-1 text-sm text-ink">{AGREEMENT_TITLE}</span>
