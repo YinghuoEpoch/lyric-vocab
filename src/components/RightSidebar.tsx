@@ -179,8 +179,8 @@ interface RightSidebarProps {
   documentProgress?: number
   /** 这一栏此刻是不是露着的。收起来时不跟随，重新打开算一次全新的对应 */
   open?: boolean
-  /** 正文里屏幕**最下面**还露着的是第几行。跟随的依据，见 followScroll.ts */
-  lastVisibleLine?: number
+  /** 正文里屏幕上最后一个还露着的单词的锚点。跟随的依据，见 followScroll.ts */
+  lastVisibleAnchor?: string | null
   /**
    * 刚亲手划下的那条笔记（起点坐标 + 时间戳）。**唯一能盖过「暂停跟随」的东西**。
    * AI 一键划词那一批不走这里 —— 一次进来几十条，战报条就在顶上，列表一甩就找不着撤销了。
@@ -347,7 +347,7 @@ function RightSidebarInner({
   onDismissMark,
   documentProgress = 0,
   open = true,
-  lastVisibleLine = 0,
+  lastVisibleAnchor = null,
   savedNoteFocus = null,
   currentDocIndex = 0,
   totalDocsInFolder = 0,
@@ -389,7 +389,7 @@ function RightSidebarInner({
   const listRef = useRef<HTMLUListElement>(null)
   /** 手动滚过侧栏就先别跟了。用 ref 不用 state：它只影响下一次要不要滚，不该引发重渲染 */
   const pausedRef = useRef(false)
-  const lastLineRef = useRef(lastVisibleLine)
+  const lastAnchorRef = useRef(lastVisibleAnchor)
   /** 已经处理过的那次「刚划完」的时间戳，免得同一条反复把列表拽回去 */
   const handledFocusRef = useRef(0)
 
@@ -402,7 +402,7 @@ function RightSidebarInner({
    * 当前该落在第几条 —— **屏幕上显示的正文里最后一个笔记**（用户 2026-09-04 定的）。
    * 屏幕上一条笔记都没有时，退回到屏幕上方最近的那条，免得竖线来回跳。
    */
-  const followIndex = findFollowIndex(anchors, lastVisibleLine)
+  const followIndex = findFollowIndex(anchors, lastVisibleAnchor)
   const focusIndex = savedNoteFocus ? anchors.indexOf(savedNoteFocus.anchor) : -1
   /**
    * 刚亲手划完那条要**连竖线一起**挪过去，不只是滚过去。
@@ -425,13 +425,13 @@ function RightSidebarInner({
 
   // 正文动了就恢复跟随 —— 用户定的：手动滚过侧栏只是暂停一会儿，不是永久关掉
   useEffect(() => {
-    if (lastVisibleLine !== lastLineRef.current) {
-      lastLineRef.current = lastVisibleLine
+    if (lastVisibleAnchor !== lastAnchorRef.current) {
+      lastAnchorRef.current = lastVisibleAnchor
       pausedRef.current = false
       // 正文动了，就该按新的阅读位置重新算竖线，不再钉在刚划完那条上
       setFocusOverride(null)
     }
-  }, [lastVisibleLine])
+  }, [lastVisibleAnchor])
 
   useEffect(() => {
     if (!open) return
@@ -453,7 +453,7 @@ function RightSidebarInner({
     */
     const li = listRef.current?.children[index] as HTMLElement | undefined
     li?.scrollIntoView({ block: 'center', behavior: 'smooth' })
-  }, [open, tab, currentPageId, lastVisibleLine, followIndex, focusIndex, savedNoteFocus])
+  }, [open, tab, currentPageId, lastVisibleAnchor, followIndex, focusIndex, savedNoteFocus])
 
   /** 用手碰了侧栏就先别跟。听指针动作而不是 scroll 事件 —— 后者分不清是谁滚的 */
   const pauseFollow = () => {

@@ -21,7 +21,7 @@ const PROGRESS_DEBOUNCE_MS = 700
  * 算一次要把这一篇所有的 <p> 问一遍位置 —— 长文里是几百次 getBoundingClientRect，
  * 而滚动每一帧都会触发。笔记栏跟着滚不需要 60fps，压到这个数够用了。
  */
-const LINE_THROTTLE_MS = 120
+const ANCHOR_THROTTLE_MS = 120
 
 /** 宽屏上那个小弹窗有多宽，以及离屏幕边缘至少留多少 */
 const POPUP_W = 320
@@ -127,19 +127,17 @@ interface LyricEditorProps {
   /** 当前文档阅读进度 0–100，供侧栏进度条显示 */
   onReadingProgressChange?: (percent: number) => void
   /**
-   * 屏幕**最下面**露出来的是第几行，变了才报。笔记栏据此跟着正文滚（见 followScroll.ts）。
+   * 屏幕上最后一个还露着的**单词的锚点**，变了才报。
+   * 笔记栏据此跟着正文滚 —— 落点是「屏幕上显示的最后一个笔记」（用户定的口径）。
    *
-   * ⚠️ **是最下面那行，不是最上面那行。** 一开始用的是顶行，用户报出两个症状：
-   * 亲手划完一个词、竖线却不在它身上；短语好像从来不被标记 —— 根子是同一个：
-   * 新划的那条在屏幕**中段**，行号比顶行大，于是竖线落在它前面某条上。
-   * 短语更常划在屏幕中段，所以显得「短语不会被标记」。
-   * 用户 2026-09-04 定的：**标记当前屏幕上显示的正文里最后一个笔记**。
+   * ⚠️ **精确到词，不是到行。** 缘由见 lastVisibleAnchor 和 followScroll.ts：
+   * 一个 `<p>` 就算一行，而导入的书里一段能占好几屏。
    *
-   * **不给就一次也不算** —— 算一次要遍历这一篇所有的 <p> 并读它们的位置，
+   * **不给就一次也不算** —— 算一次要遍历这一篇的 <p> 并读它们的位置，
    * 而笔记栏收起来的时候这个数没人要。编辑模式下也不给：那时候在滚的是
-   * textarea 自己，「第几行」这个坐标源根本不在阅读容器里（见第三十四节）。
+   * textarea 自己，坐标源根本不在阅读容器里（见第三十四节）。
    */
-  onLastVisibleLineChange?: (line: number) => void
+  onLastVisibleAnchorChange?: (anchor: string | null) => void
   /** 阅读外观（字号、字体、主题） */
   readerSettings?: ReaderSettings
   /**
@@ -211,7 +209,7 @@ function LyricEditorInner({
   nextPage,
   onSelectPage,
   onReadingProgressChange,
-  onLastVisibleLineChange,
+  onLastVisibleAnchorChange,
   readerSettings = { fontSize: 18, fontFamily: 'sans', theme: 'pure', accent: 'amber' },
   immersive = false,
   chromeVisible = false
@@ -281,23 +279,46 @@ function LyricEditorInner({
   }, [])
 
   /**
-   * 阅读页里，屏幕**最下面**还露着的是第几行。
+   * 屏幕上**最后一个还露着的单词**的锚点（`L第几行W第几个词`）。
    *
-   * 和 topVisibleLine 是一对：那个取「第一个下沿越过容器上沿的」，
-   * 这个取「最后一个上沿还没到容器下沿的」—— 也就是最后一行至少露出一点点的。
+   * ⚠️ **为什么是「最后一个词」而不是「最后一行」。** 第一版报的是行号，
+   * 而正文里**一个 `<p>` 就算一行** —— 歌词没问题，导入的书里一个自然段能占好几屏，
+   * 于是三件事一起坏：段落一露头整段就算「显示了」、同一段里只有最后一条能被标、
+   * 在长段里滚动行号根本不变所以一次也不上报（侧栏看着完全不动）。
+   * 详见 followScroll.ts 开头。
+   *
+   * 两步走，避免把全篇几千个 `<span>` 都问一遍位置：
+   * 先找出最后一个露着的 `<p>`（和 topVisibleLine 同一套扫法），
+   * 再在它里面找最后一个露着的词；那一段里一个都没露就退回上一段的最后一个词。
    */
-  const lastVisibleLine = useCallback((): number => {
+  const lastVisibleAnchor = useCallback((): string | null => {
     const el = scrollContainerRef.current
-    if (!el) return 0
+    if (!el) return null
     const bottom = el.getBoundingClientRect().bottom
     const paragraphs = el.querySelectorAll<HTMLElement>('[data-line-index]')
-    let last = 0
+
+    let lastP: HTMLElement | null = null
+    let prevP: HTMLElement | null = null
     for (const p of paragraphs) {
       // 上沿已经掉到屏幕外面：它和它后面的都不算露着
       if (p.getBoundingClientRect().top >= bottom - 1) break
-      last = Number(p.dataset.lineIndex)
+      prevP = lastP
+      lastP = p
     }
-    return last
+    if (!lastP) return null
+
+    /** 这一段里最后一个上沿还没掉到屏幕外的词 */
+    const lastWordIn = (p: HTMLElement): string | null => {
+      const spans = p.querySelectorAll<HTMLElement>('[data-word-span]')
+      let id: string | null = null
+      for (const s of spans) {
+        if (s.getBoundingClientRect().top >= bottom - 1) break
+        if (s.id) id = s.id
+      }
+      return id
+    }
+
+    return lastWordIn(lastP) ?? (prevP ? lastWordIn(prevP) : null)
   }, [])
 
   const reportProgress = useCallback(() => {
@@ -311,33 +332,33 @@ function LyricEditorInner({
     onReadingProgressChange(percent)
   }, [onReadingProgressChange])
 
-  /** 上一次报出去的行号。没变就不报，省掉上层一整轮重渲染 */
-  const lastReportedLineRef = useRef(-1)
+  /** 上一次报出去的锚点。没变就不报，省掉上层一整轮重渲染 */
+  const lastReportedAnchorRef = useRef<string | null | undefined>(undefined)
   const lineTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  /** 把「屏幕最下面是第几行」报给上层。不给回调就一次都不算 —— 见 onLastVisibleLineChange */
-  const reportLastLine = useCallback(() => {
-    if (!onLastVisibleLineChange) return
-    const line = lastVisibleLine()
-    if (line === lastReportedLineRef.current) return
-    lastReportedLineRef.current = line
-    onLastVisibleLineChange(line)
-  }, [onLastVisibleLineChange, lastVisibleLine])
+  /** 把「屏幕上最后一个词」报给上层。不给回调就一次也不算 —— 见 onLastVisibleAnchorChange */
+  const reportLastAnchor = useCallback(() => {
+    if (!onLastVisibleAnchorChange) return
+    const anchor = lastVisibleAnchor()
+    if (anchor === lastReportedAnchorRef.current) return
+    lastReportedAnchorRef.current = anchor
+    onLastVisibleAnchorChange(anchor)
+  }, [onLastVisibleAnchorChange, lastVisibleAnchor])
 
   // 换一篇就把上次那个行号忘掉，否则新文档的第 0 行会被当成「没变」而不报
   useLayoutEffect(() => {
-    lastReportedLineRef.current = -1
+    lastReportedAnchorRef.current = undefined
   }, [pageId])
 
   /**
    * 报一次「现在读到第几行」。三个时机走的都是这一条：
    * 打开文档（滚动位置刚恢复完）、换一篇、以及**笔记栏刚被打开**
-   * —— 后者的表现是 onLastVisibleLineChange 从 undefined 变成有值。
+   * —— 后者的表现是 onLastVisibleAnchorChange 从 undefined 变成有值。
    */
   useEffect(() => {
     if (editMode) return
-    reportLastLine()
-  }, [editMode, pageId, reportLastLine])
+    reportLastAnchor()
+  }, [editMode, pageId, reportLastAnchor])
 
   // 打开 / 切换文档时恢复滚动位置，在绘制前执行避免闪烁；随后上报一次阅读进度
   useLayoutEffect(() => {
@@ -351,11 +372,11 @@ function LyricEditorInner({
   const handleScroll = useCallback(() => {
     reportProgress()
     // 尾随节流：第一次滚动约一次，这段时间内的后续滚动并成同一次
-    if (onLastVisibleLineChange && !lineTimerRef.current) {
+    if (onLastVisibleAnchorChange && !lineTimerRef.current) {
       lineTimerRef.current = setTimeout(() => {
         lineTimerRef.current = null
-        reportLastLine()
-      }, LINE_THROTTLE_MS)
+        reportLastAnchor()
+      }, ANCHOR_THROTTLE_MS)
     }
     if (editMode || !onSaveProgress) return
     if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current)
@@ -364,7 +385,7 @@ function LyricEditorInner({
       const el = scrollContainerRef.current
       if (el) onSaveProgress(el.scrollTop)
     }, PROGRESS_DEBOUNCE_MS)
-  }, [editMode, onSaveProgress, reportProgress, onLastVisibleLineChange, reportLastLine])
+  }, [editMode, onSaveProgress, reportProgress, onLastVisibleAnchorChange, reportLastAnchor])
 
   useEffect(() => {
     return () => {
