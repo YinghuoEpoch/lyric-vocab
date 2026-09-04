@@ -8,6 +8,7 @@ import {
   type MergeReport,
   type SyncOutcome
 } from '../sync'
+import { addUsage } from '../sync/usage'
 
 /**
  * 什么时候同步。
@@ -144,6 +145,8 @@ export function useSync(onDataChanged: () => void) {
         suppress.current = true
         const outcome: SyncOutcome = await syncNow(cfg, silent)
         setLastSyncAt(outcome.at)
+        // 记真账。估算这条路错过两次了，见 sync/usage.ts
+        addUsage(outcome.up, outcome.down)
         setStatus({
           state: 'ok',
           lastAt: outcome.at,

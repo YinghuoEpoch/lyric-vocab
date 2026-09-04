@@ -17,6 +17,13 @@ import {
   type SyncSizeReport
 } from '../sync/measure'
 import { formatSize } from '../sync/codec'
+import {
+  loadUsage,
+  usagePercent,
+  QUOTA_UP,
+  QUOTA_DOWN,
+  type SyncUsage
+} from '../sync/usage'
 import { getAppData } from '../storage'
 import { loadSyncConfig, saveSyncConfig, isSyncReady, type SyncConfig } from '../sync'
 import {
@@ -253,7 +260,7 @@ function Row({ label, value }: { label: string; value: React.ReactNode }) {
  * 数字全是**真算**的：跑的是同步那套真代码（toIndex + pack），
  * 算出来的就是每次真正要传的那份。
  */
-function SyncSizeReadout({ report }: { report: SyncSizeReport | null }) {
+function SyncSizeReadout({ report, usage }: { report: SyncSizeReport | null; usage: SyncUsage | null }) {
   if (!report) return <p className="text-sm text-ink-muted">正在算…</p>
 
   const 月 = estimateMonthlyUpload(report.totalBytes)
@@ -261,6 +268,25 @@ function SyncSizeReadout({ report }: { report: SyncSizeReport | null }) {
 
   return (
     <div className="space-y-4">
+      {usage && (
+        <Section title={`本月实际用掉了多少（${usage.month}）`}>
+          <Row
+            label="上传"
+            value={`${formatSize(usage.up)} / 1 G　${usagePercent(usage.up, QUOTA_UP)}%`}
+          />
+          <Row
+            label="下载"
+            value={`${formatSize(usage.down)} / 3 G　${usagePercent(usage.down, QUOTA_DOWN)}%`}
+          />
+          <Row label="真走了流量的同步" value={`${usage.syncs} 次`} />
+          <p className="pt-1 text-xs text-ink-muted leading-relaxed">
+            <strong className="font-medium text-ink">这是真账，不是估算</strong>
+            —— 每次同步实际传了多少，一笔笔加起来的。换月自动归零。
+            「没走流量」那种不计入次数。
+          </p>
+        </Section>
+      )}
+
       <Section title="每次同步要传多大">
         <Row label="data.json（压缩后）" value={formatSize(report.totalBytes)} />
         <p className="pt-1 text-xs text-ink-muted leading-relaxed">
@@ -295,8 +321,9 @@ function SyncSizeReadout({ report }: { report: SyncSizeReport | null }) {
         <Row label="一个月上传" value={`约 ${月.text}（约占 1 G 的 ${月.percent}%）`} />
         {余量 !== null && <Row label="还能再划" value={`约 ${余量} 条笔记`} />}
         <p className="pt-1 text-xs text-ink-muted leading-relaxed">
-          按「一天边读边划三小时、同步 {SYNCS_PER_DAY_ESTIMATE} 次」估的，只能当个数量级看。
-          真实次数取决于你怎么用；自动同步每分钟至多一次，那是天花板。
+          ⚠️ 这两行是<strong className="font-medium text-ink">按最坏情况估的</strong>
+          （一天边读边划三小时、同步 {SYNCS_PER_DAY_ESTIMATE} 次），实际多半用不到这么多 ——
+          只有真有改动时才会上传。<strong className="font-medium text-ink">以上面那笔真账为准。</strong>
           「还能再划」是按你现在这批笔记的平均大小推的。
         </p>
       </Section>
@@ -490,6 +517,8 @@ export function SettingsDialog({
   const [showSyncSize, setShowSyncSize] = useState(false)
   /** 同步数据的读数。进那一屏时现算一次 —— 划了新词之后这些数就变了 */
   const [syncSize, setSyncSize] = useState<SyncSizeReport | null>(null)
+  /** 本月实际用掉的流量。真账，进那一屏时读一次 */
+  const [syncUsage, setSyncUsage] = useState<SyncUsage | null>(null)
   /** 正在填坚果云的凭证 */
   const [editingSync, setEditingSync] = useState(false)
   const [syncConfig, setSyncConfig] = useState<SyncConfig>(loadSyncConfig)
@@ -512,6 +541,7 @@ export function SettingsDialog({
       setEditingSync(false)
       setShowSyncSize(false)
       setSyncSize(null)
+      setSyncUsage(null)
       setSyncConfig(loadSyncConfig())
       setAudioStats(null)
       void cacheStats().then(setAudioStats)
@@ -542,6 +572,7 @@ export function SettingsDialog({
    */
   const openSyncSize = () => {
     setSyncSize(null)
+    setSyncUsage(loadUsage())
     setShowSyncSize(true)
     void getAppData().then((d) => setSyncSize(measureSyncData(d)))
   }
@@ -741,7 +772,7 @@ export function SettingsDialog({
               ))}
             </div>
           ) : showSyncSize ? (
-            <SyncSizeReadout report={syncSize} />
+            <SyncSizeReadout report={syncSize} usage={syncUsage} />
           ) : showSpeechDev ? (
             <SpeechReadout
               diag={speechDiag}

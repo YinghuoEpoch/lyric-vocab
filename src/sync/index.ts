@@ -131,6 +131,9 @@ export interface SyncOutcome {
   at: number
   /** 这一次实际走了多少流量，写成人看的样子 */
   traffic: string
+  /** 这一次上下行各多少字节。给流量记账用（见 usage.ts）—— 从前算完就扔了 */
+  up: number
+  down: number
 }
 
 /**
@@ -168,7 +171,7 @@ export async function syncNow(
     if (seenEtag && localIdle) {
       const nowEtag = await headRemoteEtag(cfg)
       if (nowEtag && nowEtag === seenEtag) {
-        return { report: zero(), localChanged: false, at: Date.now(), traffic: '没走流量' }
+        return { report: zero(), localChanged: false, at: Date.now(), traffic: '没走流量', up: 0, down: 0 }
       }
     }
 
@@ -199,7 +202,9 @@ export async function syncNow(
         report: zero(),
         localChanged: false,
         at: Date.now(),
-        traffic: `传了 ${formatSize(up)}`
+        traffic: `传了 ${formatSize(up)}`,
+        up,
+        down
       }
     }
 
@@ -272,7 +277,9 @@ export async function syncNow(
       report,
       localChanged,
       at: Date.now(),
-      traffic: `下 ${formatSize(down)}${up ? ` / 上 ${formatSize(up)}` : ''}`
+      traffic: `下 ${formatSize(down)}${up ? ` / 上 ${formatSize(up)}` : ''}`,
+      up,
+      down
     }
   }
 
