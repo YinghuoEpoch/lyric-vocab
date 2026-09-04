@@ -10,6 +10,19 @@ import { EditedMark } from './EditedMark'
 import { BAND_TOP, BAND_SUB } from './chrome'
 import { findFollowIndex } from '../utils/followScroll'
 
+/**
+ * 从侧栏点一条笔记跳到正文之后，**这么久之内不跟随**。
+ *
+ * ⚠️ 跳转是 `scrollIntoView({ behavior: 'smooth' })` 滚正文（见 App 里 scrollTarget），
+ * 一次跳转会连着报出好几十个新锚点。不挡住的话每一个都会「解除暂停 + 重新居中」，
+ * 于是你点的那张卡当场被甩走 —— 用户报的：「点击跳转的话，生词那一栏会重新强行滑动，
+ * 把当前正文最下方笔记居中」。句摘卡高，一甩就是整屏，所以那边看着「根本跳转不动」。
+ *
+ * 用时间窗而不是「吞掉一次变化」：平滑滚动期间锚点会变很多次，吞一次不够。
+ * 窗口过了之后，**你自己再滚一下正文，跟随立刻回来**。
+ */
+const JUMP_PIN_MS = 1200
+
 interface VocabItem {
   word: string
   /** 身份（删除、列表键、高亮认它）。撞车时是记录 id，**不一定是正文坐标** */
@@ -425,12 +438,13 @@ function RightSidebarInner({
 
   // 正文动了就恢复跟随 —— 用户定的：手动滚过侧栏只是暂停一会儿，不是永久关掉
   useEffect(() => {
-    if (lastVisibleAnchor !== lastAnchorRef.current) {
-      lastAnchorRef.current = lastVisibleAnchor
-      pausedRef.current = false
-      // 正文动了，就该按新的阅读位置重新算竖线，不再钉在刚划完那条上
-      setFocusOverride(null)
-    }
+    if (lastVisibleAnchor === lastAnchorRef.current) return
+    lastAnchorRef.current = lastVisibleAnchor
+    // 这次正文动是**我们自己点跳转引起的**，不算「用户在读」，别拿它解除暂停
+    if (Date.now() < pinUntilRef.current) return
+    pausedRef.current = false
+    // 正文动了，就该按新的阅读位置重新算竖线，不再钉在刚划完（或刚点过）那条上
+    setFocusOverride(null)
   }, [lastVisibleAnchor])
 
   useEffect(() => {
@@ -448,16 +462,32 @@ function RightSidebarInner({
     if (index < 0) return
     /*
       摆在侧栏正中间（用户 2026-09-04 改的口径，原先是「看不见才滚」）。
-      改口的由头：平板横屏上他滑正文，侧栏「没有跟着滑动」—— 那不是没生效，
-      是「看不见才滚」在一屏放得下十来张卡时几乎永远不动。居中才看得出在跟。
+
+      ⚠️ **瞬时，不用平滑。** 跟随每 120ms 就可能来一次，而一次平滑滚动要三四百毫秒 ——
+      后一次在前一次没走完时又发起，动画反复被重定向，表现就是用户报的
+      「标记的确会跟，但是不一定跟着滚动」。瞬时定位反而看着是跟手的：
+      它和正文同频率地一小格一小格挪，本来就不需要再补一层动画。
     */
     const li = listRef.current?.children[index] as HTMLElement | undefined
-    li?.scrollIntoView({ block: 'center', behavior: 'smooth' })
+    li?.scrollIntoView({ block: 'center', behavior: 'auto' })
   }, [open, tab, currentPageId, lastVisibleAnchor, followIndex, focusIndex, savedNoteFocus])
 
   /** 用手碰了侧栏就先别跟。听指针动作而不是 scroll 事件 —— 后者分不清是谁滚的 */
   const pauseFollow = () => {
     pausedRef.current = true
+  }
+
+  /** 跳转钉住到什么时候（时间戳）。见 JUMP_PIN_MS */
+  const pinUntilRef = useRef(0)
+
+  /**
+   * 点了第 index 张卡去正文里看它 —— 把跟随钉住，别让自己发起的这次滚动
+   * 反过来把这张卡甩走。竖线也留在这张卡上，点哪张就亮哪张。
+   */
+  const pinForJump = (index: number) => {
+    pausedRef.current = true
+    pinUntilRef.current = Date.now() + JUMP_PIN_MS
+    setFocusOverride(index)
   }
 
   const folderPercent =
@@ -636,7 +666,11 @@ function RightSidebarInner({
                         : `${item.pageId}-${item.anchorId}`
                     )
                   }}
-                  onScrollToWord={onScrollToWord}
+                  // 点了就钉住：别让这次跳转引起的正文滚动反过来把这张卡甩走
+                  onScrollToWord={(pageId, anchorId) => {
+                    pinForJump(index)
+                    onScrollToWord(pageId, anchorId)
+                  }}
                   onDeleteVocab={onDeleteVocab}
                   canSpeak={canSpeak}
                   speaking={speakingId === `${item.pageId}-${item.anchorId}`}
@@ -669,7 +703,10 @@ function RightSidebarInner({
                     pauseFollow()
                     setActiveSentenceId((prev) => (prev === s.id ? null : s.id))
                   }}
-                  onJump={() => onScrollToSentence(s)}
+                  onJump={() => {
+                    pinForJump(index)
+                    onScrollToSentence(s)
+                  }}
                   onDelete={onDeleteSentence}
                 />
               </li>
