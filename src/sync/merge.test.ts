@@ -295,50 +295,20 @@ describe('排序', () => {
  * 复习页卡片的排序。**用户追问出来的**：
  * 「复习模式下的卡片也有排序功能，这个有考虑到吗」。
  *
- * 结论是**这一种天生就没问题**，但值得钉住，因为原因很不显眼：
- * 卡片排序改的是每条记录上的 `order` **字段**（见 storage.ts 的 reorderAnnotations），
- * 而文库和文档的顺序是**数组位置**。前者天然会被三方合并看见（记录内容变了），
- * 后者不会 —— 那才是上面那个 bug 的来头。
+ * 从前卡片能拖着排，顺序存在每条记录的 `order` 字段上，同步得整组地合
+ * （逐条合会交错成一个谁都没要过的乱序）。手动排序 2026-09-04 去掉了：
+ * 次序改成两边各自按正文坐标算，算出来必然一样，**同步这边什么都不用做**。
  *
- * 两种机制混在一个 app 里，下一个人很容易以为「排序都一样处理」。不一样。
+ * 留这一条钉住「笔记按 id 逐条合就够了」，免得下一个人又把排序逻辑搬回同步里。
  */
-describe('复习页卡片的排序（order 字段）', () => {
-  const card = (id: string, order: number): Annotation => ({ ...ann(id, '释义'), order })
-
-  it('本机重排了卡片：合完保住', () => {
-    const base = data({ annotations: [card('a1', 0), card('a2', 1), card('a3', 2)] })
-    const local = data({ annotations: [card('a1', 2), card('a2', 0), card('a3', 1)] })
-    const { merged } = mergeAppData(base, local, base)
-    const byId = new Map(merged.annotations!.map((a) => [a.id, a.order]))
-    expect([byId.get('a1'), byId.get('a2'), byId.get('a3')]).toEqual([2, 0, 1])
-  })
-
-  it('对面重排了：本机跟着变', () => {
-    const base = data({ annotations: [card('a1', 0), card('a2', 1)] })
-    const remote = data({ annotations: [card('a1', 1), card('a2', 0)] })
-    const { merged } = mergeAppData(base, base, remote)
-    const byId = new Map(merged.annotations!.map((a) => [a.id, a.order]))
-    expect([byId.get('a1'), byId.get('a2')]).toEqual([1, 0])
-  })
-
-  it('⚠️ 两边都重排了：整份取本机的，不能一半本机一半对面', () => {
-    // 交错的话会排出一个谁都没要过的乱序，比「听某一边的」难受得多
-    const base = data({ annotations: [card('a1', 0), card('a2', 1), card('a3', 2)] })
-    const local = data({ annotations: [card('a1', 2), card('a2', 1), card('a3', 0)] })
-    const remote = data({ annotations: [card('a1', 1), card('a2', 0), card('a3', 2)] })
+describe('复习页卡片的排序（已经不在数据里了）', () => {
+  it('两边各自改过同一批笔记：按 id 合，不因为顺序而互相覆盖', () => {
+    const base = data({ annotations: [ann('a1', '旧'), ann('a2', '旧')] })
+    const local = data({ annotations: [ann('a2', '旧'), ann('a1', '本机改的')] })
+    const remote = data({ annotations: [ann('a2', '对面改的'), ann('a1', '旧')] })
     const { merged } = mergeAppData(base, local, remote)
-    const byId = new Map(merged.annotations!.map((a) => [a.id, a.order]))
-    expect([byId.get('a1'), byId.get('a2'), byId.get('a3')]).toEqual([2, 1, 0])
-  })
-
-  it('一边重排、另一边加了新卡：重排保住，新卡也在', () => {
-    const base = data({ annotations: [card('a1', 0), card('a2', 1)] })
-    const local = data({ annotations: [card('a1', 1), card('a2', 0)] })
-    const remote = data({ annotations: [card('a1', 0), card('a2', 1), card('a9', 2)] })
-    const { merged } = mergeAppData(base, local, remote)
-    const byId = new Map(merged.annotations!.map((a) => [a.id, a.order]))
-    expect(byId.get('a1')).toBe(1)
-    expect(byId.get('a2')).toBe(0)
-    expect(byId.has('a9')).toBe(true)
+    const byId = new Map(merged.annotations!.map((a) => [a.id, a.definition]))
+    expect(byId.get('a1')).toBe('本机改的')
+    expect(byId.get('a2')).toBe('对面改的')
   })
 })

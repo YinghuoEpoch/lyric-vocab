@@ -1,6 +1,6 @@
 import { useCallback, useRef, useState } from 'react'
 import type { Annotation } from '../types'
-import { getAppData, generateId, orderForNewAnnotation } from '../storage'
+import { getAppData, generateId } from '../storage'
 import { createMarker, runMark, type LocatedMark, type MarkOptions } from '../mark'
 import type { AutoMarkState } from '../components/AutoMarkDialog'
 
@@ -96,10 +96,7 @@ export function useAutoMark({ docId, docName, content, writeAnnotations }: UseAu
             onProgress: (p) => setState({ phase: 'running', progress: p }),
             onBatch: async (located: LocatedMark[]) => {
               if (located.length === 0) return
-              // 每批都重新读一遍再算 order：这中间用户完全可能自己又标了几个
-              const now = await getAppData()
               const created: Annotation[] = []
-              let working = now
 
               for (const m of located) {
                 const a: Annotation = {
@@ -109,8 +106,6 @@ export function useAutoMark({ docId, docName, content, writeAnnotations }: UseAu
                   start: m.startAnchorId,
                   end: m.endAnchorId,
                   text: m.text,
-                  // 和手标的一样按正文顺序插进去，不是一股脑堆在最后
-                  order: orderForNewAnnotation(working, docId, 'vocab', m.startAnchorId),
                   createdAt: Date.now(),
                   // AI 划的一律带记号 —— 这本来就是一份待复核清单
                   auto: true
@@ -126,8 +121,6 @@ export function useAutoMark({ docId, docName, content, writeAnnotations }: UseAu
                 }
                 created.push(a)
                 createdIds.push(a.id)
-                // 让下一条的 order 看得见前一条，否则同一批里几条会算出同一个值
-                working = { ...working, annotations: [...(working.annotations ?? []), a] }
               }
 
               await writeAnnotations(created)

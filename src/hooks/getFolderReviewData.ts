@@ -1,5 +1,6 @@
 import type { Annotation, LyricPage } from '../types'
 import { isOrphanAnnotation } from '../types'
+import { sortByText } from '../utils/annotationOrder'
 
 export interface FolderVocabItem {
   id: string
@@ -35,9 +36,9 @@ export function getFolderReviewData(
   const pagesInBook = pages.filter((p) => p.bookId === bookId && !p.deletedAt)
   const titleOf = new Map(pagesInBook.map((p) => [p.id, p.title || '未命名']))
 
-  const inBook = annotations
-    .filter((a) => a.type !== 'sentence' && titleOf.has(a.docId) && a.text)
-    .sort((a, b) => a.order - b.order)
+  const inBook = sortByText(
+    annotations.filter((a) => a.type !== 'sentence' && titleOf.has(a.docId) && a.text)
+  )
 
   const byWord = new Map<string, FolderVocabItem>()
 

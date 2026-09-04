@@ -1,20 +1,8 @@
-import { memo, useCallback, useEffect, useRef, useState } from 'react'
+import { memo, useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { BookOpen, FileText, Eye, EyeOff, Sparkles, GripVertical } from 'lucide-react'
-import {
-  DndContext,
-  closestCenter,
-  useSensor,
-  useSensors,
-  PointerSensor,
-  type DragEndEvent
-} from '@dnd-kit/core'
-import { restrictToWindowEdges } from '@dnd-kit/modifiers'
-import { SortableContext, rectSortingStrategy, useSortable, arrayMove } from '@dnd-kit/sortable'
-import { CSS } from '@dnd-kit/utilities'
+import { BookOpen, FileText, Eye, EyeOff, Sparkles } from 'lucide-react'
 import type {
   Annotation,
-  AnnotationGroup,
   LyricPage,
   ReaderSettings,
   Sentence,
@@ -22,6 +10,7 @@ import type {
 } from '../types'
 import { isOrphanAnnotation } from '../types'
 import { annotationToSentence } from '../utils/annotationViews'
+import { sortByText } from '../utils/annotationOrder'
 import { AutoMark } from './AutoMark'
 import { BAND_SUB } from './chrome'
 import { readerThemeStyles } from './theme'
@@ -77,15 +66,10 @@ export interface VocabularyDashboardProps {
   onUpdateSentence?: (id: string, updates: Partial<Pick<Sentence, 'grammar' | 'meaning'>>) => void
   onVocabCountChange?: (count: number) => void
   /**
-   * 调整卡片顺序。只有单篇文档的复习会调用 ——
-   * 文库复习的条目是合并出来的，没有对应的标注可写回。
-   */
-  onReorder?: (docId: string, group: AnnotationGroup, ids: string[]) => void
-  /**
    * 删除一条笔记（左滑露出的那颗按钮）。
    *
-   * 和拖拽排序同一个范围：**只在单篇文档的复习里**。文库复习的卡片是按拼写
-   * 合并出来的，一张卡背后可能是好几条标注，滑掉它等于一次删好几条。
+   * **只在单篇文档的复习里**。文库复习的卡片是按拼写合并出来的，
+   * 一张卡背后可能是好几条标注，滑掉它等于一次删好几条。
    */
   onDeleteAnnotation?: (id: string) => void
   /** 打开「一键填充」对话框；范围就是当前复习的文档或文库 */
@@ -110,7 +94,6 @@ function VocabularyDashboardInner({
   onOpenAutoFill,
   autoFillOpen = false,
   autoFillCount = 0,
-  onReorder,
   onDeleteAnnotation,
   readerSettings = { fontSize: 18, fontFamily: 'sans', theme: 'pure', accent: 'amber' }
 }: VocabularyDashboardProps) {
@@ -138,10 +121,9 @@ function VocabularyDashboardInner({
 
   const getVocabByPage = (pageId: string): VocabCardItem[] => {
     const pageTitle = getPageTitle(pageId)
-    return annotations
-      .filter((a) => a.docId === pageId && a.type !== 'sentence' && a.text)
-      .sort((a, b) => a.order - b.order)
-      .map((a) => ({
+    return sortByText(
+      annotations.filter((a) => a.docId === pageId && a.type !== 'sentence' && a.text)
+    ).map((a) => ({
         id: a.id,
         kind: a.type === 'phrase' ? ('phrase' as const) : ('word' as const),
         pageId,
@@ -219,10 +201,9 @@ function VocabularyDashboardInner({
 
   const getGroupedSentences = (): SentenceSection[] => {
     if (!reviewTarget) return []
-    const sentences = annotations
-      .filter((a) => a.type === 'sentence')
-      .sort((a, b) => a.order - b.order)
-      .map(annotationToSentence)
+    const sentences = sortByText(annotations.filter((a) => a.type === 'sentence')).map(
+      annotationToSentence
+    )
     if (!sentences.length) return []
 
     if (reviewTarget.type === 'page') {
@@ -251,14 +232,6 @@ function VocabularyDashboardInner({
   }
 
   /**
-   * 能不能拖拽排序。
-   *
-   * 只在「单篇文档 + 编辑模式」下开放：
-   * - 文库复习的条目是按拼写合并出来的，拖了没有一条标注可以写回去
-   * - 平时不开，免得翻卡片时误拖
-   */
-  const sortable = isEditMode && reviewTarget?.type === 'page' && !!onReorder
-  /**
    * 能不能左滑删除。
    *
    * **编辑模式内外都给。** 一开始只在编辑模式里，结果真机上很难划出来 ——
@@ -266,27 +239,9 @@ function VocabularyDashboardInner({
    * 但**非编辑模式下压根没有输入框**，那边天生就顺手，没有理由不给。
    *
    * 「文库复习不给」这条**保留**：那边一张卡是按拼写把好几条标注合并出来的，
-   * 删它等于一次删好几条，而且看不见删了哪几条。和拖拽排序在那边被禁掉同一个理由。
+   * 删它等于一次删好几条，而且看不见删了哪几条。
    */
   const swipable = reviewTarget?.type === 'page' && !!onDeleteAnnotation
-
-  const sensors = useSensors(
-    // 激活阈值很小，安全性来自「必须按住手柄」这一事实（和左侧栏同一套做法）
-    useSensor(PointerSensor, { activationConstraint: { distance: 5 } })
-  )
-
-  const handleDragEnd = useCallback(
-    (event: DragEndEvent, group: AnnotationGroup, ids: string[]) => {
-      const { active, over } = event
-      if (!over || active.id === over.id) return
-      const from = ids.indexOf(String(active.id))
-      const to = ids.indexOf(String(over.id))
-      if (from === -1 || to === -1) return
-      if (reviewTarget?.type !== 'page') return
-      onReorder?.(reviewTarget.id, group, arrayMove(ids, from, to))
-    },
-    [onReorder, reviewTarget]
-  )
 
   const grouped = getGroupedVocab()
   const groupedSentences = getGroupedSentences()
@@ -442,37 +397,28 @@ function VocabularyDashboardInner({
                   {group.title}
                   <span className="text-xs font-normal text-gray-400">({group.items.length})</span>
                 </h2>
-                <CardGrid
-                  sortable={sortable}
-                  sensors={sensors}
-                  ids={group.items.map((i) => i.id)}
-                  onDragEnd={(e) => handleDragEnd(e, 'vocab', group.items.map((i) => i.id))}
-                >
+                <div className={GRID_CLASS}>
                   {group.items.map((item) => (
-                    <SortableCard key={item.id} id={item.id} sortable={sortable}>
-                      {(handle) => (
-                        <MaybeSwipe
-                          swipable={swipable}
-                          onRequestDelete={() =>
-                            setPendingDelete({ id: item.id, label: `「${item.word}」这条笔记` })
-                          }
-                        >
-                          <VocabCard
-                            item={item}
-                            hideEnglish={hideEnglish}
-                            hideChinese={hideChinese}
-                            isEditMode={isEditMode}
-                            onUpdateWord={onUpdateWord}
-                            dragHandle={handle}
-                            canSpeak={canSpeak}
-                            speaking={speakingId === item.id}
-                            onSpeak={() => speak(item.id, item.word, { lookup: true })}
-                          />
-                        </MaybeSwipe>
-                      )}
-                    </SortableCard>
+                    <MaybeSwipe
+                      key={item.id}
+                      swipable={swipable}
+                      onRequestDelete={() =>
+                        setPendingDelete({ id: item.id, label: `「${item.word}」这条笔记` })
+                      }
+                    >
+                      <VocabCard
+                        item={item}
+                        hideEnglish={hideEnglish}
+                        hideChinese={hideChinese}
+                        isEditMode={isEditMode}
+                        onUpdateWord={onUpdateWord}
+                        canSpeak={canSpeak}
+                        speaking={speakingId === item.id}
+                        onSpeak={() => speak(item.id, item.word, { lookup: true })}
+                      />
+                    </MaybeSwipe>
                   ))}
-                </CardGrid>
+                </div>
               </section>
             ))}
           </div>
@@ -485,37 +431,26 @@ function VocabularyDashboardInner({
                   {group.title}
                   <span className="text-xs font-normal text-gray-400">({group.items.length})</span>
                 </h2>
-                <CardGrid
-                  sortable={sortable}
-                  sensors={sensors}
-                  ids={group.items.map((i) => i.id)}
-                  onDragEnd={(e) => handleDragEnd(e, 'sentence', group.items.map((i) => i.id))}
-                >
+                <div className={GRID_CLASS}>
                   {group.items.map((item) => (
-                    <SortableCard key={item.id} id={item.id} sortable={sortable}>
-                      {(handle) => (
-                        <MaybeSwipe
-                          swipable={swipable}
-                          onRequestDelete={() =>
-                            setPendingDelete({ id: item.id, label: '这条句摘' })
-                          }
-                        >
-                          <SentenceCard
-                            item={item}
-                            hideEnglish={hideEnglish}
-                            hideChinese={hideChinese}
-                            isEditMode={isEditMode}
-                            onUpdateSentence={onUpdateSentence}
-                            dragHandle={handle}
-                            canSpeak={canSpeak}
-                            speaking={speakingId === item.id}
-                            onSpeak={() => speak(item.id, item.text)}
-                          />
-                        </MaybeSwipe>
-                      )}
-                    </SortableCard>
+                    <MaybeSwipe
+                      key={item.id}
+                      swipable={swipable}
+                      onRequestDelete={() => setPendingDelete({ id: item.id, label: '这条句摘' })}
+                    >
+                      <SentenceCard
+                        item={item}
+                        hideEnglish={hideEnglish}
+                        hideChinese={hideChinese}
+                        isEditMode={isEditMode}
+                        onUpdateSentence={onUpdateSentence}
+                        canSpeak={canSpeak}
+                        speaking={speakingId === item.id}
+                        onSpeak={() => speak(item.id, item.text)}
+                      />
+                    </MaybeSwipe>
                   ))}
-                </CardGrid>
+                </div>
               </section>
             ))}
           </div>
@@ -606,36 +541,6 @@ function SpeakButton({
 
 const GRID_CLASS = 'grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4'
 
-/** 卡片网格。不能排序时就是个普通网格，连 DndContext 都不挂 */
-function CardGrid({
-  sortable,
-  sensors,
-  ids,
-  onDragEnd,
-  children
-}: {
-  sortable: boolean
-  sensors: ReturnType<typeof useSensors>
-  ids: string[]
-  onDragEnd: (event: DragEndEvent) => void
-  children: React.ReactNode
-}) {
-  if (!sortable) return <div className={GRID_CLASS}>{children}</div>
-  return (
-    <DndContext
-      sensors={sensors}
-      collisionDetection={closestCenter}
-      modifiers={[restrictToWindowEdges]}
-      onDragEnd={onDragEnd}
-    >
-      {/* 卡片是网格排布，用 rectSortingStrategy；竖列那套策略在这里会算错位置 */}
-      <SortableContext items={ids} strategy={rectSortingStrategy}>
-        <div className={GRID_CLASS}>{children}</div>
-      </SortableContext>
-    </DndContext>
-  )
-}
-
 /**
  * 可滑就套一层，不可滑就原样放行。
  *
@@ -655,62 +560,6 @@ function MaybeSwipe({
   return <SwipeToDelete onRequestDelete={onRequestDelete}>{children}</SwipeToDelete>
 }
 
-/**
- * 可拖动的卡片外壳。
- *
- * 手柄以 children 参数的形式交给卡片自己去摆 —— 卡片内部的排版各不相同，
- * 外面用绝对定位去盖，迟早会和某个输入框撞上。
- */
-function SortableCard({
-  id,
-  sortable,
-  children
-}: {
-  id: string
-  sortable: boolean
-  children: (handle: React.ReactNode) => React.ReactNode
-}) {
-  if (!sortable) return <>{children(null)}</>
-  return <SortableCardInner id={id}>{children}</SortableCardInner>
-}
-
-function SortableCardInner({
-  id,
-  children
-}: {
-  id: string
-  children: (handle: React.ReactNode) => React.ReactNode
-}) {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id })
-
-  const style: React.CSSProperties = {
-    transform: CSS.Transform.toString(transform),
-    transition,
-    zIndex: isDragging ? 999 : undefined,
-    opacity: isDragging ? 0.4 : 1
-  }
-
-  const handle = (
-    <button
-      type="button"
-      className="shrink-0 -ml-1 p-1 rounded text-stone-300 hover:text-ink cursor-grab active:cursor-grabbing"
-      style={{ touchAction: 'none' }}
-      // 手柄有自己的手势，左滑删除那层要放它过去（见 SwipeToDelete）
-      data-no-swipe=""
-      aria-label="拖动调整顺序"
-      {...attributes}
-      {...listeners}
-    >
-      <GripVertical className="w-4 h-4" />
-    </button>
-  )
-
-  return (
-    <div ref={setNodeRef} style={style}>
-      {children(handle)}
-    </div>
-  )
-}
 
 function VocabCard({
   item,
@@ -718,7 +567,6 @@ function VocabCard({
   hideChinese,
   isEditMode,
   onUpdateWord,
-  dragHandle,
   canSpeak,
   speaking,
   onSpeak
@@ -728,7 +576,6 @@ function VocabCard({
   hideChinese: boolean
   isEditMode: boolean
   onUpdateWord: (word: string, updates: Partial<WordNote> & { grammar?: string }) => void
-  dragHandle?: React.ReactNode
   canSpeak: boolean
   speaking: boolean
   onSpeak: () => void
@@ -798,21 +645,6 @@ function VocabCard({
       }}
     >
       <div className="flex items-start justify-between gap-2 flex-wrap">
-        {/*
-          手柄要和右边那个单词**压在同一条水平线上**。
-
-          第一版只套了个同高（28px）的盒子居中，图标中线从 199 挪到 201 ——
-          用户仍说偏上，而且他是对的：**眼睛对齐的是小写字母那一坨，不是整个行盒。**
-          量过（375px、18px Playfair）：基线 208、小写 x 顶 198，小写的中线在 **203**
-          （字母 o 的中线 203.5）；而 stood 的 d、t 这些上伸部把行盒中线拉到了 201，
-          跟眼睛看到的差着 2px。
-
-          所以在居中之上再往下压 2px，图标中线落到 203。这张卡上的字号是固定的
-          （text-lg，不跟阅读页的字号设置走），所以这 2px 不会跑掉。
-        */}
-        {dragHandle && (
-          <span className="flex h-7 shrink-0 items-center mt-[2px]">{dragHandle}</span>
-        )}
         <div className="min-w-0 flex-1 min-h-[28px]">
           {showEnglish ? (
             /* 点单词 = 读出来；卡片别处照旧是「翻开答案」。
@@ -952,7 +784,6 @@ function SentenceCard({
   hideChinese,
   isEditMode,
   onUpdateSentence,
-  dragHandle,
   canSpeak,
   speaking,
   onSpeak
@@ -962,7 +793,6 @@ function SentenceCard({
   hideChinese: boolean
   isEditMode: boolean
   onUpdateSentence?: (id: string, updates: Partial<Pick<Sentence, 'grammar' | 'meaning'>>) => void
-  dragHandle?: React.ReactNode
   canSpeak: boolean
   speaking: boolean
   onSpeak: () => void
@@ -1004,7 +834,6 @@ function SentenceCard({
       }}
     >
       <div className="min-h-[28px] flex items-start gap-1">
-        {dragHandle}
         {showEnglish ? (
           <p className="flex-1">
             {/* 角标放在按钮**里面** —— 放外面的话，句子一换行按钮就占满整行宽，

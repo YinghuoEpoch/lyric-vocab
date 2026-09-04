@@ -1,164 +1,105 @@
 import { describe, it, expect } from 'vitest'
-import { compareAnchors, insertionOrder, parseAnchor } from './annotationOrder'
+import { compareAnchors, compareByText, parseAnchor, sortByText } from './annotationOrder'
 
 /**
- * 新标注插在哪的测试。
+ * 排列次序的测试。
  *
- * 风险有两处：一是插错位置（用户要的就是「apple 和 ear 中间」），
- * 二是把别人已经拖好的顺序冲掉 —— 后者更难发现，所以专门测。
+ * 手动排序去掉之后，次序是**算**出来的：一律按正文坐标。
+ * 值得钉住的是那几条平局规则 —— 孤儿沉底、同起点短的在前、
+ * 以及「两台设备算出来必须一模一样」（不能靠数组本来的位置）。
  */
 
-/** 造一条标注：坐标 + 当前顺序 */
-const a = (start: string | null, order: number) => ({ start, order })
+/** 造一条排序看得见的最小标注 */
+const a = (
+  id: string,
+  start: string | null,
+  end?: string | null,
+  createdAt = 0
+) => ({ id, start, end: end === undefined ? start : end, createdAt })
 
-/** 把新标注按算出来的 order 插进去，得到最终的显示顺序，好肉眼核对 */
-function 插入后顺序(existing: Array<{ start: string | null; order: number; name: string }>, start: string, name: string) {
-  const order = insertionOrder(existing, start)
-  return [...existing, { start, order, name }]
-    .sort((x, y) => x.order - y.order)
-    .map((x) => x.name)
-}
+const ids = (list: ReturnType<typeof a>[]) => sortByText(list).map((x) => x.id)
 
-describe('解析与比较坐标', () => {
-  it('L0W2 是第 0 行第 2 个词', () => {
-    expect(parseAnchor('L0W2')).toEqual([0, 2])
-  })
-
-  it('孤儿标注没有坐标', () => {
+describe('parseAnchor', () => {
+  it('认得 L行W词，别的一律当作没有位置', () => {
+    expect(parseAnchor('L3W12')).toEqual([3, 12])
+    expect(parseAnchor('L0W0')).toEqual([0, 0])
     expect(parseAnchor(null)).toBeNull()
-    expect(parseAnchor('orphan:xyz')).toBeNull()
+    expect(parseAnchor(undefined)).toBeNull()
+    expect(parseAnchor('')).toBeNull()
+    expect(parseAnchor('orphan:x')).toBeNull()
+    expect(parseAnchor('L3')).toBeNull()
   })
+})
 
+describe('compareAnchors', () => {
   it('先比行，再比这一行里的第几个词', () => {
-    expect(compareAnchors('L0W1', 'L0W2')).toBeLessThan(0)
+    expect(compareAnchors('L1W0', 'L2W0')).toBeLessThan(0)
     expect(compareAnchors('L2W0', 'L1W9')).toBeGreaterThan(0)
-    expect(compareAnchors('L1W3', 'L1W3')).toBe(0)
+    expect(compareAnchors('L1W2', 'L1W10')).toBeLessThan(0)
+    expect(compareAnchors('L1W2', 'L1W2')).toBe(0)
+  })
+
+  it('有一边没位置就没法比，返回 0 交给上层', () => {
+    expect(compareAnchors(null, 'L1W0')).toBe(0)
   })
 })
 
-describe('按正文顺序插进去', () => {
-  it('用户的例子：apple and ear，后标的 and 落在两者中间', () => {
-    const existing = [
-      { ...a('L0W0', 0), name: 'apple' },
-      { ...a('L0W2', 1), name: 'ear' }
+describe('按正文顺序排', () => {
+  it('数组本来是什么顺序都不影响结果', () => {
+    const list = [a('c', 'L2W0'), a('a', 'L0W0'), a('b', 'L1W3')]
+    expect(ids(list)).toEqual(['a', 'b', 'c'])
+    expect(ids([...list].reverse())).toEqual(['a', 'b', 'c'])
+  })
+
+  it('行号按数值比，不是按字符串比（L10 在 L9 后面）', () => {
+    expect(ids([a('十', 'L10W0'), a('九', 'L9W0')])).toEqual(['九', '十'])
+  })
+
+  it('同一行里按第几个词，W10 在 W9 后面', () => {
+    expect(ids([a('十', 'L0W10'), a('九', 'L0W9')])).toEqual(['九', '十'])
+  })
+
+  it('后标的词照样落回它在正文里的位置（从前会跑到末尾）', () => {
+    // 正文是 apple and ear，先标了 apple 和 ear，回头再标 and
+    const list = [a('apple', 'L0W0'), a('ear', 'L0W2'), a('and', 'L0W1')]
+    expect(ids(list)).toEqual(['apple', 'and', 'ear'])
+  })
+
+  it('起点相同时短的在前：单词排在以它开头的短语前面', () => {
+    const 单词 = a('word', 'L38W0')
+    const 短语 = a('phrase', 'L38W0', 'L38W2')
+    expect(ids([短语, 单词])).toEqual(['word', 'phrase'])
+  })
+
+  it('孤儿（正文里那段被删了）一律沉底，彼此按创建时间', () => {
+    const list = [
+      a('孤儿新', null, null, 200),
+      a('有位置', 'L5W0'),
+      a('孤儿旧', null, null, 100)
     ]
-    expect(插入后顺序(existing, 'L0W1', 'and')).toEqual(['apple', 'and', 'ear'])
+    expect(ids(list)).toEqual(['有位置', '孤儿旧', '孤儿新'])
   })
 
-  it('本来就在最后的，仍然排最后', () => {
-    const existing = [
-      { ...a('L0W0', 0), name: 'apple' },
-      { ...a('L0W1', 1), name: 'and' }
-    ]
-    expect(插入后顺序(existing, 'L3W5', 'later')).toEqual(['apple', 'and', 'later'])
+  it('起止都一样时按创建时间，再一样按 id —— 两台设备必须算出同一个次序', () => {
+    const 早 = a('x', 'L1W1', 'L1W1', 100)
+    const 晚 = a('y', 'L1W1', 'L1W1', 200)
+    expect(ids([晚, 早])).toEqual(['x', 'y'])
+
+    const 同时甲 = a('aaa', 'L1W1', 'L1W1', 100)
+    const 同时乙 = a('bbb', 'L1W1', 'L1W1', 100)
+    expect(ids([同时乙, 同时甲])).toEqual(['aaa', 'bbb'])
   })
 
-  it('正文里最靠前的，排到最前面', () => {
-    const existing = [
-      { ...a('L1W0', 0), name: 'and' },
-      { ...a('L2W0', 1), name: 'ear' }
-    ]
-    expect(插入后顺序(existing, 'L0W0', 'apple')).toEqual(['apple', 'and', 'ear'])
+  it('sortByText 不动传进来的那个数组', () => {
+    const list = [a('c', 'L2W0'), a('a', 'L0W0')]
+    sortByText(list)
+    expect(list.map((x) => x.id)).toEqual(['c', 'a'])
   })
 
-  it('第一条标注从 0 开始', () => {
-    expect(insertionOrder([], 'L0W0')).toBe(0)
-  })
-
-  it('跨行也按正文顺序', () => {
-    const existing = [
-      { ...a('L0W5', 0), name: '第一行的词' },
-      { ...a('L2W1', 1), name: '第三行的词' }
-    ]
-    expect(插入后顺序(existing, 'L1W0', '第二行的词')).toEqual([
-      '第一行的词',
-      '第二行的词',
-      '第三行的词'
-    ])
-  })
-})
-
-describe('不冲掉用户拖出来的顺序', () => {
-  it('别人已经被拖乱了，新的只挨着「正文里它前面那条」，其余次序不动', () => {
-    // 用户把 ear 拖到了 apple 前面
-    const existing = [
-      { ...a('L0W2', 0), name: 'ear' },
-      { ...a('L0W0', 1), name: 'apple' }
-    ]
-    // 新标的 and 在正文里紧跟 apple，所以排在 apple 后面
-    expect(插入后顺序(existing, 'L0W1', 'and')).toEqual(['ear', 'apple', 'and'])
-  })
-
-  it('顺序被完全打乱时：紧跟「正文里它前面那条」，插在那条后面', () => {
-    // 正文顺序是 a b c d（坐标拉开，好在中间插），用户拖成了 d b a c
-    const existing = [
-      { ...a('L0W30', 0), name: 'd' },
-      { ...a('L0W10', 1), name: 'b' },
-      { ...a('L0W0', 2), name: 'a' },
-      { ...a('L0W20', 3), name: 'c' }
-    ]
-    // 新标的 b2 在正文里夹在 b 与 c 之间 -> 跟在 b 后面（而不是跑到 c 前面）
-    expect(插入后顺序(existing, 'L0W15', 'b2')).toEqual(['d', 'b', 'b2', 'a', 'c'])
-  })
-
-  it('打乱时，正文里最靠前的新词排到它「正文后继」的前面', () => {
-    const existing = [
-      { ...a('L0W3', 0), name: 'd' },
-      { ...a('L0W1', 1), name: 'b' },
-      { ...a('L0W2', 2), name: 'c' }
-    ]
-    // 新词在正文里比谁都靠前，正文后继是 b -> 插到 b 前面
-    expect(插入后顺序(existing, 'L0W0', 'a')).toEqual(['d', 'a', 'b', 'c'])
-  })
-
-  it('打乱时，正文里最靠后的新词不一定排在列表最后', () => {
-    const existing = [
-      { ...a('L0W3', 0), name: 'd' },
-      { ...a('L0W1', 1), name: 'b' },
-      { ...a('L0W2', 2), name: 'c' }
-    ]
-    // 新词在正文里最靠后，前一条是 d，而 d 被拖到了第一位 -> 跟在 d 后面
-    expect(插入后顺序(existing, 'L0W9', 'e')).toEqual(['d', 'e', 'b', 'c'])
-  })
-
-  it('算出来的是小数也没关系，排序只看大小', () => {
-    const existing = [a('L0W0', 0), a('L0W2', 1)]
-    const order = insertionOrder(existing, 'L0W1')
-    expect(order).toBeGreaterThan(0)
-    expect(order).toBeLessThan(1)
-  })
-
-  it('连插几条都能各就各位', () => {
-    let list = [
-      { ...a('L0W0', 0), name: 'a' },
-      { ...a('L0W9', 1), name: 'z' }
-    ]
-    for (const [anchor, name] of [['L0W5', 'm'], ['L0W2', 'c'], ['L0W7', 'x']] as const) {
-      list = [...list, { start: anchor, order: insertionOrder(list, anchor), name }]
-    }
-    expect(list.sort((p, q) => p.order - q.order).map((x) => x.name)).toEqual([
-      'a',
-      'c',
-      'm',
-      'x',
-      'z'
-    ])
-  })
-})
-
-describe('孤儿标注（原文已删除，没有位置）', () => {
-  it('列表里全是孤儿时，新的接在最后', () => {
-    const existing = [a(null, 0), a(null, 1)]
-    expect(insertionOrder(existing, 'L0W0')).toBe(2)
-  })
-
-  it('孤儿不参与比较，但也不会被挤掉', () => {
-    const existing = [
-      { ...a('L0W0', 0), name: 'apple' },
-      { ...a(null, 1), name: '孤儿' },
-      { ...a('L0W2', 2), name: 'ear' }
-    ]
-    // and 在正文里紧跟 apple，插在 apple 与孤儿之间；孤儿与 ear 的相对次序不变
-    expect(插入后顺序(existing, 'L0W1', 'and')).toEqual(['apple', 'and', '孤儿', 'ear'])
+  it('compareByText 自己跟自己比是 0，反过来比符号相反', () => {
+    const x = a('x', 'L1W0')
+    const y = a('y', 'L2W0')
+    expect(compareByText(x, x)).toBe(0)
+    expect(Math.sign(compareByText(x, y))).toBe(-Math.sign(compareByText(y, x)))
   })
 })

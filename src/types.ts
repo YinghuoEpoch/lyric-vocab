@@ -125,19 +125,6 @@ export interface Sentence {
  */
 export type AnnotationType = 'word' | 'phrase' | 'sentence'
 
-/**
- * 排序分组。
- *
- * 单词和短语在复习页是**同一列卡片**（短语本质也是词汇），
- * 所以它们必须排在同一条队里 —— 各编各的号的话，两套 0、1、2 混在一起
- * 按数值排，短语就会随机插到单词中间。句子自成一队。
- */
-export type AnnotationGroup = 'vocab' | 'sentence'
-
-export function annotationGroupOf(type: AnnotationType): AnnotationGroup {
-  return type === 'sentence' ? 'sentence' : 'vocab'
-}
-
 export interface Annotation {
   /** 稳定身份。创建后永不改变 —— 位置、原文、内容怎么变都不影响它 */
   id: string
@@ -174,8 +161,15 @@ export interface Annotation {
    * 「正文已改」那个记号的判断依据。
    */
   sourceText?: string
-  /** 卡片排序。只在同一文档、同一类型内比较大小，数值本身无意义 */
-  order: number
+  /**
+   * ⚠️ **死字段，别再读也别再写。**
+   *
+   * 从前卡片可以拖着排，顺序就存在这里。手动排序 2026-09-04 去掉了，
+   * 次序改成按正文坐标**算**出来（见 utils/annotationOrder.ts）。
+   * 老数据里这一格原样留着 —— 删它等于改写每一条笔记，
+   * 白白换来一轮全量同步，而它又碍不着谁。
+   */
+  order?: number
   createdAt: number
 
   // —— 单词 / 短语的内容 ——

@@ -11,7 +11,6 @@ import { useExportBackup } from './hooks/useExportBackup'
 import type {
   AccentColor,
   Annotation,
-  AnnotationGroup,
   AppData,
   LyricBook,
   LyricPage,
@@ -67,8 +66,6 @@ import {
   addAnnotations,
   replaceDocAnnotations,
   updateVocabByText,
-  orderForNewAnnotation,
-  reorderAnnotations,
   runAnnotationMigration
 } from './storage'
 
@@ -645,7 +642,6 @@ export default function App() {
               type: 'word',
               start: anchorId,
               end: anchorId,
-              order: orderForNewAnnotation(latest, currentPageId, 'vocab', anchorId),
               createdAt: Date.now(),
               ...fields
             }
@@ -1027,7 +1023,6 @@ export default function App() {
               start: s.startAnchorId,
               end: s.endAnchorId,
               text: s.text,
-              order: orderForNewAnnotation(latest, s.docId, 'sentence', s.startAnchorId),
               createdAt: Date.now(),
               grammar: s.grammar,
               meaning: s.meaning
@@ -1075,8 +1070,6 @@ export default function App() {
               start: p.startAnchorId,
               end: p.endAnchorId,
               text: p.text,
-              // 和单词同一条队：复习页里它们是同一列卡片
-              order: orderForNewAnnotation(latest, p.docId, 'vocab', p.startAnchorId),
               createdAt: Date.now(),
               definition: p.definition,
               grammar: p.usage
@@ -1169,14 +1162,6 @@ export default function App() {
     (word: string, updates: Partial<WordNote> & { grammar?: string }) => {
       const { word: _ignored, orphaned: _alsoIgnored, ...fields } = updates
       void (async () => setAppData(await updateVocabByText(word, fields)))()
-    },
-    []
-  )
-
-  /** 复习页拖拽调整卡片顺序。排序逻辑只在存储层实现一份，这里拿结果直接更新界面 */
-  const handleReorderCards = useCallback(
-    (docId: string, group: AnnotationGroup, ids: string[]) => {
-      void (async () => setAppData(await reorderAnnotations(docId, group, ids)))()
     },
     []
   )
@@ -1589,7 +1574,6 @@ export default function App() {
             isEditMode={reviewEditMode}
             onUpdateWord={handleUpdateWord}
             onUpdateSentence={handleUpdateSentence}
-            onReorder={handleReorderCards}
             onVocabCountChange={setReviewVocabCount}
             onDeleteAnnotation={handleDeleteAnnotationById}
             onOpenAutoFill={autoFill.openDialog}

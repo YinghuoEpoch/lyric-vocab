@@ -1,5 +1,6 @@
 import type { Annotation, NotesMap, Sentence, WordNote } from '../types'
 import { isOrphanAnnotation } from '../types'
+import { compareByText, sortByText } from './annotationOrder'
 
 /**
  * 标注表 -> 界面需要的「读模型」。
@@ -53,8 +54,8 @@ export function annotationToSentence(a: Annotation): Sentence {
 /**
  * 按文档分组的单词笔记表，形如 `{ 文档id: { 坐标: 笔记 } }`。
  *
- * 键的插入顺序就是 order 的顺序 —— 下游 Object.entries 取出来是什么次序，
- * 复习页的卡片就是什么次序，所以这里必须先排好再塞。
+ * 键的插入顺序就是显示顺序 —— 下游 Object.entries 取出来是什么次序，
+ * 复习页的卡片就是什么次序，所以这里必须先按正文顺序排好再塞。
  */
 export function buildNotesIndex(annotations: Annotation[]): Record<string, NotesMap> {
   const byDoc = new Map<string, Annotation[]>()
@@ -70,7 +71,7 @@ export function buildNotesIndex(annotations: Annotation[]): Record<string, Notes
 
   const out: Record<string, NotesMap> = {}
   for (const [docId, list] of byDoc) {
-    list.sort((x, y) => x.order - y.order)
+    list.sort(compareByText)
     const map: NotesMap = {}
     for (const a of list) {
       // 理论上不会撞键（对账保证一个坐标最多一条单词标注），
@@ -83,12 +84,9 @@ export function buildNotesIndex(annotations: Annotation[]): Record<string, Notes
   return out
 }
 
-/** 句摘列表，按 order 排好（同一文档内的相对次序就是卡片次序） */
+/** 句摘列表，按正文顺序排好（同一文档内的相对次序就是卡片次序） */
 export function buildSentenceList(annotations: Annotation[]): Sentence[] {
-  return annotations
-    .filter((a) => a.type === 'sentence')
-    .sort((a, b) => a.order - b.order)
-    .map(annotationToSentence)
+  return sortByText(annotations.filter((a) => a.type === 'sentence')).map(annotationToSentence)
 }
 
 /**
@@ -138,12 +136,11 @@ export function annotationToPhrase(a: Annotation): PhraseView {
   return p
 }
 
-/** 某篇文档里的短语，按 order 排好 */
+/** 某篇文档里的短语，按正文顺序排好 */
 export function buildPhraseList(annotations: Annotation[], docId: string): PhraseView[] {
-  return annotations
-    .filter((a) => a.type === 'phrase' && a.docId === docId)
-    .sort((a, b) => a.order - b.order)
-    .map(annotationToPhrase)
+  return sortByText(annotations.filter((a) => a.type === 'phrase' && a.docId === docId)).map(
+    annotationToPhrase
+  )
 }
 
 /**
@@ -201,13 +198,11 @@ export interface VocabItemView {
 }
 
 /**
- * 右侧生词板的清单：单词和短语**混在一起按 order 排**。
+ * 右侧生词板的清单：单词和短语**混在一起按正文顺序排**。
  *
  * 从前这份清单是分两步拼的（先塞全部单词、再把短语追加在末尾），
  * 于是短语永远排在所有单词后面，跟它在正文里的位置无关 ——
  * 而复习页走的是「一起筛出来一起排」，两边对不上。现在两边同一条路。
- *
- * order 是按排序分组编的（vocab 组 = 单词 + 短语），本来就可以直接比大小。
  */
 export function buildVocabList(
   annotations: Annotation[],
@@ -223,7 +218,7 @@ export function buildVocabList(
 
   const out: VocabItemView[] = []
   for (const [, list] of byDoc) {
-    list.sort((x, y) => x.order - y.order)
+    list.sort(compareByText)
     // 键撞车的处理跟 buildNotesIndex 一致：后来的退回用 id，两条都留下
     const usedKeys = new Set<string>()
     for (const a of list) {
