@@ -185,8 +185,23 @@ export function findRangeAnnotation(
 /** 右侧生词板的一条 */
 export interface VocabItemView {
   word: string
-  /** 有位置的用坐标，孤儿用 id —— 和 annotationKey 同一套 */
+  /**
+   * **身份**：有位置的用坐标，孤儿用 id —— 和 annotationKey 同一套。
+   * 删除、React 列表键、高亮当前项都认它。
+   *
+   * ⚠️ 撞车时会退回用记录的 id，所以**它不一定是正文里的坐标**，
+   * 别拿它去 `getElementById`。要跳转请用下面那格。
+   */
   anchorId: string
+  /**
+   * **门牌号**：这条笔记在正文里的起点坐标，点一下跳过去就靠它。孤儿没有这一格。
+   *
+   * 和 `anchorId` 分开是被一个 bug 逼出来的：单词 `all` 和短语 `all right`
+   * 起点是同一个坐标，身份不能发重号，于是短语退回用自己的 id 当 `anchorId` ——
+   * 那是身份证不是门牌号，拿它去正文里找当然找不到，点了静悄悄地什么也不发生。
+   * 见 后续规划.md 第六十五节。
+   */
+  startAnchorId?: string
   pageId: string
   phonetic?: string
   pos?: string
@@ -226,6 +241,8 @@ export function buildVocabList(
       const anchorId = usedKeys.has(key) ? a.id : key
       usedKeys.add(anchorId)
       const item: VocabItemView = { word: a.text, anchorId, pageId: a.docId }
+      // 门牌号一律用真实起点，不受上面那个「撞车退回用 id」的影响
+      if (a.start !== null && a.start !== undefined) item.startAnchorId = a.start
       if (a.definition !== undefined) item.definition = a.definition
       if (a.auto) item.auto = true
       if (isOrphanAnnotation(a)) item.orphaned = true

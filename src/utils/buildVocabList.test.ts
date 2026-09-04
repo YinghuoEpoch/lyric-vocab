@@ -99,6 +99,42 @@ describe('右侧生词板的清单', () => {
     expect(list.map((v) => v.anchorId)).toEqual(['L0W0', 'p1a'])
   })
 
+  /**
+   * 用户报的：右侧栏点一些短语跳不到正文里去，而且**偏偏是和单词重叠的那些**
+   * （单独划 all、单独划 all right 都好使，两个一起划，all right 就跳不动了）。
+   *
+   * 根子是一个字段被拿去干两件事：`anchorId` 既是身份又是门牌号。
+   * 撞车时后来的那条退回用记录 id 当身份 —— 那不是正文里的坐标，
+   * 拿它去 getElementById 什么也找不到，于是点了静悄悄地毫无反应。
+   *
+   * 现在门牌号单独一格，**撞不撞车都指向真实起点**。
+   */
+  it('⚠️ 撞坐标时，身份可以退回用 id，但门牌号必须还是真实起点', () => {
+    const list = buildVocabList(
+      [word('w1', 'L0W0', 'all'), phrase('p1a', 'L0W0', 'L0W1', 'all right')],
+      active
+    )
+    const 单词 = list[0]
+    const 短语 = list[1]
+
+    // 身份：照旧，撞车的那条退回用 id
+    expect([单词.anchorId, 短语.anchorId]).toEqual(['L0W0', 'p1a'])
+    // 门牌号：两条都指向正文里那个真实坐标 —— 这是修好的那一格
+    expect([单词.startAnchorId, 短语.startAnchorId]).toEqual(['L0W0', 'L0W0'])
+  })
+
+  it('不撞车时门牌号也是真实起点（短语指向它的首词，不是末词）', () => {
+    const list = buildVocabList([phrase('p1a', 'L4W5', 'L4W6', 'wanna shout')], active)
+    expect(list[0].startAnchorId).toBe('L4W5')
+    expect(list[0].anchorId).toBe('L4W5')
+  })
+
+  it('孤儿没有门牌号 —— 正文里已经没那个位置了，点了本来就不该跳', () => {
+    const orphan: Annotation = { ...word('w9', 'L0W0', 'gone'), start: null, end: null }
+    const list = buildVocabList([orphan], active)
+    expect(list[0].startAnchorId).toBeUndefined()
+  })
+
   it('多篇文档各自成段，段内按正文顺序排', () => {
     const list = buildVocabList(
       [
