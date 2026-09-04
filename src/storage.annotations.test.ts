@@ -32,7 +32,6 @@ const anno = (over: Partial<Annotation> = {}): Annotation => ({
   start: 'L0W0',
   end: 'L0W0',
   text: 'stood',
-  order: 0,
   createdAt: 1,
   ...over
 })
@@ -51,14 +50,15 @@ async function fresh(seed: Partial<AppData>) {
 }
 
 describe('selectAnnotations', () => {
-  it('按 order 排序，并能只要某一类', async () => {
+  it('按正文顺序排，并能只要某一类', async () => {
     const s = await fresh({
       pages: [page('p1')],
       annotations: [
-        anno({ id: 'b', order: 1, text: 'second' }),
-        anno({ id: 'a', order: 0, text: 'first' }),
-        anno({ id: 's', order: 0, type: 'sentence', text: '一个句子' }),
-        anno({ id: 'other', docId: 'p2', order: 0, text: '别篇的' })
+        // 故意存成乱的：次序是算出来的，跟它们在数组里的位置无关
+        anno({ id: 'b', start: 'L1W0', end: 'L1W0', text: 'second' }),
+        anno({ id: 'a', start: 'L0W0', end: 'L0W0', text: 'first' }),
+        anno({ id: 's', start: 'L0W5', end: 'L0W9', type: 'sentence', text: '一个句子' }),
+        anno({ id: 'other', docId: 'p2', text: '别篇的' })
       ]
     })
     const data = await s.getAppData()
@@ -68,15 +68,16 @@ describe('selectAnnotations', () => {
     expect(s.selectAnnotations(data, 'p1', 'sentence').map((a) => a.id)).toEqual(['s'])
   })
 
-  it('nextAnnotationOrder 排在同文档同组的最后', async () => {
+  it('order 字段是死的，存着什么都不影响排出来的次序', async () => {
     const s = await fresh({
       pages: [page('p1')],
-      annotations: [anno({ id: 'a', order: 0 }), anno({ id: 'b', order: 5 })]
+      annotations: [
+        anno({ id: 'a', start: 'L0W0', end: 'L0W0', order: 99 }),
+        anno({ id: 'b', start: 'L1W0', end: 'L1W0', order: 0 })
+      ]
     })
     const data = await s.getAppData()
-    expect(s.nextAnnotationOrder(data, 'p1', 'vocab')).toBe(6)
-    expect(s.nextAnnotationOrder(data, 'p1', 'sentence')).toBe(0) // 另一组自己从 0 开始
-    expect(s.nextAnnotationOrder(data, 'p2', 'vocab')).toBe(0)
+    expect(s.selectAnnotations(data, 'p1').map((a) => a.id)).toEqual(['a', 'b'])
   })
 })
 
@@ -188,52 +189,6 @@ describe('updateVocabByText：改一个词，全库跟着改', () => {
     })
     const data = await s.updateVocabByText('stood', { definition: '站立' })
     expect(data.annotations![0].definition).toBeUndefined()
-  })
-})
-
-describe('reorderAnnotations', () => {
-  it('按给的顺序重排', async () => {
-    const s = await fresh({
-      pages: [page('p1')],
-      annotations: [
-        anno({ id: 'a', order: 0 }),
-        anno({ id: 'b', order: 1 }),
-        anno({ id: 'c', order: 2 })
-      ]
-    })
-
-    const data = await s.reorderAnnotations('p1', 'vocab', ['c', 'a', 'b'])
-    expect(s.selectAnnotations(data, 'p1', 'word').map((a) => a.id)).toEqual(['c', 'a', 'b'])
-  })
-
-  it('没提到的接在后面，并保持它们原有的相对顺序', async () => {
-    const s = await fresh({
-      pages: [page('p1')],
-      annotations: [
-        anno({ id: 'a', order: 0 }),
-        anno({ id: 'b', order: 1 }),
-        anno({ id: 'c', order: 2 })
-      ]
-    })
-
-    const data = await s.reorderAnnotations('p1', 'vocab', ['c'])
-    expect(s.selectAnnotations(data, 'p1', 'word').map((a) => a.id)).toEqual(['c', 'a', 'b'])
-  })
-
-  it('不碰别篇文档、也不碰别的组', async () => {
-    const s = await fresh({
-      pages: [page('p1'), page('p2')],
-      annotations: [
-        anno({ id: 'a', order: 0 }),
-        anno({ id: 's', type: 'sentence', order: 0 }),
-        anno({ id: 'z', docId: 'p2', order: 0 })
-      ]
-    })
-
-    const data = await s.reorderAnnotations('p1', 'vocab', ['a'])
-    const byId = new Map(data.annotations!.map((a) => [a.id, a]))
-    expect(byId.get('s')!.order).toBe(0)
-    expect(byId.get('z')!.order).toBe(0)
   })
 })
 

@@ -1,7 +1,6 @@
 import localforage from 'localforage'
 import type {
   Annotation,
-  AnnotationGroup,
   AnnotationType,
   AppData,
   LyricBook,
@@ -9,9 +8,8 @@ import type {
   NotesMap,
   Sentence
 } from './types'
-import { annotationGroupOf } from './types'
 import { migrateToAnnotations, type MigrationReport } from './utils/migrateAnnotations'
-import { insertionOrder } from './utils/annotationOrder'
+import { sortByText } from './utils/annotationOrder'
 import {
   SAMPLE_BOOK_ID,
   SAMPLE_PAGE_ID,
@@ -457,10 +455,11 @@ export async function addBookWithPages(
 // ============================================================
 
 /**
- * 取出某篇文档的标注，按 order 排好。
+ * 取出某篇文档的标注，**按正文顺序**排好。
  *
  * 纯读取，不碰存储，所以可以在渲染里直接用。
- * 排序只在「同一文档、同一类型」内比较，这也是 order 的定义。
+ * 次序是算出来的（utils/annotationOrder.ts），不再看 `order` 字段 ——
+ * 手动排序 2026-09-04 去掉了，见那个文件开头。
  */
 export function selectAnnotations(
   data: AppData,
@@ -468,37 +467,7 @@ export function selectAnnotations(
   type?: AnnotationType
 ): Annotation[] {
   const all = data.annotations ?? []
-  return all
-    .filter((a) => a.docId === docId && (type === undefined || a.type === type))
-    .sort((a, b) => a.order - b.order)
-}
-
-/** 排在同文档同组的最后。用于兜底和迁移；新建标注请用 orderForNewAnnotation */
-export function nextAnnotationOrder(data: AppData, docId: string, group: AnnotationGroup): number {
-  let max = -1
-  for (const a of data.annotations ?? []) {
-    if (a.docId === docId && annotationGroupOf(a.type) === group && a.order > max) max = a.order
-  }
-  return max + 1
-}
-
-/**
- * 新建标注时该给的 order：**按正文顺序插进去**，排在正文里紧挨着它前面那条的后面。
- *
- * 从前一律排最后，于是 `apple and ear` 里后标的 and 会跑到卡片列表末尾。
- * 算法在 utils/annotationOrder.ts（纯函数、有单测），这里只负责挑出同文档同组的那批。
- * 「同组」而不是「同类型」：单词和短语共用一列卡片，必须排在同一条队里。
- */
-export function orderForNewAnnotation(
-  data: AppData,
-  docId: string,
-  group: AnnotationGroup,
-  start: string | null
-): number {
-  const siblings = (data.annotations ?? []).filter(
-    (a) => a.docId === docId && annotationGroupOf(a.type) === group
-  )
-  return insertionOrder(siblings, start)
+  return sortByText(all.filter((a) => a.docId === docId && (type === undefined || a.type === type)))
 }
 
 /** 新增或更新一条标注（按 id 认人） */
@@ -588,39 +557,6 @@ export async function updateVocabByText(
     changed = true
     const { auto: _wasAuto, ...kept } = a
     return { ...kept, ...updates }
-  })
-
-  if (!changed) return snapshot(data)
-  data.annotations = next
-  return commit(data)
-}
-
-/**
- * 重排某篇文档某一组的标注（词汇 = 单词 + 短语，或句子）。
- * ids 里没提到的保持原有相对顺序，排在后面。
- */
-export async function reorderAnnotations(
-  docId: string,
-  group: AnnotationGroup,
-  ids: string[]
-): Promise<AppData> {
-  const data = await ensureLoaded()
-  const rank = new Map(ids.map((id, i) => [id, i]))
-  const inScope = (a: Annotation) => a.docId === docId && annotationGroupOf(a.type) === group
-
-  // 没被提到的接在后面：先按原 order 排，再依次编号
-  const rest = (data.annotations ?? [])
-    .filter((a) => inScope(a) && !rank.has(a.id))
-    .sort((a, b) => a.order - b.order)
-  rest.forEach((a, i) => rank.set(a.id, ids.length + i))
-
-  let changed = false
-  const next = (data.annotations ?? []).map((a) => {
-    if (!inScope(a)) return a
-    const order = rank.get(a.id)
-    if (order === undefined || order === a.order) return a
-    changed = true
-    return { ...a, order }
   })
 
   if (!changed) return snapshot(data)

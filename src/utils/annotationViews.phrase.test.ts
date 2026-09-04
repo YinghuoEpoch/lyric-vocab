@@ -1,6 +1,5 @@
 import { describe, it, expect } from 'vitest'
 import type { Annotation } from '../types'
-import { annotationGroupOf } from '../types'
 import {
   buildNotesIndex,
   buildPhraseList,
@@ -52,14 +51,6 @@ const sentence = (id: string, start: string, end: string): Annotation => ({
   text: '整句话',
   grammar: '倒装',
   meaning: '翻译'
-})
-
-describe('排序分组', () => {
-  it('单词和短语同属「词汇」—— 它们在复习页是同一列卡片', () => {
-    expect(annotationGroupOf('word')).toBe('vocab')
-    expect(annotationGroupOf('phrase')).toBe('vocab')
-    expect(annotationGroupOf('sentence')).toBe('sentence')
-  })
 })
 
 describe('短语不混进按坐标索引的单词表', () => {
