@@ -48,6 +48,13 @@ export interface SyncSizeReport {
   bookCount: number
   pageCount: number
   noteCount: number
+  /**
+   * 这些东西**根本不进 data.json**，给界面单列一栏说清楚。
+   *
+   * ⚠️ 不能塞进 parts 里当成「占 0 字节的一块」—— 那会读成
+   * 「它在里面，只是不占地方」，而事实是它压根没上云。
+   */
+  excluded: { label: string; detail: string }[]
 }
 
 /** 把一份数据打包成同步要传的样子，返回字节数 */
@@ -68,20 +75,12 @@ export function measureSyncData(data: AppData): SyncSizeReport {
   }
 
   const annotations = data.annotations ?? []
-  const legacyNotePages = Object.keys(data.notes ?? {}).length
 
   const parts: SizePart[] = [
     { label: '笔记', bytes: without('annotations'), detail: `${annotations.length} 条` },
     { label: '文档壳', bytes: without('pages'), detail: `${(data.pages ?? []).length} 篇` },
     { label: '文库', bytes: without('books'), detail: `${(data.books ?? []).length} 个` }
   ]
-  if (legacyNotePages > 0) {
-    parts.push({
-      label: '旧模型残留',
-      bytes: without('notes'),
-      detail: `${legacyNotePages} 篇的老笔记表`
-    })
-  }
 
   const kinds: { kind: string; type: 'word' | 'phrase' | 'sentence' }[] = [
     { kind: '单词', type: 'word' },
@@ -95,9 +94,21 @@ export function measureSyncData(data: AppData): SyncSizeReport {
     notes.push({ kind, count: list.length, avgBytes: Math.round(sizeOf(list) / list.length) })
   }
 
+  const excluded: { label: string; detail: string }[] = []
+  const legacyNotePages = Object.keys(data.notes ?? {}).length
+  if (legacyNotePages > 0) {
+    excluded.push({ label: '旧模型残留的老笔记表', detail: `${legacyNotePages} 篇，只留在本机` })
+  }
+  const readPages = (data.pages ?? []).filter((p) => typeof p.progress === 'number' && p.progress > 0)
+  excluded.push({
+    label: '阅读进度',
+    detail: `${readPages.length} 篇，走单独的小文件`
+  })
+
   return {
     totalBytes,
     parts: parts.sort((a, b) => b.bytes - a.bytes),
+    excluded,
     notes,
     contentChars: (data.pages ?? []).reduce((s, p) => s + (p.content ?? '').length, 0),
     bookCount: (data.books ?? []).length,

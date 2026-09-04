@@ -80,14 +80,37 @@ describe('同步数据的读数', () => {
     expect(r.parts.every((p, i, arr) => i === 0 || arr[i - 1].bytes >= p.bytes)).toBe(true)
   })
 
-  it('没有旧模型残留时不显示那一行（多数人是这样）', () => {
-    const r = measureSyncData(造({ annotations: [词(1)] }))
-    expect(r.parts.some((p) => p.label === '旧模型残留')).toBe(false)
+  /**
+   * ⚠️ 旧 notes 和阅读进度**不进 data.json**（2026-09-04 先后摘出去的）。
+   *
+   * 它们不能混在 parts 里当成「占 0 字节的一块」—— 那会被读成
+   * 「它在里面，只是不占地方」。单列一栏，说清楚是「压根没上云」。
+   */
+  it('旧 notes 不算进任何一块 —— 它已经不上云了', () => {
+    const r = measureSyncData(造({ annotations: [词(1)], notes: { p1: { L0W0: { word: 'x' } } } }))
+    expect(r.parts.some((p) => p.label.includes('旧模型'))).toBe(false)
+    expect(r.excluded.some((e) => e.label.includes('旧模型'))).toBe(true)
   })
 
-  it('有旧模型残留就报出来 —— 那是白传的字节，值得看见', () => {
-    const r = measureSyncData(造({ annotations: [词(1)], notes: { p1: { L0W0: { word: 'x' } } } }))
-    expect(r.parts.some((p) => p.label === '旧模型残留')).toBe(true)
+  it('没有旧 notes 时那一条就不列（多数人是这样）', () => {
+    const r = measureSyncData(造({ annotations: [词(1)] }))
+    expect(r.excluded.some((e) => e.label.includes('旧模型'))).toBe(false)
+  })
+
+  it('阅读进度永远单列一条 —— 它是这一版最值得说清楚的一件事', () => {
+    const r = measureSyncData(造({ annotations: [词(1)] }))
+    expect(r.excluded.some((e) => e.label === '阅读进度')).toBe(true)
+  })
+
+  it('进度不影响 data.json 的大小（拆出去之后的核心保证）', () => {
+    const 没读过 = measureSyncData(造({ annotations: [词(1)] }))
+    const 读了很久 = measureSyncData(
+      造({
+        annotations: [词(1)],
+        pages: [{ ...造().pages[0], progress: 987654, progressAt: 1788500000000 }]
+      })
+    )
+    expect(读了很久.totalBytes).toBe(没读过.totalBytes)
   })
 
   it('月用量和额度占比随大小走', () => {

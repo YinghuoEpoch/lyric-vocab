@@ -308,6 +308,18 @@ function SyncSizeReadout({ report, usage }: { report: SyncSizeReport | null; usa
         </p>
       </Section>
 
+      <Section title="这些不进 data.json">
+        {report.excluded.map((e) => (
+          <Row key={e.label} label={e.label} value={e.detail} />
+        ))}
+        <p className="pt-1 text-xs text-ink-muted leading-relaxed">
+          它们不跟着每次同步走，所以不占上面那份的体积。
+          <strong className="font-medium text-ink">阅读进度</strong>
+          单独走一个几百字节的小文件 —— 一路往下读时上面那份纹丝不动，
+          而进度照样能实时同步到另一台。
+        </p>
+      </Section>
+
       <Section title="一条笔记平均多重">
         {report.notes.map((n) => (
           <Row key={n.kind} label={`${n.kind}（${n.count} 条）`} value={`${n.avgBytes} 字节`} />
