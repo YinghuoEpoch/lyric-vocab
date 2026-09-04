@@ -48,6 +48,7 @@ import {
   replaceAllData,
   saveBook,
   savePage,
+  savePageProgress,
   moveBookToTrash,
   movePageToTrash,
   restoreBook,
@@ -605,11 +606,18 @@ export default function App() {
     [currentPage, refreshData]
   )
 
+  /**
+   * 存阅读进度。
+   *
+   * ⚠️ 走 `savePageProgress` 而不是 `savePage` —— 后者会刷新 `updatedAt`，
+   * 而那一格在同步索引里。一路往下读时每次滚动都刷它的话，
+   * 索引每分钟都在变，进度拆出去单独传就白拆了。
+   */
   const handleSaveProgress = useCallback(
     (scrollTop: number) => {
       if (!currentPage) return
       void (async () => {
-        await savePage({ ...currentPage, progress: scrollTop })
+        await savePageProgress(currentPage.id, scrollTop)
         await refreshData()
       })()
     },

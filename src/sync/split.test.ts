@@ -7,8 +7,7 @@ import {
   orphanPages,
   pagesToDownload,
   pagesToUpload,
-  toIndex,
-  type SyncIndex
+  toIndex
 } from './split'
 import type { AppData } from '../types'
 
@@ -62,16 +61,33 @@ describe('拆开与还原', () => {
     expect(restored.pages[0].content).toBe('')
   })
 
-  it('文档的其它字段（标题、进度、回收站标记）原样留着', () => {
+  it('文档的其它字段（标题、回收站标记）原样留着', () => {
     const d: AppData = {
       books: [],
       notes: {},
       annotations: [],
-      pages: [{ ...page('p1', '正文'), progress: 1200, deletedAt: 999 }]
+      pages: [{ ...page('p1', '正文'), deletedAt: 999 }]
     }
     const back = fromIndex(toIndex(d), contentsOf(d), d.notes)
-    expect(back.pages[0].progress).toBe(1200)
     expect(back.pages[0].deletedAt).toBe(999)
+    expect(back.pages[0].title).toBe('p1')
+  })
+
+  /**
+   * ⚠️ 进度**不在索引里**（2026-09-04 拆出去了，走 progress.json）。
+   * 拼回来的数据里没有它，调用方要自己用 applyProgress 补上。
+   */
+  it('阅读进度不在索引里 —— 它单独走一个小文件', () => {
+    const d: AppData = {
+      books: [],
+      notes: {},
+      annotations: [],
+      pages: [{ ...page('p1', '正文'), progress: 1200, progressAt: 555 }]
+    }
+    const idx = toIndex(d)
+    expect(JSON.stringify(idx)).not.toContain('1200')
+    expect(JSON.stringify(idx)).not.toContain('progress')
+    expect(fromIndex(idx, contentsOf(d), d.notes).pages[0].progress).toBeUndefined()
   })
 })
 
@@ -150,12 +166,12 @@ describe('索引的形状能喂给现成的三方合并', () => {
     expect(JSON.stringify(a.pages[0])).not.toBe(JSON.stringify(b.pages[0]))
   })
 
-  it('只改了滚动位置时，指纹不变（正文没动就不该传正文）', () => {
-    const a = toIndex(data([page('p1', '正文')]))
-    const withProgress: SyncIndex = {
-      ...a,
-      pages: [{ ...a.pages[0], progress: 999 }]
+  it('⚠️ 只改了滚动位置：整个索引一个字节都不变（拆出去之后的核心保证）', () => {
+    const 读之前 = data([page('p1', '正文')])
+    const 读之后: AppData = {
+      ...读之前,
+      pages: [{ ...读之前.pages[0], progress: 9999, progressAt: 123456 }]
     }
-    expect(withProgress.pages[0].contentRev).toBe(a.pages[0].contentRev)
+    expect(JSON.stringify(toIndex(读之后))).toBe(JSON.stringify(toIndex(读之前)))
   })
 })

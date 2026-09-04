@@ -8,6 +8,7 @@ import {
   toIndex,
   type SyncIndex
 } from './split'
+import { applyProgress, mergeProgress, progressOf, sameProgress, type ProgressMap } from './progress'
 import type { AppData } from '../types'
 
 /**
@@ -24,6 +25,11 @@ import type { AppData } from '../types'
 class FakeCloud {
   index: SyncIndex | null = null
   pages = new Map<string, string>()
+  /** 进度单独一个小文件，和索引分开 —— 照真货来 */
+  progress: ProgressMap = {}
+  /** 记账：索引被写了几次。「读书时索引纹丝不动」就靠它证明 */
+  indexWrites = 0
+  progressWrites = 0
   /** 记账：这一趟传了几篇正文。省流量的效果就靠它证明 */
   uploads: string[] = []
   downloads: string[] = []
@@ -36,11 +42,26 @@ function syncDevice(cloud: FakeCloud, local: AppData, base: AppData | null): App
 
   if (cloud.index === null) {
     cloud.index = localIndex
+    cloud.indexWrites++
+    cloud.progress = progressOf(local)
+    cloud.progressWrites++
     for (const [id, c] of contentsOf(local)) {
       cloud.pages.set(id, c)
       cloud.uploads.push(id)
     }
     return local
+  }
+
+  // 进度先对一次 —— 它不受索引那个版本号管，两条路都要走
+  const mergedProgress = mergeProgress(progressOf(local), cloud.progress)
+  if (!sameProgress(mergedProgress, cloud.progress)) {
+    cloud.progress = mergedProgress
+    cloud.progressWrites++
+  }
+
+  // 索引没变就到此为止：整份 data.json 一个字节都不碰
+  if (baseIndex && JSON.stringify(localIndex) === JSON.stringify(cloud.index)) {
+    return applyProgress(local, mergedProgress)
   }
 
   const { merged: mergedIndex } = mergeAppData(
@@ -62,9 +83,10 @@ function syncDevice(cloud: FakeCloud, local: AppData, base: AppData | null): App
     cloud.uploads.push(id)
   }
   cloud.index = mergedIndex
+  cloud.indexWrites++
 
-  // 旧 notes 不上云，照真货那样把本地那份带回来
-  return fromIndex(mergedIndex, contents, local.notes ?? {})
+  // 旧 notes 不上云、进度不在索引里 —— 照真货那样两样都补回来
+  return applyProgress(fromIndex(mergedIndex, contents, local.notes ?? {}), mergedProgress)
 }
 
 function page(id: string, content: string, updatedAt = 1) {
@@ -104,6 +126,89 @@ function data(over: Partial<AppData> = {}): AppData {
 const BOOK = 'I never stood up very tall. '.repeat(200)
 
 describe('两台设备来回同步（拆开存正文之后）', () => {
+  /**
+   * ⚠️ **阅读进度拆出去之后的三条保证**（2026-09-04）。
+   *
+   * 从前进度就在索引里，一路往下读时每次滚动都算「数据变了」，
+   * 治法是「只有进度变了就先别传」—— 省了流量，代价是**进度不实时**。
+   * 现在它单独走 progress.json，两个问题一起解决。
+   *
+   * 但拆出去带来一条随时会踩的坑：合并结果里没有进度，
+   * **忘了补回来就会被 replaceAllData 抹掉**。和旧 notes 是同一类错。
+   */
+  it('⚠️ 一路往下读：索引一次都不写，只动那个小进度文件', () => {
+    const cloud = new FakeCloud()
+    let phone = data({ pages: [page('p1', BOOK)] })
+    let phoneBase = syncDevice(cloud, phone, null)
+    const 起点 = cloud.indexWrites
+    cloud.uploads = [] // 第一次同步传正文是应该的，从这儿开始记账
+
+    // 读三段，每段之间同步一次
+    for (const [位置, 时刻] of [[1000, 10], [2000, 20], [3000, 30]] as const) {
+      phone = {
+        ...phoneBase,
+        pages: [{ ...phoneBase.pages[0], progress: 位置, progressAt: 时刻 }]
+      }
+      phoneBase = syncDevice(cloud, phone, phoneBase)
+    }
+
+    expect(cloud.indexWrites).toBe(起点) // 索引一次都没重写
+    expect(cloud.uploads).toEqual([]) // 正文也一篇都没传
+    expect(cloud.progress.p1.v).toBe(3000) // 进度确实上去了
+  })
+
+  it('⚠️ 合并一轮之后，本地进度还在（少补一下就是悄悄丢掉）', () => {
+    const cloud = new FakeCloud()
+    let phone = data({
+      pages: [{ ...page('p1', BOOK), progress: 1500, progressAt: 99 }]
+    })
+    const phoneBase = syncDevice(cloud, phone, null)
+
+    // 平板那边划了个词，手机再同步一次把它合进来
+    const tabletBase = syncDevice(cloud, data(), null)
+    syncDevice(cloud, { ...tabletBase, annotations: [ann('a9', '平板划的')] }, tabletBase)
+    phone = syncDevice(cloud, phoneBase, phoneBase)
+
+    expect(phone.pages[0].progress).toBe(1500)
+    expect(phone.annotations!.some((a) => a.id === 'a9')).toBe(true)
+  })
+
+  it('手机读到第 50 页，平板拿起来就是新的（这正是拆出去要换的东西）', () => {
+    const cloud = new FakeCloud()
+    const start = data({ pages: [page('p1', BOOK)] })
+    const phoneBase = syncDevice(cloud, start, null)
+    const tabletBase = syncDevice(cloud, start, null)
+
+    syncDevice(
+      cloud,
+      { ...phoneBase, pages: [{ ...phoneBase.pages[0], progress: 5000, progressAt: 777 }] },
+      phoneBase
+    )
+    const tablet = syncDevice(cloud, tabletBase, tabletBase)
+
+    expect(tablet.pages[0].progress).toBe(5000)
+  })
+
+  it('两台各读各的：记得晚的那个位置赢', () => {
+    const cloud = new FakeCloud()
+    const start = data({ pages: [page('p1', BOOK)] })
+    const phoneBase = syncDevice(cloud, start, null)
+    const tabletBase = syncDevice(cloud, start, null)
+
+    syncDevice(
+      cloud,
+      { ...phoneBase, pages: [{ ...phoneBase.pages[0], progress: 100, progressAt: 100 }] },
+      phoneBase
+    )
+    syncDevice(
+      cloud,
+      { ...tabletBase, pages: [{ ...tabletBase.pages[0], progress: 900, progressAt: 200 }] },
+      tabletBase
+    )
+    const phone = syncDevice(cloud, phoneBase, phoneBase)
+    expect(phone.pages[0].progress).toBe(900)
+  })
+
   /**
    * ⚠️ **旧模型的 `notes` 不上云，但本地那份一根毛都不能少。**
    *

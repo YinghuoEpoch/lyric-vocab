@@ -143,7 +143,7 @@ export function useSync(onDataChanged: () => void) {
       if (!silent) setStatus((s) => ({ ...s, state: 'syncing', error: null }))
       try {
         suppress.current = true
-        const outcome: SyncOutcome = await syncNow(cfg, silent)
+        const outcome: SyncOutcome = await syncNow(cfg)
         setLastSyncAt(outcome.at)
         // 记真账。估算这条路错过两次了，见 sync/usage.ts
         addUsage(outcome.up, outcome.down)

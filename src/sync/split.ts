@@ -30,8 +30,15 @@ import type { AppData, LyricPage } from '../types'
  * 拿它判断「正文变没变」会把大量没变的正文误判成变了，等于白拆。
  */
 
-/** 文档在索引里的样子：把正文换成一枚指纹 */
-export type PageMeta = Omit<LyricPage, 'content'> & { contentRev: string }
+/**
+ * 文档在索引里的样子：正文换成一枚指纹，**而且不带阅读进度**。
+ *
+ * ⚠️ 进度（`progress` / `progressAt`）单独走 `progress.json`（见 progress.ts）。
+ * 留在这里的话，一路往下读时索引每分钟都在变 —— 等于把整份 data.json 重传一遍。
+ */
+export type PageMeta = Omit<LyricPage, 'content' | 'progress' | 'progressAt'> & {
+  contentRev: string
+}
 
 /**
  * 索引：和 AppData 一样，只是 pages 里没有正文，**而且不带旧模型的 `notes`**。
@@ -65,15 +72,20 @@ export function contentRev(content: string): string {
   return `${(h >>> 0).toString(36)}-${content.length.toString(36)}`
 }
 
-/** 完整数据 -> 索引（正文换成指纹，旧的 notes 摘掉不上云） */
+/**
+ * 完整数据 -> 索引。三样东西被摘掉：
+ * 正文（换成指纹）、旧的 `notes`（不上云）、阅读进度（单独走小文件）。
+ */
 export function toIndex(data: AppData): SyncIndex {
   const { notes: _legacyNotes, ...rest } = data
   return {
     ...rest,
-    pages: (data.pages ?? []).map(({ content, ...p }) => ({
-      ...p,
-      contentRev: contentRev(content ?? '')
-    }))
+    pages: (data.pages ?? []).map(
+      ({ content, progress: _progress, progressAt: _progressAt, ...p }) => ({
+        ...p,
+        contentRev: contentRev(content ?? '')
+      })
+    )
   }
 }
 
@@ -110,6 +122,11 @@ export function fromIndex(
     }))
   }
 }
+
+/*
+ * ⚠️ 拼回来的数据里**没有阅读进度** —— 它不在索引里。
+ * 调用方要自己用 applyProgress 把进度补上（见 progress.ts 和 index.ts 的 syncNow）。
+ */
 
 /**
  * 合并完之后，哪几篇的正文要**下载**（本地手上那份不是合并结果要的那一版）。
