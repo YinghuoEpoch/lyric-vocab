@@ -11,7 +11,10 @@ import { BAND_TOP, BAND_SUB } from './chrome'
 
 interface VocabItem {
   word: string
+  /** 身份（删除、列表键、高亮认它）。撞车时是记录 id，**不一定是正文坐标** */
   anchorId: string
+  /** 门牌号：正文里的起点坐标，跳转认它。孤儿没有这一格。见 VocabItemView 的注释 */
+  startAnchorId?: string
   pageId: string
   phonetic?: string
   pos?: string
@@ -241,7 +244,9 @@ function VocabCard({
             onClick={(e) => {
               // 点词是「跳到文中 + 读出来」，别连带把卡片展开了
               e.stopPropagation()
-              onScrollToWord(item.pageId, item.anchorId)
+              // 跳转认**门牌号**，不认身份证 —— 两者撞车时 anchorId 会退回用记录 id，
+              // 拿它去正文里找什么也找不到（见 VocabItemView 的注释）
+              onScrollToWord(item.pageId, item.startAnchorId ?? item.anchorId)
               if (canSpeak) onSpeak()
             }}
             ref={phrase.ref}
