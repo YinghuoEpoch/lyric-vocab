@@ -82,6 +82,20 @@ function ann(id: string, def: string) {
     definition: def
   }
 }
+/** 一条句摘。字段和单词那条完全不同 —— 正是这一点值得单独跑一遍 */
+function sent(id: string, meaning: string) {
+  return {
+    id,
+    docId: 'p1',
+    type: 'sentence' as const,
+    start: 'L2W0',
+    end: 'L2W6',
+    text: 'I never stood up very tall',
+    createdAt: 1,
+    grammar: '一般过去时，never 前置',
+    meaning
+  }
+}
 function data(over: Partial<AppData> = {}): AppData {
   return { books: [], pages: [], notes: {}, annotations: [], ...over }
 }
@@ -89,6 +103,91 @@ function data(over: Partial<AppData> = {}): AppData {
 const BOOK = 'I never stood up very tall. '.repeat(200)
 
 describe('两台设备来回同步（拆开存正文之后）', () => {
+  /**
+   * ⚠️ **句摘也走同步吗** —— 用户问出来的，而这里原先一条句摘都没测过。
+   *
+   * 他的疑问有来头：备份文件里确实有一个 `sentences` 字段**不进同步**。
+   * 那是旧模型的形状，只在**导出备份时**额外补一份，为的是万一退回旧版本 APK
+   * 还认得（恢复备份那条路会读它，见 App.tsx）。运行期的存储里根本没有这一格。
+   *
+   * 真正的句摘是 `annotations` 里 `type: 'sentence'` 的标注，
+   * 和单词、短语同住一张表、同走一条同步路。下面这几条就是证据。
+   */
+  it('句摘跟着同步走：手机划的句摘，平板拿得到，句型和翻译一个字不少', () => {
+    const cloud = new FakeCloud()
+    const phone = data({
+      pages: [page('p1', BOOK)],
+      annotations: [sent('s1', '我从未挺起胸膛、伫立昂扬')]
+    })
+    syncDevice(cloud, phone, null)
+
+    const tablet = syncDevice(cloud, data(), null)
+    const 到手的 = tablet.annotations!.find((a) => a.id === 's1')!
+    expect(到手的.type).toBe('sentence')
+    expect(到手的.meaning).toBe('我从未挺起胸膛、伫立昂扬')
+    expect(到手的.grammar).toBe('一般过去时，never 前置')
+    expect(到手的.text).toBe('I never stood up very tall')
+  })
+
+  it('句摘和单词、短语混在一起：三种都过得去，谁也不吃掉谁', () => {
+    const cloud = new FakeCloud()
+    const phone = data({
+      pages: [page('p1', BOOK)],
+      annotations: [
+        ann('a1', '绊倒'),
+        { ...ann('a2', '站起来'), type: 'phrase' as const, end: 'L0W2', text: 'stood up' },
+        sent('s1', '我从未挺起胸膛')
+      ]
+    })
+    syncDevice(cloud, phone, null)
+
+    const tablet = syncDevice(cloud, data(), null)
+    const 类型 = tablet.annotations!.map((a) => a.type).sort()
+    expect(类型).toEqual(['phrase', 'sentence', 'word'])
+  })
+
+  it('两台各划各的句摘：都保留，不会互相盖掉', () => {
+    const cloud = new FakeCloud()
+    const start = data({ pages: [page('p1', BOOK)] })
+    const phoneBase = syncDevice(cloud, start, null)
+    const tabletBase = syncDevice(cloud, start, null)
+
+    const phone = syncDevice(
+      cloud,
+      { ...phoneBase, annotations: [sent('s1', '手机上划的')] },
+      phoneBase
+    )
+    const tablet = syncDevice(
+      cloud,
+      { ...tabletBase, annotations: [sent('s2', '平板上划的')] },
+      tabletBase
+    )
+    // 手机再同步一次，把对面那条也吸收回来
+    const 手机最终 = syncDevice(cloud, phone, phone)
+
+    const ids = 手机最终.annotations!.map((a) => a.id).sort()
+    expect(ids).toEqual(['s1', 's2'])
+    expect(tablet.annotations!.some((a) => a.id === 's2')).toBe(true)
+  })
+
+  it('句摘的翻译改了：改动传得过去', () => {
+    const cloud = new FakeCloud()
+    let phone = data({ pages: [page('p1', BOOK)], annotations: [sent('s1', '第一版翻译')] })
+    let phoneBase = syncDevice(cloud, phone, null)
+    const tabletBase = syncDevice(cloud, data(), null)
+
+    phone = {
+      ...phoneBase,
+      annotations: [{ ...sent('s1', '改过的翻译'), grammar: '改过的句型' }]
+    }
+    phoneBase = syncDevice(cloud, phone, phoneBase)
+
+    const tablet = syncDevice(cloud, tabletBase, tabletBase)
+    const 到手的 = tablet.annotations!.find((a) => a.id === 's1')!
+    expect(到手的.meaning).toBe('改过的翻译')
+    expect(到手的.grammar).toBe('改过的句型')
+  })
+
   it('⚠️ 划词只传索引，一篇正文都不传 —— 这就是拆开的全部意义', () => {
     const cloud = new FakeCloud()
     // 手机先把书传上去
