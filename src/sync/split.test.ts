@@ -44,7 +44,7 @@ describe('内容指纹', () => {
 describe('拆开与还原', () => {
   it('拆了再拼，一个字不差', () => {
     const d = data([page('p1', '正文一'), page('p2', '正文二')])
-    expect(fromIndex(toIndex(d), contentsOf(d))).toEqual(d)
+    expect(fromIndex(toIndex(d), contentsOf(d), d.notes)).toEqual(d)
   })
 
   it('索引里没有正文（这才是省流量的来头）', () => {
@@ -57,7 +57,7 @@ describe('拆开与还原', () => {
     // 宁可显示成一篇空文档（一眼看得出不对、下次同步补回来），
     // 也不能让它从文库里消失 —— 那会让人以为自己的书没了
     const idx = toIndex(data([page('p1', '正文')]))
-    const restored = fromIndex(idx, new Map())
+    const restored = fromIndex(idx, new Map(), {})
     expect(restored.pages).toHaveLength(1)
     expect(restored.pages[0].content).toBe('')
   })
@@ -69,7 +69,7 @@ describe('拆开与还原', () => {
       annotations: [],
       pages: [{ ...page('p1', '正文'), progress: 1200, deletedAt: 999 }]
     }
-    const back = fromIndex(toIndex(d), contentsOf(d))
+    const back = fromIndex(toIndex(d), contentsOf(d), d.notes)
     expect(back.pages[0].progress).toBe(1200)
     expect(back.pages[0].deletedAt).toBe(999)
   })

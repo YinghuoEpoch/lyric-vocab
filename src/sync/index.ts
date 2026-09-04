@@ -237,7 +237,11 @@ export async function syncNow(
       }
     }
 
-    const merged = fromIndex(mergedIndex, contents)
+    /*
+     * ⚠️ 旧的 `notes` 不上云（见 split.ts），所以合并结果里没有它 ——
+     * **必须把本地那份原样带回来**。少这一下，replaceAllData 会把它抹成空的。
+     */
+    const merged = fromIndex(mergedIndex, contents, local.notes ?? {})
     const localChanged = !sameJson(merged, local)
     const remoteNeedsWrite = !sameJson(mergedIndex, remoteIndex) || legacyContents !== null
 

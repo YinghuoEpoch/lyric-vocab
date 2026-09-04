@@ -63,7 +63,8 @@ function syncDevice(cloud: FakeCloud, local: AppData, base: AppData | null): App
   }
   cloud.index = mergedIndex
 
-  return fromIndex(mergedIndex, contents)
+  // 旧 notes 不上云，照真货那样把本地那份带回来
+  return fromIndex(mergedIndex, contents, local.notes ?? {})
 }
 
 function page(id: string, content: string, updatedAt = 1) {
@@ -103,6 +104,55 @@ function data(over: Partial<AppData> = {}): AppData {
 const BOOK = 'I never stood up very tall. '.repeat(200)
 
 describe('两台设备来回同步（拆开存正文之后）', () => {
+  /**
+   * ⚠️ **旧模型的 `notes` 不上云，但本地那份一根毛都不能少。**
+   *
+   * 它是换代之前的老笔记表，内容早已迁进 `annotations`，运行期只有一次性迁移
+   * 会写它 —— 冻着的，却每次同步都要传一遍（用户那份占 6%）。所以摘出去了。
+   *
+   * 摘出去的代价是一条随时会踩的坑：合并结果里没有它，
+   * **忘了把本地那份带回来，replaceAllData 就会拿 `?? {}` 把它抹成空的** ——
+   * 而且不报错，等哪天要恢复老备份才发现。下面两条就是钉这个的。
+   */
+  it('旧 notes 不上云：索引里根本没有这一格', () => {
+    const cloud = new FakeCloud()
+    const phone = data({
+      pages: [page('p1', BOOK)],
+      notes: { p1: { L0W0: { word: 'stood', definition: '站立' } } }
+    })
+    syncDevice(cloud, phone, null)
+    expect(cloud.index).not.toHaveProperty('notes')
+  })
+
+  it('⚠️ 同步一轮之后，本地那份旧 notes 还在（少这一下就是悄悄丢数据）', () => {
+    const cloud = new FakeCloud()
+    const 老表 = { p1: { L0W0: { word: 'stood', definition: '站立' } } }
+    let phone = data({ pages: [page('p1', BOOK)], notes: 老表 })
+    let phoneBase = syncDevice(cloud, phone, null)
+
+    // 平板那边加了条笔记，手机再同步一次把它合进来
+    const tabletBase = syncDevice(cloud, data(), null)
+    syncDevice(cloud, { ...tabletBase, annotations: [ann('a9', '平板划的')] }, tabletBase)
+    phone = syncDevice(cloud, phoneBase, phoneBase)
+
+    expect(phone.notes).toEqual(老表)
+    expect(phone.annotations!.some((a) => a.id === 'a9')).toBe(true)
+  })
+
+  it('两台各有各的旧 notes：谁也不会被对面的覆盖（它压根不过网）', () => {
+    const cloud = new FakeCloud()
+    const 手机的 = { p1: { L0W0: { word: 'stood' } } }
+    const 平板的 = { p1: { L9W9: { word: 'bursting' } } }
+    const phoneBase = syncDevice(cloud, data({ pages: [page('p1', BOOK)], notes: 手机的 }), null)
+    const tabletBase = syncDevice(cloud, data({ notes: 平板的 }), null)
+
+    const phone = syncDevice(cloud, phoneBase, phoneBase)
+    const tablet = syncDevice(cloud, tabletBase, tabletBase)
+
+    expect(phone.notes).toEqual(手机的)
+    expect(tablet.notes).toEqual(平板的)
+  })
+
   /**
    * ⚠️ **句摘也走同步吗** —— 用户问出来的，而这里原先一条句摘都没测过。
    *
