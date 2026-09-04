@@ -21,7 +21,7 @@ const PROGRESS_DEBOUNCE_MS = 700
  * 算一次要把这一篇所有的 <p> 问一遍位置 —— 长文里是几百次 getBoundingClientRect，
  * 而滚动每一帧都会触发。笔记栏跟着滚不需要 60fps，压到这个数够用了。
  */
-const TOP_LINE_THROTTLE_MS = 120
+const LINE_THROTTLE_MS = 120
 
 /** 宽屏上那个小弹窗有多宽，以及离屏幕边缘至少留多少 */
 const POPUP_W = 320
@@ -127,13 +127,19 @@ interface LyricEditorProps {
   /** 当前文档阅读进度 0–100，供侧栏进度条显示 */
   onReadingProgressChange?: (percent: number) => void
   /**
-   * 屏幕最上面露出来的是第几行，变了才报。笔记栏据此跟着正文滚（见 followScroll.ts）。
+   * 屏幕**最下面**露出来的是第几行，变了才报。笔记栏据此跟着正文滚（见 followScroll.ts）。
+   *
+   * ⚠️ **是最下面那行，不是最上面那行。** 一开始用的是顶行，用户报出两个症状：
+   * 亲手划完一个词、竖线却不在它身上；短语好像从来不被标记 —— 根子是同一个：
+   * 新划的那条在屏幕**中段**，行号比顶行大，于是竖线落在它前面某条上。
+   * 短语更常划在屏幕中段，所以显得「短语不会被标记」。
+   * 用户 2026-09-04 定的：**标记当前屏幕上显示的正文里最后一个笔记**。
    *
    * **不给就一次也不算** —— 算一次要遍历这一篇所有的 <p> 并读它们的位置，
    * 而笔记栏收起来的时候这个数没人要。编辑模式下也不给：那时候在滚的是
    * textarea 自己，「第几行」这个坐标源根本不在阅读容器里（见第三十四节）。
    */
-  onTopLineChange?: (line: number) => void
+  onLastVisibleLineChange?: (line: number) => void
   /** 阅读外观（字号、字体、主题） */
   readerSettings?: ReaderSettings
   /**
@@ -205,7 +211,7 @@ function LyricEditorInner({
   nextPage,
   onSelectPage,
   onReadingProgressChange,
-  onTopLineChange,
+  onLastVisibleLineChange,
   readerSettings = { fontSize: 18, fontFamily: 'sans', theme: 'pure', accent: 'amber' },
   immersive = false,
   chromeVisible = false
@@ -274,6 +280,26 @@ function LyricEditorInner({
     return 0
   }, [])
 
+  /**
+   * 阅读页里，屏幕**最下面**还露着的是第几行。
+   *
+   * 和 topVisibleLine 是一对：那个取「第一个下沿越过容器上沿的」，
+   * 这个取「最后一个上沿还没到容器下沿的」—— 也就是最后一行至少露出一点点的。
+   */
+  const lastVisibleLine = useCallback((): number => {
+    const el = scrollContainerRef.current
+    if (!el) return 0
+    const bottom = el.getBoundingClientRect().bottom
+    const paragraphs = el.querySelectorAll<HTMLElement>('[data-line-index]')
+    let last = 0
+    for (const p of paragraphs) {
+      // 上沿已经掉到屏幕外面：它和它后面的都不算露着
+      if (p.getBoundingClientRect().top >= bottom - 1) break
+      last = Number(p.dataset.lineIndex)
+    }
+    return last
+  }, [])
+
   const reportProgress = useCallback(() => {
     const el = scrollContainerRef.current
     if (!el || !onReadingProgressChange) return
@@ -286,32 +312,32 @@ function LyricEditorInner({
   }, [onReadingProgressChange])
 
   /** 上一次报出去的行号。没变就不报，省掉上层一整轮重渲染 */
-  const lastTopLineRef = useRef(-1)
-  const topLineTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const lastReportedLineRef = useRef(-1)
+  const lineTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  /** 把「屏幕最上面是第几行」报给上层。不给回调就一次也不算 —— 见 onTopLineChange */
-  const reportTopLine = useCallback(() => {
-    if (!onTopLineChange) return
-    const line = topVisibleLine()
-    if (line === lastTopLineRef.current) return
-    lastTopLineRef.current = line
-    onTopLineChange(line)
-  }, [onTopLineChange, topVisibleLine])
+  /** 把「屏幕最下面是第几行」报给上层。不给回调就一次都不算 —— 见 onLastVisibleLineChange */
+  const reportLastLine = useCallback(() => {
+    if (!onLastVisibleLineChange) return
+    const line = lastVisibleLine()
+    if (line === lastReportedLineRef.current) return
+    lastReportedLineRef.current = line
+    onLastVisibleLineChange(line)
+  }, [onLastVisibleLineChange, lastVisibleLine])
 
   // 换一篇就把上次那个行号忘掉，否则新文档的第 0 行会被当成「没变」而不报
   useLayoutEffect(() => {
-    lastTopLineRef.current = -1
+    lastReportedLineRef.current = -1
   }, [pageId])
 
   /**
    * 报一次「现在读到第几行」。三个时机走的都是这一条：
    * 打开文档（滚动位置刚恢复完）、换一篇、以及**笔记栏刚被打开**
-   * —— 后者的表现是 onTopLineChange 从 undefined 变成有值。
+   * —— 后者的表现是 onLastVisibleLineChange 从 undefined 变成有值。
    */
   useEffect(() => {
     if (editMode) return
-    reportTopLine()
-  }, [editMode, pageId, reportTopLine])
+    reportLastLine()
+  }, [editMode, pageId, reportLastLine])
 
   // 打开 / 切换文档时恢复滚动位置，在绘制前执行避免闪烁；随后上报一次阅读进度
   useLayoutEffect(() => {
@@ -325,11 +351,11 @@ function LyricEditorInner({
   const handleScroll = useCallback(() => {
     reportProgress()
     // 尾随节流：第一次滚动约一次，这段时间内的后续滚动并成同一次
-    if (onTopLineChange && !topLineTimerRef.current) {
-      topLineTimerRef.current = setTimeout(() => {
-        topLineTimerRef.current = null
-        reportTopLine()
-      }, TOP_LINE_THROTTLE_MS)
+    if (onLastVisibleLineChange && !lineTimerRef.current) {
+      lineTimerRef.current = setTimeout(() => {
+        lineTimerRef.current = null
+        reportLastLine()
+      }, LINE_THROTTLE_MS)
     }
     if (editMode || !onSaveProgress) return
     if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current)
@@ -338,12 +364,12 @@ function LyricEditorInner({
       const el = scrollContainerRef.current
       if (el) onSaveProgress(el.scrollTop)
     }, PROGRESS_DEBOUNCE_MS)
-  }, [editMode, onSaveProgress, reportProgress, onTopLineChange, reportTopLine])
+  }, [editMode, onSaveProgress, reportProgress, onLastVisibleLineChange, reportLastLine])
 
   useEffect(() => {
     return () => {
       if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current)
-      if (topLineTimerRef.current) clearTimeout(topLineTimerRef.current)
+      if (lineTimerRef.current) clearTimeout(lineTimerRef.current)
     }
   }, [])
 

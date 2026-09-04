@@ -239,12 +239,15 @@ export default function App() {
   } | null>(null)
   const [documentReadingProgress, setDocumentReadingProgress] = useState(0)
   /**
-   * 正文里屏幕最上面露出来的是第几行。笔记栏据此跟着滚（见 followScroll.ts）。
+   * 正文里屏幕**最下面**还露着的是第几行。笔记栏据此跟着滚（见 followScroll.ts）。
    *
-   * 只在**笔记栏开着而且不在编辑模式**时才让阅读器去算 —— 见 onTopLineChange
-   * 那条注释：算一次要遍历这一篇所有的 <p>，收起来的时候这个数没人要。
+   * 用最下面那行而不是最上面那行，是用户 2026-09-04 定的：
+   * **标记当前屏幕上显示的正文里最后一个笔记**。缘由见 onLastVisibleLineChange。
+   *
+   * 只在**笔记栏开着而且不在编辑模式**时才让阅读器去算 —— 算一次要遍历
+   * 这一篇所有的 <p>，收起来的时候这个数没人要。
    */
-  const [readingLine, setReadingLine] = useState(0)
+  const [lastVisibleLine, setLastVisibleLine] = useState(0)
   /**
    * 刚亲手划下的那条笔记的起点坐标。
    *
@@ -1561,7 +1564,7 @@ export default function App() {
                   笔记栏收起来（窄屏上滚正文时必然收着）或者在编辑模式，就整个不算 ——
                   给 undefined，阅读器那边一次都不会去遍历 <p>。
                 */
-                onTopLineChange={showRight && !editMode ? setReadingLine : undefined}
+                onLastVisibleLineChange={showRight && !editMode ? setLastVisibleLine : undefined}
                 readerSettings={readerSettings}
                 immersive={immersive}
                 chromeVisible={chromeVisible}
@@ -1643,7 +1646,7 @@ export default function App() {
             currentPageId={currentPageId}
             documentProgress={documentReadingProgress}
             open={showRight}
-            readingLine={readingLine}
+            lastVisibleLine={lastVisibleLine}
             savedNoteFocus={savedNoteFocus}
             currentDocIndex={currentDocIndex}
             totalDocsInFolder={totalDocsInFolder}

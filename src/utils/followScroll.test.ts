@@ -29,6 +29,13 @@ describe('findFollowIndex', () => {
     expect(findFollowIndex(LIST, 2)).toBe(0)
   })
 
+  it('传屏幕最下面那行 → 落点就是「屏幕上显示的最后一条笔记」', () => {
+    // 屏幕从第 10 行露到第 40 行：上面有 12，屏幕内有 12/38 → 落在第 38 行那条
+    expect(findFollowIndex(LIST, 40)).toBe(2)
+    // 屏幕从第 40 行露到第 50 行：屏幕上一条笔记都没有 → 退回上方最近的第 38 行那条
+    expect(findFollowIndex(LIST, 50)).toBe(2)
+  })
+
   it('读过了最后一条，就停在最后一条', () => {
     expect(findFollowIndex(LIST, 999)).toBe(3)
   })

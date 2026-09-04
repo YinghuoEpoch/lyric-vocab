@@ -179,8 +179,8 @@ interface RightSidebarProps {
   documentProgress?: number
   /** 这一栏此刻是不是露着的。收起来时不跟随，重新打开算一次全新的对应 */
   open?: boolean
-  /** 正文里屏幕最上面露出来的是第几行。跟随的依据，见 followScroll.ts */
-  readingLine?: number
+  /** 正文里屏幕**最下面**还露着的是第几行。跟随的依据，见 followScroll.ts */
+  lastVisibleLine?: number
   /**
    * 刚亲手划下的那条笔记（起点坐标 + 时间戳）。**唯一能盖过「暂停跟随」的东西**。
    * AI 一键划词那一批不走这里 —— 一次进来几十条，战报条就在顶上，列表一甩就找不着撤销了。
@@ -347,7 +347,7 @@ function RightSidebarInner({
   onDismissMark,
   documentProgress = 0,
   open = true,
-  readingLine = 0,
+  lastVisibleLine = 0,
   savedNoteFocus = null,
   currentDocIndex = 0,
   totalDocsInFolder = 0,
@@ -389,7 +389,7 @@ function RightSidebarInner({
   const listRef = useRef<HTMLUListElement>(null)
   /** 手动滚过侧栏就先别跟了。用 ref 不用 state：它只影响下一次要不要滚，不该引发重渲染 */
   const pausedRef = useRef(false)
-  const lastLineRef = useRef(readingLine)
+  const lastLineRef = useRef(lastVisibleLine)
   /** 已经处理过的那次「刚划完」的时间戳，免得同一条反复把列表拽回去 */
   const handledFocusRef = useRef(0)
 
@@ -398,9 +398,22 @@ function RightSidebarInner({
     tab === 'vocab'
       ? filtered.map((v) => v.startAnchorId ?? null)
       : filteredSentences.map((s) => s.startAnchorId)
-  /** 当前该落在第几条。左边那道竖线画在它身上，跟随也奔它去 */
-  const followIndex = findFollowIndex(anchors, readingLine)
+  /**
+   * 当前该落在第几条 —— **屏幕上显示的正文里最后一个笔记**（用户 2026-09-04 定的）。
+   * 屏幕上一条笔记都没有时，退回到屏幕上方最近的那条，免得竖线来回跳。
+   */
+  const followIndex = findFollowIndex(anchors, lastVisibleLine)
   const focusIndex = savedNoteFocus ? anchors.indexOf(savedNoteFocus.anchor) : -1
+  /**
+   * 刚亲手划完那条要**连竖线一起**挪过去，不只是滚过去。
+   *
+   * ⚠️ 用户报的第一个症状就是这个：「亲手划完确实跟过去了，但是标记却不在它身上」——
+   * 从前只有滚动认 focusIndex，竖线还认按行号算出来的那条。
+   * 这个覆盖一直留到**正文动了**为止（那时才有新的阅读位置可言）。
+   */
+  const [focusOverride, setFocusOverride] = useState<number | null>(null)
+  /** 竖线画在谁身上 */
+  const markedIndex = focusOverride ?? followIndex
 
   /**
    * 这几件事一律解除暂停，因为它们都意味着「重新对一次」：
@@ -412,11 +425,13 @@ function RightSidebarInner({
 
   // 正文动了就恢复跟随 —— 用户定的：手动滚过侧栏只是暂停一会儿，不是永久关掉
   useEffect(() => {
-    if (readingLine !== lastLineRef.current) {
-      lastLineRef.current = readingLine
+    if (lastVisibleLine !== lastLineRef.current) {
+      lastLineRef.current = lastVisibleLine
       pausedRef.current = false
+      // 正文动了，就该按新的阅读位置重新算竖线，不再钉在刚划完那条上
+      setFocusOverride(null)
     }
-  }, [readingLine])
+  }, [lastVisibleLine])
 
   useEffect(() => {
     if (!open) return
@@ -427,12 +442,18 @@ function RightSidebarInner({
       if (focusIndex >= 0) {
         pausedRef.current = false
         index = focusIndex
+        setFocusOverride(focusIndex)
       }
     } else if (pausedRef.current) return
     if (index < 0) return
+    /*
+      摆在侧栏正中间（用户 2026-09-04 改的口径，原先是「看不见才滚」）。
+      改口的由头：平板横屏上他滑正文，侧栏「没有跟着滑动」—— 那不是没生效，
+      是「看不见才滚」在一屏放得下十来张卡时几乎永远不动。居中才看得出在跟。
+    */
     const li = listRef.current?.children[index] as HTMLElement | undefined
-    li?.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
-  }, [open, tab, currentPageId, readingLine, followIndex, focusIndex, savedNoteFocus])
+    li?.scrollIntoView({ block: 'center', behavior: 'smooth' })
+  }, [open, tab, currentPageId, lastVisibleLine, followIndex, focusIndex, savedNoteFocus])
 
   /** 用手碰了侧栏就先别跟。听指针动作而不是 scroll 事件 —— 后者分不清是谁滚的 */
   const pauseFollow = () => {
@@ -599,7 +620,7 @@ function RightSidebarInner({
                   竖线一出现整列就往右挪 2px。
                 */
                 className={`border-l-2 pl-1.5 ${
-                  index === followIndex ? 'border-accent-600' : 'border-transparent'
+                  index === markedIndex ? 'border-accent-600' : 'border-transparent'
                 }`}
               >
                 <VocabCard
@@ -637,7 +658,7 @@ function RightSidebarInner({
               <li
                 key={s.id}
                 className={`border-l-2 pl-1.5 ${
-                  index === followIndex ? 'border-accent-600' : 'border-transparent'
+                  index === markedIndex ? 'border-accent-600' : 'border-transparent'
                 }`}
               >
                 <SentenceCard
