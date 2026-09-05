@@ -687,7 +687,14 @@ export function SettingsDialog({
       onClick={back}
     >
       <div
-        className="w-full max-w-md max-h-[85vh] flex flex-col bg-white rounded-2xl shadow-xl border border-paper-border"
+        /*
+          ⚠️ `overflow-hidden` 不能省。这张卡有 16px 圆角，而能滚的那一栏是它的
+          最后一个孩子、下边缘和卡片齐平 —— 父元素 overflow 是 visible 的话，
+          子元素**不受圆角约束**：滚到底时滚动条和白底会画到圆弧外面的方角里，
+          看着就是「滚动条超出弹窗」（用户 2026-09-05 报的）。
+          量过：左右下角圆弧外那两个点，elementFromPoint 拿到的是滚动区本身。
+        */
+        className="w-full max-w-md max-h-[85vh] flex flex-col overflow-hidden bg-white rounded-2xl shadow-xl border border-paper-border"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="shrink-0 flex items-center justify-between gap-2 p-3 border-b border-paper-border">
