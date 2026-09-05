@@ -99,8 +99,8 @@ export function AiSettingsPanel({ onSaved, onCancel }: AiSettingsPanelProps) {
   return (
     <>
         <p className="text-xs text-ink-muted leading-relaxed">
-          填充和划词都由 AI 完成，需要你自己的 API Key。
-          Key 只保存在这台手机上，不会上传，也不会写进导出的备份文件。
+          AI 填充和 AI 划词需要你自己的 API Key。
+          Key 只存在本机，不上传、也不写进备份文件。
         </p>
 
         <div className="flex gap-1.5">
@@ -233,7 +233,7 @@ export function AiSettingsPanel({ onSaved, onCancel }: AiSettingsPanelProps) {
         {missing && (
           <p className="text-xs text-ink-muted">
             还差
-            {missing === 'key' ? ' API Key' : missing === 'baseUrl' ? '服务地址' : '模型名'}
+            {missing === 'key' ? ' API Key ' : missing === 'baseUrl' ? '服务地址' : '模型名'}
             没填
           </p>
         )}

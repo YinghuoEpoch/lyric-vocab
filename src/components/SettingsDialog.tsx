@@ -100,7 +100,7 @@ function SpeechReadout({
         {diag ? <AnswerRow label="嗓子共几个" answer={diag.voiceCount} /> : null}
         {diag ? <AnswerRow label="英文嗓子" answer={diag.englishVoices} /> : null}
         <p className="text-xs text-ink-muted leading-relaxed pt-1">
-          语言和嗓子都是「一个都没有」，说明引擎其实没起来 —— 那和「有引擎但缺英文」是两码事。
+          语言和嗓子都是 0：引擎没起来。有语言但没英文嗓子：缺英文语音包。两者办法不同。
         </p>
       </Section>
 
@@ -129,8 +129,7 @@ function SpeechReadout({
           </p>
         ) : null}
         <p className="text-xs text-ink-muted leading-relaxed pt-1">
-          这里显示的是服务商的原话，没经过翻译 —— Key 填错、额度用完、服务没开通、
-          音色名不对，四种说法各不相同，而处理办法也各不相同。成功就会当场放出声来。
+          错误信息是服务商原话，未翻译。成功会当场出声。
         </p>
       </Section>
 
@@ -168,8 +167,8 @@ function SpeechReadout({
           })}
         </div>
         <p className="text-xs text-ink-muted leading-relaxed pt-1">
-          耗时是关键：插件是「念完才返回」的。说成功却几乎立刻返回，就是报成功不出声；
-          耗时和一句话差不多却听不见，那声音是丢在音量或者声音通道上了。
+          插件念完才返回，所以看耗时：几乎立刻返回是报成功但没出声；
+          耗时正常却听不见是音量或声音通道的问题。
         </p>
       </Section>
     </div>
@@ -280,9 +279,8 @@ function SyncSizeReadout({ report, usage }: { report: SyncSizeReport | null; usa
           />
           <Row label="真走了流量的同步" value={`${usage.syncs} 次`} />
           <p className="pt-1 text-xs text-ink-muted leading-relaxed">
-            <strong className="font-medium text-ink">这是真账，不是估算</strong>
-            —— 每次同步实际传了多少，一笔笔加起来的。换月自动归零。
-            「没走流量」那种不计入次数。
+            <strong className="font-medium text-ink">实际用量</strong>
+            ，逐次累加，换月归零。没走流量的同步不计次。
           </p>
         </Section>
       )}
@@ -290,7 +288,7 @@ function SyncSizeReadout({ report, usage }: { report: SyncSizeReport | null; usa
       <Section title="每次同步要传多大">
         <Row label="data.json（压缩后）" value={formatSize(report.totalBytes)} />
         <p className="pt-1 text-xs text-ink-muted leading-relaxed">
-          这就是同步时上传和下载的那一份。app 里显示的「上 xx / 下 xx」对的就是它。
+          同步时上传下载的就是这一份，对应 app 里显示的「上 xx / 下 xx」。
         </p>
       </Section>
 
@@ -303,8 +301,7 @@ function SyncSizeReadout({ report, usage }: { report: SyncSizeReport | null; usa
           />
         ))}
         <p className="pt-1 text-xs text-ink-muted leading-relaxed">
-          几块加起来不等于总数是正常的 —— 压缩时它们互相占便宜（重复的释义、成片的坐标）。
-          这里要看的是谁是大头。
+          各块之和与总数不等是压缩所致，看比例即可。
         </p>
       </Section>
 
@@ -313,10 +310,9 @@ function SyncSizeReadout({ report, usage }: { report: SyncSizeReport | null; usa
           <Row key={e.label} label={e.label} value={e.detail} />
         ))}
         <p className="pt-1 text-xs text-ink-muted leading-relaxed">
-          它们不跟着每次同步走，所以不占上面那份的体积。
+          这些不进 data.json，不占它的体积。
           <strong className="font-medium text-ink">阅读进度</strong>
-          单独走一个几百字节的小文件 —— 一路往下读时上面那份纹丝不动，
-          而进度照样能实时同步到另一台。
+          单独走一个几百字节的小文件，照样实时同步。
         </p>
       </Section>
 
@@ -325,7 +321,7 @@ function SyncSizeReadout({ report, usage }: { report: SyncSizeReport | null; usa
           <Row key={n.kind} label={`${n.kind}（${n.count} 条）`} value={`${n.avgBytes} 字节`} />
         ))}
         <p className="pt-1 text-xs text-ink-muted leading-relaxed">
-          句摘比单词重得多 —— 它带着整句英文原文、句型说明和翻译。
+          句摘带整句原文、句型说明和翻译，比单词重得多。
         </p>
       </Section>
 
@@ -333,10 +329,9 @@ function SyncSizeReadout({ report, usage }: { report: SyncSizeReport | null; usa
         <Row label="一个月上传" value={`约 ${月.text}（约占 1 G 的 ${月.percent}%）`} />
         {余量 !== null && <Row label="还能再划" value={`约 ${余量} 条笔记`} />}
         <p className="pt-1 text-xs text-ink-muted leading-relaxed">
-          ⚠️ 这两行是<strong className="font-medium text-ink">按最坏情况估的</strong>
-          （一天边读边划三小时、同步 {SYNCS_PER_DAY_ESTIMATE} 次），实际多半用不到这么多 ——
-          只有真有改动时才会上传。<strong className="font-medium text-ink">以上面那笔真账为准。</strong>
-          「还能再划」是按你现在这批笔记的平均大小推的。
+          ⚠️ <strong className="font-medium text-ink">按最坏情况估</strong>
+          （一天同步 {SYNCS_PER_DAY_ESTIMATE} 次），实际远低于此 —— 只有真有改动才上传。
+          <strong className="font-medium text-ink">以上面的实际用量为准。</strong>
         </p>
       </Section>
 
@@ -344,10 +339,10 @@ function SyncSizeReadout({ report, usage }: { report: SyncSizeReport | null; usa
         <Row label="文库 / 文档" value={`${report.bookCount} 个 / ${report.pageCount} 篇`} />
         <Row label="正文合计" value={`${(report.contentChars / 1024 / 1024).toFixed(2)} MB（未压缩）`} />
         <p className="pt-1 text-xs text-ink-muted leading-relaxed">
-          正文一篇一个文件单独存，<strong className="font-medium text-ink">
-            只在你编辑正文或导入新书时才传
+          正文一篇一个文件，<strong className="font-medium text-ink">
+            只在编辑正文或导入时上传
           </strong>
-          。平时划词改的只有上面那份 data.json。
+          。平时划词只动 data.json。
         </p>
       </Section>
     </div>
@@ -393,8 +388,8 @@ function SafeAreaReadout({
         <Row label="实际生效" value={info?.applied ?? '—'} />
         {r?.error ? <Row label="出错" value={r.error} /> : null}
         <p className="text-xs text-ink-muted leading-relaxed pt-1">
-          底下那条有两种：三颗导航键是实心的，按钮压在下面就点不着，得整条让开；
-          手势条是透的、点得穿，不用让。读不到导航方式时按厚度分 —— 细过 32 的当手势条。
+          三颗导航键要整条让开，手势条点得穿、不用让。
+          读不到导航方式时按厚度判断，细于 32 视为手势条。
         </p>
       </Section>
 
@@ -406,7 +401,7 @@ function SafeAreaReadout({
         <Row label="安卓版本" value={r?.sdk ?? '—'} />
         <Row label="网页打包于" value={r?.build ?? '—'} />
         <p className="text-xs text-ink-muted leading-relaxed pt-1">
-          「网页打包于」对不上刚装的那一版，就说明跑的还是旧网页 —— 这个 app 从前栽过一次。
+          「网页打包于」对不上刚装的版本，说明跑的还是旧网页。
         </p>
       </Section>
     </div>
@@ -902,9 +897,9 @@ export function SettingsDialog({
                   </button>
                 </div>
                 <p className="text-xs text-ink-muted leading-relaxed">
-                  读过一次就存在这台手机上，之后不用联网、也没有等开口的停顿。
-                  云端合成的句子也存在这里 —— 那一份还省着调用次数，同一句永远只花一次。
-                  清空只是删掉存的录音，笔记一条都不会动，下次点还会重新取。
+                  读过一次就存在本机，之后不用联网、也没有等开口的停顿。
+                  云端合成的也存这里，同一句只花一次调用次数。
+                  清空只删录音，不动笔记，下次点会重新取。
                 </p>
               </Section>
 
@@ -962,8 +957,7 @@ export function SettingsDialog({
                   </button>
                 </div>
                 <p className="text-xs text-ink-muted leading-relaxed">
-                  备份是一个 .json 文件，文库、正文和笔记都在里面。
-                  恢复会用文件里的内容覆盖现在的数据。
+                  备份是一个 .json 文件，含文库、正文和笔记。恢复会覆盖现有数据。
                 </p>
               </Section>
 
@@ -985,7 +979,7 @@ export function SettingsDialog({
                   <span className="flex-1 min-w-0">
                     <span className="block text-sm text-ink">同步数据</span>
                     <span className="block text-xs text-ink-muted">
-                      每次同步要传多大、字节都花在哪儿了
+                      每次同步传多大、字节花在哪
                     </span>
                   </span>
                   <ChevronRight className="w-4 h-4 text-ink-muted shrink-0" />
@@ -998,7 +992,7 @@ export function SettingsDialog({
                   <span className="flex-1 min-w-0">
                     <span className="block text-sm text-ink">朗读引擎参数</span>
                     <span className="block text-xs text-ink-muted">
-                      这台机器的朗读引擎认不认英文，还能当场试读
+                      朗读引擎能不能念英文，可当场试读
                     </span>
                   </span>
                   <ChevronRight className="w-4 h-4 text-ink-muted shrink-0" />
