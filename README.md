@@ -3,7 +3,7 @@
 **在你真正想读的英文里背单词。**
 
 一个英文精读与复习工具。导入一本书或一段文本，长按取词做笔记，笔记自动汇成复习卡片。
-安卓 App（Capacitor 打包），也可以作为网页 PWA 安装到桌面。
+安卓 App，Capacitor 打包。**[→ 下载最新 APK](../../releases/latest)**
 
 <p align="center">
   <img src="%E5%AE%A3%E4%BC%A0%E5%9B%BE/3-%E9%95%BF%E6%8C%89%E5%8F%96%E8%AF%8D.png" width="30%" />
@@ -73,21 +73,26 @@
   三方合并（不是「谁后保存谁赢」），正文与索引分开存，一次同步约 30 KB
 - 导出／恢复备份（JSON 单文件）
 
-## 跑起来
+## 安装
 
-```bash
-npm install
-npm run dev
-```
+到 [Releases](../../releases/latest) 下载 APK，直接安装。需要 Android 7.0 以上。
 
-打包安卓 App 的三步见 [发布到手机.md](发布到手机.md)。
+首次启动会有一份用户协议。AI 辅助和云端朗读要自备 Key，在设置里填 ——
+**不填也能用**，取词、笔记、复习、内置书库都不依赖它们。
+
+> 交互是照着触摸屏设计的，键盘鼠标下不好用；沉浸阅读、系统栏、键盘避让
+> 这些都在原生那一层，所以**不提供网页版入口**。
 
 ## 开发
 
 ```bash
+npm install
+npm run dev                       # 开发服务器
 npm test                          # 659 项单元测试，约 2 秒
 npx tsc -b --force && npm run build   # 提交前必须通过
 ```
+
+打包安卓 App 的三步见 [发布到手机.md](发布到手机.md)。
 
 技术栈：React 18 + TypeScript + Vite + Tailwind，Capacitor 打包安卓，
 localforage 存 IndexedDB，fflate 解 epub，dnd-kit 做文库列表拖拽，Vitest 跑测试。
