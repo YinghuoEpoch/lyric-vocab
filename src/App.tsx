@@ -1286,7 +1286,12 @@ export default function App() {
     panelOpen: activePanel !== null,
     narrowOn: narrowImmersive
   })
-  const { chromeVisible, toggleChrome } = useImmersiveReading(immersive)
+  /*
+    第二个参数是「进沉浸时顶栏先留着读秒吗」。宽屏留、窄屏立刻收 ——
+    用户 2026-09-07 提的「一次点击只做一件事」，缘由写在
+    chromeVisibleOnImmersiveChange 上面。
+  */
+  const { chromeVisible, toggleChrome } = useImmersiveReading(immersive, isWide)
   /** 此刻顶栏和「笔记」键是不是收着的 */
   const chromeHidden = immersive && !chromeVisible
   /** 「一键填充」：范围跟着当前复习的文档或文库走 */

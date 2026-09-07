@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { shouldImmerse, type ImmersiveConditions } from './useImmersiveReading'
+import { chromeVisibleOnImmersiveChange, shouldImmerse, type ImmersiveConditions } from './useImmersiveReading'
 
 /**
  * 「什么时候进沉浸」的回归测试。
@@ -80,4 +80,41 @@ describe('两种宽度都否决的情形', () => {
       expect(shouldImmerse({ ...底子, editMode: true })).toBe(false)
     })
   }
+})
+
+describe('进 / 出沉浸时，顶栏那一套该在什么位置', () => {
+  /*
+    用户 2026-09-07 报的那件：平板上笔记栏开着时点空白处，
+    收笔记栏和收顶栏一起发生，「两个效果分别发生就很粗糙」。
+
+    那两件不是同一下触发的 —— 收完笔记栏两侧栏就都收起来了，
+    沉浸当场成立，而从前一进沉浸就把顶栏打回「收着」。
+    现在宽屏进沉浸时顶栏先留着、3 秒的表照常走，
+    于是「收笔记栏」和「收顶栏」变成先后两次点击。
+  */
+  it('宽屏刚进沉浸：顶栏留着（等于替他点了一下叫出来），随后由 3 秒的表收掉', () => {
+    expect(chromeVisibleOnImmersiveChange(true, true)).toBe(true)
+  })
+
+  /*
+    ⚠️ 窄屏这一条不能跟着改。手机上进沉浸就是用户亲手点的那一下，
+    意思是「我要清屏」，留着 3 秒等于没听见他。
+  */
+  it('⚠️ 窄屏刚进沉浸：立刻收 —— 那一下是用户亲手要的清屏', () => {
+    expect(chromeVisibleOnImmersiveChange(true, false)).toBe(false)
+  })
+
+  it('出沉浸：一律回到 false，两种宽度都一样', () => {
+    expect(chromeVisibleOnImmersiveChange(false, true)).toBe(false)
+    expect(chromeVisibleOnImmersiveChange(false, false)).toBe(false)
+  })
+
+  /*
+    出沉浸时这个值其实不参与显示（那时候顶栏由正常布局管），
+    但必须归零 —— 不归零的话下一次进沉浸会带着上一次的残值，
+    宽窄之间转屏时尤其容易串。
+  */
+  it('出沉浸时归零，下一次进沉浸不带残值', () => {
+    expect(chromeVisibleOnImmersiveChange(false, true)).toBe(false)
+  })
 })

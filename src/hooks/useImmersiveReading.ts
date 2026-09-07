@@ -76,7 +76,47 @@ export interface ImmersiveReading {
  * 系统栏藏起来之后，从屏幕顶端往下滑还能临时把它叫出来、过会儿自己收，
  * 那一套是安卓自带的（见 SafeAreaPlugin.setImmersive），这里不掐那块表。
  */
-export function useImmersiveReading(immersive: boolean): ImmersiveReading {
+/**
+ * 刚进 / 刚出沉浸的那一瞬间，顶栏那一套该不该是露着的。
+ *
+ * ## 为什么宽窄不一样
+ *
+ * 用户 2026-09-07 报的：平板上笔记栏开着时点空白处，
+ * **一下子发生了两件事** —— 收起笔记栏，同时顶栏也没了。「两个效果分别发生就很粗糙。」
+ *
+ * 他要的是**一次点击只做一件事**：先收笔记栏、顶栏留着重新读秒，
+ * 还没自己收之前再点一次才收顶栏。
+ *
+ * 那两件事其实不是同一下触发的。点空白收笔记栏之后，两侧栏都收起来了，
+ * `shouldImmerse` 当场变 true，而从前一进沉浸就把顶栏打回「收着」——
+ * 顶栏是被这一步带没的，不是被那一下点没的。
+ *
+ * 所以宽屏进沉浸时让顶栏**先留着**（等于替用户点了一下把它叫出来），
+ * 3 秒的表照常走。
+ *
+ * ⚠️ **窄屏必须还是立刻收**。手机上进沉浸就是用户亲手点的那一下，
+ * 意思是「我要清屏」，留着 3 秒等于没听见；而且窄屏本来就没有那块表
+ * （收起来就一直收着，再点一下才回来）。
+ */
+export function chromeVisibleOnImmersiveChange(
+  immersive: boolean,
+  /** 宽屏才留。窄屏进沉浸是用户亲手要的清屏，得立刻生效 */
+  revealOnEnter: boolean
+): boolean {
+  return immersive && revealOnEnter
+}
+
+export function useImmersiveReading(
+  immersive: boolean,
+  /**
+   * 进沉浸时顶栏要不要先留着读秒。宽屏传 true、窄屏传 false ——
+   * 缘由见 chromeVisibleOnImmersiveChange。
+   *
+   * **做成必填的**：漏传就等于窄屏行为，会把平板上那条又改回粗糙的样子，
+   * 而这种漏传编译器看不出来。
+   */
+  revealOnEnter: boolean
+): ImmersiveReading {
   const [chromeVisible, setChromeVisible] = useState(false)
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
@@ -87,11 +127,16 @@ export function useImmersiveReading(immersive: boolean): ImmersiveReading {
     }
   }, [])
 
-  /* 进出沉浸：把顶栏那一套收回初始状态 */
+  /*
+    进出沉浸：把顶栏那一套摆到它该在的位置。
+
+    **出**沉浸一律回到 false（那时候顶栏由正常布局管，这个值不参与）。
+    **进**沉浸分宽窄：宽屏留着读秒、窄屏立刻收，见 chromeVisibleOnImmersiveChange。
+  */
   useEffect(() => {
-    setChromeVisible(false)
+    setChromeVisible(chromeVisibleOnImmersiveChange(immersive, revealOnEnter))
     clearTimer()
-  }, [immersive, clearTimer])
+  }, [immersive, revealOnEnter, clearTimer])
 
   /*
    * **系统栏跟着顶栏一起出没**，不是跟着「沉不沉浸」走。
