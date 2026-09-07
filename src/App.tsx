@@ -33,7 +33,7 @@ import { migratePage } from './utils/migrateTokenizer'
 import { importFile } from './importers'
 import { AGREEMENT_CLAUSES, AGREEMENT_TITLE } from './agreement'
 import { useBackHandler, handleBackPress, BackPriority } from './hooks/useBackHandler'
-import { useIsWide } from './hooks/useWideLayout'
+import { isLeftSidebarVisible, useIsWide } from './hooks/useWideLayout'
 import { shouldImmerse, useImmersiveReading } from './hooks/useImmersiveReading'
 import { usePanelWidth } from './hooks/usePanelWidth'
 import { useLastReadByBook } from './hooks/useLastReadByBook'
@@ -1252,6 +1252,16 @@ export default function App() {
   const isWide = useIsWide()
   const showLeft = activePanel === 'left'
   const showRight = activePanel === 'right'
+  /*
+    左栏此刻看不看得见。**宽窄两套收起机制合成的那一个答案** ——
+    宽屏点汉堡改的是 wideLeftHidden，窄屏改的是 activePanel（见下面那颗键）。
+    谁要判断「左栏开着没有」都从这里取，别自己拼，缘由见 isLeftSidebarVisible。
+  */
+  const leftVisible = isLeftSidebarVisible({
+    isWide,
+    wideLeftHidden,
+    narrowPanelOpen: showLeft
+  })
 
   const overlayVisible = showLeft || showRight
 
@@ -1340,7 +1350,7 @@ export default function App() {
       >
         <LeftSidebar
           width={isWide ? left.width : LEFT_WIDTH_DEFAULT}
-          panelOpen={showLeft}
+          sidebarVisible={leftVisible}
           mode={mode}
           onModeChange={setMode}
           reviewTarget={reviewTarget}

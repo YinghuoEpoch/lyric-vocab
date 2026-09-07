@@ -90,8 +90,15 @@ interface LeftSidebarProps {
   /** 同步的状态和手动那颗按钮，原样透给设置页 */
   syncStatus: SyncStatus
   onSyncNow: () => void
-  /** 侧栏此刻是不是被呼出着（仅手机尺寸有意义；宽屏一直挂着，恒为 false） */
-  panelOpen?: boolean
+  /**
+   * 左栏此刻是不是**看得见** —— 宽窄两套收起机制合成的那一个答案，
+   * 由 `isLeftSidebarVisible` 算好了传进来（见 useWideLayout.ts）。
+   *
+   * **做成必填的**：从前这里叫 `panelOpen`、可省、只描述窄屏那一套，
+   * 于是宽屏上「收起就退出整理模式」整整失灵了一段时间而没人发现。
+   * 必填是为了让下一个人没法忘（第六十八节那条：危险的遗漏用类型系统挡）。
+   */
+  sidebarVisible: boolean
   className?: string
   /** 有多宽（像素）。宽屏可拖着改，不给就是 250 —— 见 App.tsx 那根拖杆 */
   width?: number
@@ -175,7 +182,7 @@ function LeftSidebarInner({
   onReaderSettingsChange,
   syncStatus,
   onSyncNow,
-  panelOpen = false,
+  sidebarVisible,
   className = '',
   width
 }: LeftSidebarProps) {
@@ -301,15 +308,18 @@ function LeftSidebarInner({
   /**
    * 侧栏被收起时自动退出整理模式。
    *
-   * 只认「开着 -> 关上」这个变化，不是「当前没开着就退出」——
-   * 宽屏上左侧栏一直挂着、panelOpen 恒为 false，后者会让整理模式刚点开就被关掉。
+   * 只认「看得见 -> 看不见」这个变化，不是「当前看不见就退出」——
+   * 后者会让整理模式刚点开就被关掉（窄屏挂载时本来就是收着的）。
+   *
+   * ⚠️ 这里看的必须是**合成过**的可见性，不是单独哪一套收起机制。
+   * 从前只认窄屏那一套，宽屏收起时这个 effect 根本不触发，见 isLeftSidebarVisible。
    */
-  const panelWasOpenRef = useRef(panelOpen)
+  const wasVisibleRef = useRef(sidebarVisible)
   useEffect(() => {
-    const wasOpen = panelWasOpenRef.current
-    panelWasOpenRef.current = panelOpen
-    if (wasOpen && !panelOpen && organizeMode) exitOrganizeMode()
-  }, [panelOpen, organizeMode, exitOrganizeMode])
+    const wasVisible = wasVisibleRef.current
+    wasVisibleRef.current = sidebarVisible
+    if (wasVisible && !sidebarVisible && organizeMode) exitOrganizeMode()
+  }, [sidebarVisible, organizeMode, exitOrganizeMode])
 
   useEffect(() => {
     if (editing && inputRef.current) {
