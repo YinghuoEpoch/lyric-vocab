@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { setSystemBarsHidden } from '../safeArea'
 
 /** 顶栏和「笔记」键露出来之后，多久自己收回去 */
@@ -133,7 +133,26 @@ export function useImmersiveReading(
     **出**沉浸一律回到 false（那时候顶栏由正常布局管，这个值不参与）。
     **进**沉浸分宽窄：宽屏留着读秒、窄屏立刻收，见 chromeVisibleOnImmersiveChange。
   */
-  useEffect(() => {
+  /*
+    ⚠️ **必须是 useLayoutEffect，不能是 useEffect。**
+
+    `immersive` 是渲染时就算出来的，而这里要跟着它调整 `chromeVisible`。
+    用 useEffect 的话这一步**排在浏览器画完之后**，于是有整整一帧
+    `immersive` 已经 true、`chromeVisible` 还是旧的 false ——
+    那一帧 `chromeHidden` 成立，顶栏被画成收起的。
+
+    用户 2026-09-07 在平板上看到的就是这个：点空白收笔记栏时
+    「顶栏立刻收起 …… 最后顶栏居然又重新出现」。我这台机器上量到
+    收和露之间只隔 7ms（一帧），他的平板慢，就看得清清楚楚。
+
+    这一帧还有更贵的连带：那 7ms 里 `setSystemBarsHidden` 被连调两次
+    （先藏后显），安卓真的会去播两次系统栏动画，把 WebView 卡住 ——
+    他报的「右侧栏几乎没有任何过渡地就收起」是这么来的。**两个症状同一个成因。**
+
+    useLayoutEffect 在绘制前跑，这里的 setState 会在同一帧内同步重渲染，
+    中间那一帧根本不会被画出来。
+  */
+  useLayoutEffect(() => {
     setChromeVisible(chromeVisibleOnImmersiveChange(immersive, revealOnEnter))
     clearTimer()
   }, [immersive, revealOnEnter, clearTimer])
