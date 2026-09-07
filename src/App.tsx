@@ -1635,13 +1635,50 @@ export default function App() {
       </main>
       </div>
 
-      {/* 右侧栏：阅读模式下始终挂载（与左侧一致），用 showRight 控制 translate 才能稳定播滑入/滑出动画 */}
+      {/*
+        右侧栏：阅读模式下始终挂载（与左侧一致）。
+
+        ## 宽窄两套出场方式，是为了消掉「打开时猛弹一下」
+
+        用户 2026-09-07 报的：平板上每次打开笔记栏，正文会猛弹一下。
+        量出来的成因是**两件事不同步**：
+
+        | | 关着 | 开着 | 怎么变 |
+        |---|---|---|---|
+        | 正文宽 | 1030 | 680 | **瞬间**（没有过渡） |
+        | 笔记栏 | 屏幕外 | 就位 | 200ms 滑入 |
+
+        从前宽屏靠 `fixed -> wide:relative` 切换来占位：那一下是布局跳变、
+        没有动画，而面板还在慢慢滑进来。正文一帧之内窄 350px、整篇重新折行，
+        看着就是「弹」。歌词行短不折行所以看不出来，**书里一段占好几屏，
+        他那儿特别明显**。
+
+        现在宽屏**一直是 relative**，改成动画它自己的**宽度** 0 ↔ N。
+        正文是 flex-1，宽度跟着一起平滑变，两边同步了。
+        里层那个盒子锁着完整宽度并 `overflow-hidden`，所以内容不会被压扁 ——
+        外框变宽时内容从右边露出来，滑入感还在。
+
+        窄屏那套一个字没动：还是 `fixed` + translate 浮层。
+      */}
       {mode === 'read' && (
         <div
-          className={`h-full flex flex-col shrink-0 ${showRight ? 'fixed wide:relative' : 'fixed'} inset-y-0 right-0 z-30 wide:z-auto transform transition-transform duration-200 ease-out ${
+          className={`h-full flex shrink-0 fixed wide:relative inset-y-0 right-0 z-30 wide:z-auto transform transition-transform duration-200 ease-out ${
             showRight ? 'translate-x-0' : 'translate-x-full'
-          }`}
+          } wide:translate-x-0`}
         >
+          {/*
+            中间这层管两件事：**宽度动画**（推着正文一起平滑变）和**裁剪**。
+            外层不能裁 —— 拖杆在它左边缘外面（-left-2），裁了就没了。
+          */}
+          <div
+            className="h-full shrink-0 overflow-hidden wide:transition-[width] wide:duration-200 wide:ease-out"
+            style={isWide ? { width: showRight ? right.width : 0 } : undefined}
+          >
+            {/* 里层锁住完整宽度，外面变窄时内容不跟着压扁，而是被裁掉 */}
+            <div
+              className="h-full flex flex-col"
+              style={isWide ? { width: right.width } : undefined}
+            >
           <RightSidebar
             width={isWide ? right.width : RIGHT_WIDTH_NARROW}
             vocab={vocabList}
@@ -1663,6 +1700,8 @@ export default function App() {
             currentDocIndex={currentDocIndex}
             totalDocsInFolder={totalDocsInFolder}
           />
+            </div>
+          </div>
 
           {/*
             拖杆：正文和笔记栏的交界线。和左栏那根是同一套（usePanelWidth），
