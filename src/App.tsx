@@ -1292,13 +1292,6 @@ export default function App() {
     chromeVisibleOnImmersiveChange 上面。
   */
   const { chromeVisible, toggleChrome } = useImmersiveReading(immersive, isWide)
-
-  /*
-    正文区的宽度是由这几件事决定的。它一变，正文就要重新折行，
-    阅读位置会跟着漂 —— LyricEditor 拿它当信号，把屏顶那个词钉回原位。
-    用户 2026-09-07 报的「开关侧栏会滚动几行」。
-  */
-  const layoutKey = `${isWide}|${showLeft}|${showRight}|${wideLeftHidden}|${left.width}|${right.width}`
   /** 此刻顶栏和「笔记」键是不是收着的 */
   const chromeHidden = immersive && !chromeVisible
   /** 「一键填充」：范围跟着当前复习的文档或文库走 */
@@ -1562,7 +1555,6 @@ export default function App() {
           <>
             {currentPage ? (
               <LyricEditor
-          layoutKey={layoutKey}
                 content={currentPage.content}
                 pageId={currentPage.id}
                 notes={notesForCurrent}

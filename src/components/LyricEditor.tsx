@@ -23,9 +23,6 @@ const PROGRESS_DEBOUNCE_MS = 700
  */
 const ANCHOR_THROTTLE_MS = 120
 
-/** 布局变了之后，继续把阅读位置钉住多久。盖住侧栏那 200ms 的过渡，留一点余量 */
-const PIN_AFTER_LAYOUT_MS = 260
-
 /** 宽屏上那个小弹窗有多宽，以及离屏幕边缘至少留多少 */
 const POPUP_W = 320
 const POPUP_MARGIN = 12
@@ -142,17 +139,6 @@ interface LyricEditorProps {
    */
   onLastVisibleAnchorChange?: (anchor: string | null) => void
   /** 阅读外观（字号、字体、主题） */
-  /**
-   * 布局的指纹：两侧栏开着没有、各自多宽。**一变就把阅读位置还原回去。**
-   *
-   * 用户 2026-09-07 报的：「单独打开右侧栏会向上滚动几行，关掉又恢复。」
-   * 成因见 captureTopWord 上面那段 —— 浏览器的滚动锚定只锚到**段**，
-   * 而书里一段占好几屏，段一变高，段内的行就把人挤走了。
-   *
-   * ⚠️ 为什么不用 ResizeObserver：它在验证环境里**一次都不投递回调**，
-   * 那样写我验不了、只能盲发给用户。这个由 React 状态驱动，验得到。
-   */
-  layoutKey?: string
   readerSettings?: ReaderSettings
   /**
    * 沉浸阅读（只在宽屏两侧栏都收起来时）：这一条工具带改成浮在正文上面。
@@ -224,7 +210,6 @@ function LyricEditorInner({
   onSelectPage,
   onReadingProgressChange,
   onLastVisibleAnchorChange,
-  layoutKey = '',
   readerSettings = { fontSize: 18, fontFamily: 'sans', theme: 'pure', accent: 'amber' },
   immersive = false,
   chromeVisible = false
@@ -265,117 +250,6 @@ function LyricEditorInner({
         ? "'Nunito', 'Quicksand', 'Arial Rounded MT Bold', 'PingFang SC', 'Microsoft YaHei', sans-serif"
         : "'Inter', '-apple-system', 'BlinkMacSystemFont', 'PingFang SC', 'Microsoft YaHei', sans-serif"
   const scrollContainerRef = useRef<HTMLDivElement>(null)
-
-  /*
-    ## 侧栏开合时，把阅读位置钉在**词**上
-
-    用户 2026-09-07 报的：「单独打开右侧栏会向上滚动几行，关掉又恢复。」
-
-    浏览器自己的滚动锚定其实在工作，但它只锚到**段**。量过（1280 宽，长段落）：
-    正文从 674 窄到 606，内容高 11601 -> 12573，浏览器自动把 scrollTop 补了 +389，
-    屏顶那一段还是第 13 段、位置只差 1px —— 段落级是准的。
-
-    问题在于**那一段本身变高了**。它的起点在屏幕上方 44px 处，重排后变长，
-    段内的行就整体往下推，用户正在读的那一行被挤出屏幕 ——
-    看到的是更早的文字，于是「向上滚了几行」。
-
-    这是第七十二节那条的又一次：**一个 `<p>` 就算一行，书里一行是一整段。**
-    浏览器锚不到词，我们自己锚。
-
-    正文里每个单词的 `<span>` 上现成带着 `id`（`L几W几`），拿它当锚点；
-    取屏顶那个词用 `elementFromPoint`，**O(1)**，不用像第七十二节那样遍历整篇。
-  */
-  /** 屏幕最上面那个词是谁、离容器顶多远 */
-  const topWordRef = useRef<{ id: string; offset: number } | null>(null)
-  /** 上一次**我们自己**写进去的 scrollTop。用来分辨「用户滚的」和「我们还原的」 */
-  const writtenScrollRef = useRef<number | null>(null)
-
-  /** 记下此刻屏顶是哪个词。用户滚动时才记，我们自己造成的滚动不算 */
-  const captureTopWord = useCallback(() => {
-    const el = scrollContainerRef.current
-    if (!el) return
-    const written = writtenScrollRef.current
-    // 这一下滚动是我们自己还原出来的，不是用户滚的 —— 记了会把锚点带跑
-    if (written !== null && Math.abs(el.scrollTop - written) < 1) return
-    writtenScrollRef.current = null
-    const box = el.getBoundingClientRect()
-    /*
-      从屏幕最上面往下探几个点，找到第一个**单词**。
-
-      不能只探最顶上那一点：正文是中英交替的，最顶上很可能是中文译文行、
-      段间距、或者两行之间的空隙 —— 那些地方没有 `data-word-span`，
-      一探不中就当成「没有锚点」，还原也就不会发生（第一版实测栽在这儿）。
-
-      每 16px 探一个、探到 160px 为止，最多 11 次 `elementFromPoint`，
-      仍然远比遍历整篇的几百次 `getBoundingClientRect` 便宜。
-    */
-    const x = box.left + box.width / 2
-    for (let dy = 2; dy <= 160; dy += 16) {
-      const hit = document.elementFromPoint(x, box.top + dy)
-      const word = hit?.closest<HTMLElement>('[data-word-span="true"]')
-      if (word?.id) {
-        topWordRef.current = { id: word.id, offset: word.getBoundingClientRect().top - box.top }
-        return
-      }
-    }
-    topWordRef.current = null
-  }, [])
-
-  /** 把那个词挪回它原来离屏顶的距离 */
-  const restoreTopWord = useCallback(() => {
-    const el = scrollContainerRef.current
-    const a = topWordRef.current
-    if (!el || !a) return
-    const word = el.querySelector<HTMLElement>(`[id="${CSS.escape(a.id)}"]`)
-    if (!word) return
-    const box = el.getBoundingClientRect()
-    const delta = word.getBoundingClientRect().top - box.top - a.offset
-    /*
-      ⚠️ **门槛设得高一点，是故意的。**
-
-      量过（2026-09-07，关掉过渡、长段落）：侧栏开合后浏览器自己的滚动锚定
-      已经把那个词放回原处，偏差只有 **0.3px**。这种时候我们插手只会跟它抢，
-      抢出来的是抖动，比原来的问题更糟。
-
-      所以只在**真的漂了**的时候才动手。用户报的是「滚动几行」，
-      一行至少 30px 量级，2px 的门槛既够灵敏，也不会跟浏览器较劲。
-    */
-    if (Math.abs(delta) < 2) return
-    el.scrollTop += delta
-    writtenScrollRef.current = el.scrollTop
-  }, [])
-
-  /*
-    布局一变就把位置还原回去。
-
-    ⚠️ **这里本来用的是 ResizeObserver，改掉了** —— 它在这个验证环境里
-    **一次都不投递回调**（手工改宽度也触发 0 次，和 rAF、CSS 过渡同一族的限制）。
-    也就是说那个实现我在浏览器里验不了，只能盲发给用户。改成由 React 状态驱动，
-    我这边就能验到实处。见 `layoutKey`。
-
-    侧栏开合有 200ms 的过渡，宽度是一帧一帧变的，只在开头还原一次不管用
-    （那时候宽度还没开始变）。所以还原完再跟着推一小段，直到过渡结束。
-    这一小段用 rAF，**在隐藏面板里不会跑**，所以那部分只能等真机验 ——
-    但把过渡关掉之后，下面这个立刻还原的分支就走的是最终宽度，那一半是验得到的。
-  */
-  useLayoutEffect(() => {
-    restoreTopWord()
-    if (typeof requestAnimationFrame === 'undefined') return
-    let raf = 0
-    const until = Date.now() + PIN_AFTER_LAYOUT_MS
-    const step = () => {
-      restoreTopWord()
-      if (Date.now() < until) raf = requestAnimationFrame(step)
-    }
-    raf = requestAnimationFrame(step)
-    return () => cancelAnimationFrame(raf)
-  }, [layoutKey, restoreTopWord])
-
-  // 换一篇就把锚点扔掉，否则新文档会被上一篇的词拽着走
-  useEffect(() => {
-    topWordRef.current = null
-    writtenScrollRef.current = null
-  }, [pageId])
   const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
 
@@ -496,7 +370,6 @@ function LyricEditorInner({
   }, [pageId, editMode, onReadingProgressChange, reportProgress])
 
   const handleScroll = useCallback(() => {
-    captureTopWord()
     reportProgress()
     // 尾随节流：第一次滚动约一次，这段时间内的后续滚动并成同一次
     if (onLastVisibleAnchorChange && !lineTimerRef.current) {
@@ -512,7 +385,7 @@ function LyricEditorInner({
       const el = scrollContainerRef.current
       if (el) onSaveProgress(el.scrollTop)
     }, PROGRESS_DEBOUNCE_MS)
-  }, [captureTopWord, editMode, onSaveProgress, reportProgress, onLastVisibleAnchorChange, reportLastAnchor])
+  }, [editMode, onSaveProgress, reportProgress, onLastVisibleAnchorChange, reportLastAnchor])
 
   useEffect(() => {
     return () => {
