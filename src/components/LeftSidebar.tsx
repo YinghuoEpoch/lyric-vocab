@@ -109,16 +109,49 @@ type MenuKind = { type: 'book'; id: string } | { type: 'page'; id: string } | nu
 type ItemKind = { type: 'book'; id: string } | { type: 'page'; id: string; bookId: string | null }
 
 const COLLAPSED_KEY = 'lyric-vocab-collapsed-books'
-const SIDEBAR_HEADER_HEIGHT = 160
 
-const restrictToSidebarArea: Modifier = ({ transform, draggingNodeRect }) => {
-  if (!draggingNodeRect) return transform
-  // 限制拖拽元素的顶部不超过侧边栏头部（模式切换区域）
-  const minY = SIDEBAR_HEADER_HEIGHT - draggingNodeRect.top
-  return {
-    ...transform,
-    y: Math.max(transform.y, minY)
-  }
+/** 一个上下边界，和一个被拖着的方块 —— 够算出该夹到哪儿了 */
+export interface ClampBounds {
+  top: number
+  bottom: number
+}
+
+/**
+ * 把拖动中的那一行夹在**列表区域之内**，上下都夹。
+ *
+ * ## 为什么不是一个写死的数字
+ *
+ * 从前这里是 `SIDEBAR_HEADER_HEIGHT = 160`，只夹上边（`Math.max`）。
+ * 两条 bug 都是它带出来的（2026-09-07 用户报的）：
+ *
+ * 1. **文库拖不到最顶上**。160 是绝对视口坐标，而列表真正从哪儿开始
+ *    取决于状态栏多高、系统字号多大。量过：浏览器里第一行中线在 117，
+ *    模拟 40px 状态栏是 157，都在 160 以上 —— 被拖的那行顶最低只能到 160，
+ *    永远越不过第一行的中线，于是只能停在第 2 位。
+ *    用户的**手机状态栏够高**（~48px），内容被推到 160 以下，所以手机上是好的；
+ *    平板横屏没有那道推力，就卡住。**同一个写死的数，在两台机器上一对一错。**
+ *
+ * 2. **拖动的行能压到底栏上**。只夹了上边，下边完全没有边界，
+ *    而底栏（导入／书库／回收站／设置）在 DndContext 外面，于是被盖住。
+ *
+ * 治法是不猜：**量列表容器此刻的真实矩形**，上下一起夹。
+ * 状态栏、系统字号、转屏怎么变都不用管，因为每次拖动都重新量。
+ *
+ * 这是第五十一、五十三、五十六节那条的又一次：
+ * **写死的宽高只是把门槛往后挪，换台机器还会犯。**
+ */
+export function clampDragY(
+  y: number,
+  dragging: ClampBounds | null,
+  area: ClampBounds | null
+): number {
+  if (!dragging || !area) return y
+  const minY = area.top - dragging.top
+  const maxY = area.bottom - dragging.bottom
+  // 列表比被拖的那一行还矮时（文库很少、窗口很扁），minY 会大过 maxY。
+  // 这种时候贴着顶部，别让它反过来跳到底下去。
+  if (minY > maxY) return minY
+  return Math.min(Math.max(y, minY), maxY)
 }
 
 interface SortableRowProps {
@@ -249,6 +282,25 @@ function LeftSidebarInner({
     // 外部数据变更时，同步更新本地布局（例如加载/恢复备份）
     setPageLayout(pages)
   }, [pages])
+
+  /**
+   * 列表那块可滚动区域。拖动的边界从它身上**当场量**，不写死 ——
+   * 缘由见 clampDragY 上面那段。
+   */
+  const listRef = useRef<HTMLDivElement>(null)
+
+  /**
+   * 把拖动中的行夹在列表区域内。
+   *
+   * 每次拖动都重新 `getBoundingClientRect()`：状态栏高度、系统字号、
+   * 转屏、侧栏被拖宽，全都会挪动这块区域，而这些在这台电脑上我一个都验不了。
+   */
+  const restrictToListArea = useCallback<Modifier>(({ transform, draggingNodeRect }) => {
+    const list = listRef.current
+    if (!draggingNodeRect || !list) return transform
+    const area = list.getBoundingClientRect()
+    return { ...transform, y: clampDragY(transform.y, draggingNodeRect, area) }
+  }, [])
 
   const sensors = useSensors(
     // PointerSensor 作为主传感器：激活阈值很小，安全性来自“必须点中手柄”这一事实
@@ -676,12 +728,13 @@ function LeftSidebarInner({
       <DndContext
         sensors={sensors}
         collisionDetection={closestCorners}
-        modifiers={[restrictToVerticalAxis, restrictToWindowEdges, restrictToSidebarArea]}
+        modifiers={[restrictToVerticalAxis, restrictToWindowEdges, restrictToListArea]}
         onDragStart={organizeMode ? handleDragStart : undefined}
         onDragOver={organizeMode ? handleDragOver : undefined}
         onDragEnd={organizeMode ? handleDragEnd : undefined}
       >
         <div
+          ref={listRef}
           className="flex-1 min-h-0 overflow-y-auto scroll-area py-3 px-2"
           onClick={(e) => {
             if (menuOpen && !(e.target as HTMLElement).closest('[data-menu-popup]')) {
